@@ -35,7 +35,7 @@ from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCal
 from short_drama.domain.assistant.operations.invocation import BusinessToolInvocation
 from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask, AgentTaskInput
 from short_drama.service.assistant.execution.scope import AgentExecutionScopeService
-from short_drama.service.assistant.tasks.policy import AssistantPolicyService
+from short_drama.service.assistant.settings.preferences import AssistantSettingsService
 from tests.integration.standard.assets.test_asset_image_generation import (
     ImageProvider,
     create_asset,
@@ -131,15 +131,19 @@ def test_public_runtime_entry_requires_current_nonempty_lease(
         )
 
 
-def admit_business_image(flow, request_id="business-image"):
+def admit_business_image(flow, request_id="business-image", *, source="mcp"):
     from short_drama.schemas.assistant.operations.media import SubmitGenerationBatch
     from short_drama.service.assistant.operations.media import submit_generation_batch_locked
 
     api = invocation_api()
     asset = create_asset(flow)
-    identity = business_identity(api, flow.session.info["actor"], flow.project.id, request_id)
+    identity = business_identity(
+        api, flow.factory, flow.session.info["actor"], flow.project.id, request_id
+    )
     identity = replace(
         identity,
+        source=source,
+        token_id=identity.token_id if source == "mcp" else None,
         scope=replace(
             identity.scope,
             tool_names=frozenset(
@@ -175,13 +179,13 @@ def admit_business_image(flow, request_id="business-image"):
 def disable_media(flow):
     with flow.factory() as session:
         session.info["actor"] = flow.session.info["actor"]
-        return AssistantPolicyService(session).update_generation_policy(
-            {"policy_version": "0", "media_generation_enabled": False}
+        return AssistantSettingsService(session, flow.settings).update_settings(
+            {"settings_version": "0", "media_generation_enabled": False}
         )
 
 
 @pytest.mark.parametrize("stage", ["claim", "paid-submit"])
-def test_business_media_reads_current_policy_before_new_paid_send(flow, stage):
+def test_mcp_media_uses_token_permission_when_internal_assistant_is_disabled(flow, stage):
     task_id, _identity, _result = admit_business_image(flow)
     with flow.factory() as session:
         version = session.get(AsyncTask, task_id).message_version
@@ -219,16 +223,30 @@ def test_business_media_reads_current_policy_before_new_paid_send(flow, stage):
         task, record, token = claim
         disable_media(flow)
         flow.executor._generate(task, record, version, token)
+    assert drain(flow, task_id) == "succeeded"
     with flow.factory() as session:
         task = session.get(AsyncTask, task_id)
-        assert task.status == "cancelled"
-        assert task.error["code"] == "assistant_media_disabled"
-    assert not flow.provider.calls
+        assert task.status == "succeeded" and not task.error
+    assert len(flow.provider.calls) == 1
 
 
-def test_business_media_already_sent_can_poll_and_archive_after_policy_closes(flow):
+@pytest.mark.parametrize(
+    "source,closure,adopted",
+    [
+        ("assistant", "media", True),
+        ("assistant", "workbench", False),
+        ("mcp", "workbench", True),
+        ("mcp", "revoked", False),
+    ],
+)
+def test_business_media_already_sent_archives_but_only_adopts_with_current_permission(
+    flow, source, closure, adopted
+):
+    from short_drama.agent.tools.registry import TOOL_SPECS
+    from short_drama.domain import ImageGroup, ImageGroupItem, MediaAsset
     from short_drama.schemas.assistant.operations.media import GetGenerationStatus
     from short_drama.service.assistant.operations.media import get_generation_status_locked
+    from short_drama.service.identity.accounts.mcp_token import McpTokenService
 
     class DeferredImages(ImageProvider):
         def __init__(self):
@@ -248,13 +266,28 @@ def test_business_media_already_sent_can_poll_and_archive_after_policy_closes(fl
 
     provider = DeferredImages()
     flow.executor.gateway = provider
-    task_id, identity, admitted = admit_business_image(flow)
+    task_id, identity, admitted = admit_business_image(flow, source=source)
     with flow.factory() as session:
         task = session.get(AsyncTask, task_id)
         flow.executor.execute(task_id, task.message_version)
     assert len(provider.calls) == 1
-    disable_media(flow)
+    if closure == "media":
+        disable_media(flow)
+    elif closure == "workbench":
+        with flow.factory() as session:
+            session.info["actor"] = flow.session.info["actor"]
+            AssistantSettingsService(session, flow.settings).update_settings(
+                {"settings_version": "0", "workbench_enabled": False}
+            )
+    else:
+        with flow.factory() as session:
+            session.info["actor"] = flow.session.info["actor"]
+            McpTokenService(session, tool_specs=TOOL_SPECS).delete(identity.token_id)
     assert drain(flow, task_id) == "succeeded"
+    if closure == "revoked":
+        identity = replace(
+            identity, token_id=issued_mcp_token(flow.factory, flow.session.info["actor"])
+        )
     with flow.factory() as session:
         ready = (
             invocation_api()
@@ -273,6 +306,16 @@ def test_business_media_already_sent_can_poll_and_archive_after_policy_closes(fl
         assert (
             record.config_snapshot["business_invocation_id"] == admitted["business_invocation_id"]
         )
+        output = session.scalar(select(MediaAsset).where(MediaAsset.record_id == record.id))
+        group = session.scalar(select(ImageGroup).where(ImageGroup.task_id == task_id))
+        item = session.scalar(select(ImageGroupItem).where(ImageGroupItem.group_id == group.id))
+        asset = session.get(Asset, int(record.config_snapshot["business_media"]["id"]))
+        assert output.media_id == item.media_id
+        assert asset.media_id == (output.media_id if adopted else None)
+        assert asset.row_version == (2 if adopted else 1)
+        assert record.response_data["business_adoption"]["adopted"] is adopted
+        if not adopted:
+            assert group.primary_index is None and group.notice
     assert ready["settled"] and ready["items"][0]["result_refs"]
     assert len(provider.calls) == 1 and provider.polls == 1
 
@@ -287,7 +330,7 @@ def test_business_write_and_native_claim_share_project_first_lock_order(flow, or
         version = session.get(AsyncTask, task_id).message_version
     api = invocation_api()
     identity = business_identity(
-        api, flow.session.info["actor"], flow.project.id, "concurrent-write"
+        api, flow.factory, flow.session.info["actor"], flow.project.id, "concurrent-write"
     )
     values = ApplyStandardPatch(
         project_id=flow.project.id,
@@ -445,9 +488,7 @@ def test_business_write_and_native_claim_share_project_first_lock_order(flow, or
             replay = api.BusinessInvocationService(session).execute(
                 replace(
                     identity,
-                    token_id=issued_mcp_token(
-                        flow.factory, flow.session.info["actor"], flow.project.id
-                    ),
+                    token_id=issued_mcp_token(flow.factory, flow.session.info["actor"]),
                 ),
                 "workbench__apply_standard_patch",
                 values,
@@ -467,7 +508,6 @@ def test_business_write_and_native_claim_share_project_first_lock_order(flow, or
     "binding",
     [
         "execution_target",
-        "memory_project_ids",
         "script_reference",
         "subject_selection",
         "asset_attachment",
@@ -486,7 +526,7 @@ def test_global_message_and_tool_have_consistent_lock_order(flow, binding):
     factory, settings, model = workspace
     actor = flow.session.info["actor"]
     target = {"mode": "standard", "project_id": str(flow.project.id), "canvas_id": None}
-    references = {"execution_target": target, "memory_project_ids": [str(flow.project.id)]}
+    references = {"execution_target": target}
     attachment_source = None
     if binding == "script_reference":
         saved = ProjectWritingService(flow.session).save_script(

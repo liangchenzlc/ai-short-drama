@@ -1,8 +1,8 @@
-"""Revocable named account credentials with explicit project and tool scopes."""
+"""Revocable account credentials with immutable tool grants and creation receipts."""
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index
+from sqlalchemy import CheckConstraint, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.dialects.mysql import BIGINT, CHAR, DATETIME, JSON, VARCHAR
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,7 +22,8 @@ class McpAccessToken(Base):
         CHAR(64, charset="ascii", collation="ascii_bin"), unique=True
     )
     token_hint: Mapped[str] = mapped_column(VARCHAR(24))
-    project_ids: Mapped[list[str]] = mapped_column(JSON)
+    create_key: Mapped[str] = mapped_column(VARCHAR(64, charset="ascii", collation="ascii_bin"))
+    create_hash: Mapped[str] = mapped_column(CHAR(64, charset="ascii", collation="ascii_bin"))
     tool_names: Mapped[list[str]] = mapped_column(JSON)
     expires_at: Mapped[datetime | None] = mapped_column(DATETIME(fsp=6), nullable=True)
     allowed_ips: Mapped[list[str]] = mapped_column(JSON)
@@ -31,9 +32,9 @@ class McpAccessToken(Base):
 
     __table_args__ = (
         Index("idx_mcp_tokens_owner", "owner_user_id", "deleted_at", "id"),
+        UniqueConstraint("owner_user_id", "create_key", name="uk_mcp_tokens_create"),
         CheckConstraint(
-            "JSON_TYPE(project_ids) = 'ARRAY' AND JSON_LENGTH(project_ids) > 0 "
-            "AND JSON_TYPE(tool_names) = 'ARRAY' AND JSON_LENGTH(tool_names) > 0 "
+            "JSON_TYPE(tool_names) = 'ARRAY' AND JSON_LENGTH(tool_names) > 0 "
             "AND JSON_TYPE(allowed_ips) = 'ARRAY'",
             name="ck_mcp_tokens_scopes",
         ),

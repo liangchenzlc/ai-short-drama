@@ -1,23 +1,7 @@
-import type { AiRuntimeProfileDto, ConfigJsonObject, ServiceTypeDto } from '@host/types/ai-config/api';
+import type { ServiceTypeDto } from '@host/types/ai-config/api';
 export interface ModelTestRequestDto {
-  channel: {
-    id: string;
-    name: string;
-    baseUrl: string;
-    apiFormat: AiRuntimeProfileDto['api_format'];
-    scope: 'system';
-    models: string[];
-    modelProfiles: {
-      model: string;
-      capability: ServiceTypeDto;
-      protocol: string;
-    }[];
-  };
-  model: string;
-  mode: ServiceTypeDto;
+  config_id: string;
   prompt: string;
-  config: ConfigJsonObject;
-  textOptions: { stream: boolean; thinking: boolean };
   clientOperationId: string;
 }
 

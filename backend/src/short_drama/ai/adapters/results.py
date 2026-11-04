@@ -6,6 +6,7 @@ from short_drama.ai.adapters.audio.canvas_audio import (
     canvas_audio_poll_endpoint,
     parse_canvas_audio_result,
 )
+from short_drama.ai.adapters.image.registry import IMAGE_ADAPTERS, get_image_adapter
 from short_drama.ai.adapters.runninghub.adapters import (
     RUNNINGHUB_ADAPTERS,
     parse_runninghub_result,
@@ -19,6 +20,16 @@ from short_drama.ai.adapters.text.gemini_adapters import (
     GEMINI_GENERATE_CONTENT,
     parse_gemini_text_result,
 )
+from short_drama.ai.adapters.video.kling_video import (
+    KLING_VIDEO,
+    kling_poll_endpoint,
+    parse_kling_result,
+)
+from short_drama.ai.adapters.video.minimax_video import (
+    MINIMAX_VIDEO,
+    minimax_poll_endpoint,
+    parse_minimax_result,
+)
 from short_drama.ai.adapters.video.video_adapters import (
     VIDEO_ADAPTERS,
     canvas_video_poll_endpoint,
@@ -29,6 +40,12 @@ from short_drama.ai.types import GenerationError, GenerationResult
 
 
 def poll_endpoint(snapshot, task_id, adapter):
+    if adapter == KLING_VIDEO:
+        return kling_poll_endpoint(snapshot, task_id)
+    if adapter == MINIMAX_VIDEO:
+        return minimax_poll_endpoint(snapshot, task_id)
+    if adapter in IMAGE_ADAPTERS:
+        return get_image_adapter(adapter).poll_endpoint(snapshot, task_id)
     if adapter in RUNNINGHUB_ADAPTERS:
         return runninghub_root(snapshot["base_url"]) + "/task/openapi/outputs"
     if adapter == ASYNC_AUDIO:
@@ -52,6 +69,12 @@ def poll_endpoint(snapshot, task_id, adapter):
 
 
 def parse_result(body, adapter, *, submitted, task_id=None):
+    if adapter == KLING_VIDEO:
+        return parse_kling_result(body, submitted=submitted, task_id=task_id)
+    if adapter == MINIMAX_VIDEO:
+        return parse_minimax_result(body, submitted=submitted, task_id=task_id)
+    if adapter in IMAGE_ADAPTERS:
+        return get_image_adapter(adapter).parse_result(body, submitted=submitted, task_id=task_id)
     if adapter in RUNNINGHUB_ADAPTERS:
         return parse_runninghub_result(body, adapter, submitted=submitted, task_id=task_id)
     if adapter == ASYNC_AUDIO:
@@ -140,18 +163,6 @@ def parse_result(body, adapter, *, submitted, task_id=None):
                 result.finish_reason = (
                     "length" if reason == "max_output_tokens" else reason or "stop"
                 )
-        elif adapter in ("openai_images.v1", "ark_images.v1"):
-            for item in body["data"]:
-                if item.get("url"):
-                    result.outputs.append({"url": item["url"], "media_type": "image"})
-                elif item.get("b64_json"):
-                    result.outputs.append(
-                        {"base64": item["b64_json"], "media_type": "image", "mime": "image/png"}
-                    )
-                elif not item.get("error"):
-                    invalid()
-            if not result.outputs:
-                invalid()
         elif adapter == "modelhub_video.v1":
             status = body.get("status")
             result.provider_task_id = body.get("task_id") or body.get("id") or task_id
@@ -210,22 +221,6 @@ def parse_result(body, adapter, *, submitted, task_id=None):
                 }
             elif adapter == "dashscope_video.v1" and status == "SUCCEEDED":
                 result.outputs = [{"url": output["video_url"], "media_type": "video"}]
-            elif adapter == "dashscope_images.v1" and status in (None, "SUCCEEDED"):
-                if "results" in output:
-                    result.outputs = [
-                        {"url": item["url"], "media_type": "image"}
-                        for item in output["results"]
-                        if item.get("url")
-                    ]
-                else:
-                    result.outputs = [
-                        {"url": part["image"], "media_type": "image"}
-                        for choice in output["choices"]
-                        for part in choice["message"]["content"]
-                        if part.get("image")
-                    ]
-                if not result.outputs:
-                    invalid()
             else:
                 invalid()
         if result.status == "submitted" and (

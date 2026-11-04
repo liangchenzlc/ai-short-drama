@@ -25,6 +25,7 @@ from short_drama.service.assistant.context.subject import (
     selection_references,
     subject_directory,
 )
+from short_drama.service.assistant.memory.memory_store import memory_capture_generation
 from short_drama.service.assistant.tasks.base import TaskServiceBase
 from short_drama.service.base import utcnow
 from short_drama.service.skills.catalog.versions import freeze_skills
@@ -50,21 +51,15 @@ class TaskInputOperations(TaskServiceBase):
             and requested != frozen
         ):
             raise WorkflowError("scope_mismatch", "任务只能保存到所属项目及原画布", 422)
-        if any(identifier != project.id for identifier in inputs.memory_project_ids):
-            raise WorkflowError("scope_mismatch", "任务使用所属项目的创作设定", 422)
         target = frozen or requested
         if target is None:
             if project.workspace_mode == "infinite_canvas":
                 raise WorkflowError("scope_mismatch", "新任务需要当前画布作为保存目标", 422)
             target = TaskExecutionTarget(mode="standard", project_id=project.id)
-        return inputs.model_copy(
-            update={"execution_target": target, "memory_project_ids": [project.id]}
-        )
+        return inputs.model_copy(update={"execution_target": target})
 
     def _validate_bindings(self, inputs):
         # 这里只保存 JSON 上下文，不能在持有会话锁后再请求作品写锁。
-        for project_id in inputs.memory_project_ids:
-            require_project(self.session, project_id, lock=False)
         target = inputs.execution_target
         if target is not None:
             require_project(self.session, target.project_id, lock=False)
@@ -123,7 +118,7 @@ class TaskInputOperations(TaskServiceBase):
         payload["video_audio"] = inputs.video_audio
         if "skills" in inputs.model_fields_set:
             payload["selected_skills"] = self._freeze_task_skills(conversation, task, inputs.skills)
-        for field in ("execution_target", "memory_project_ids"):
+        for field in ("execution_target",):
             if field in inputs.model_fields_set:
                 payload[field] = inputs.model_dump(mode="json")[field]
         target = task.execution_target
@@ -158,6 +153,9 @@ class TaskInputOperations(TaskServiceBase):
             seq=conversation.next_message_seq,
             item_seq=allocate_item_seq(conversation),
             role="user",
+            memory_capture_generation=memory_capture_generation(
+                self.session, conversation.owner_user_id
+            ),
             kind=KIND_REPLY,
             content=inputs.content,
             references=references,

@@ -7,7 +7,6 @@ from sqlalchemy import func, or_, select
 from short_drama.agent.core import ENGINE_VERSION
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.assistant.memory.memory import AgentMemoryDAO, MemoryScopeContext
-from short_drama.domain import Project
 from short_drama.domain.assistant.conversations.models import AgentConversation, AgentMessage
 from short_drama.domain.assistant.execution.models import AgentRun
 from short_drama.domain.assistant.memory.memory import (
@@ -18,6 +17,7 @@ from short_drama.domain.assistant.memory.memory import (
     AgentMemoryRevision,
     AgentMemorySource,
 )
+from short_drama.domain.assistant.operations.preference import AgentPreference
 from short_drama.domain.assistant.tasks.task import AgentTask
 from short_drama.schemas.assistant.memory.memory import (
     MemoryRead,
@@ -28,7 +28,7 @@ from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
 
-def checked_scope(session, owner, conversation_id=None, project_ids=(), *, allow_deleting=False):
+def checked_scope(session, owner, conversation_id=None, *, allow_deleting=False):
     if conversation_id is not None:
         conversation = session.scalar(
             select(AgentConversation).where(
@@ -42,20 +42,29 @@ def checked_scope(session, owner, conversation_id=None, project_ids=(), *, allow
         )
         if conversation is None:
             raise NotFound("记忆会话不存在或已停止使用")
-    projects = tuple(sorted(set(int(value) for value in project_ids)))
-    if projects:
-        found = set(
-            session.scalars(
-                select(Project.id).where(
-                    Project.id.in_(projects),
-                    Project.owner_user_id == owner,
-                    Project.archived_at.is_(None),
-                )
-            ).all()
-        )
-        if found != set(projects):
-            raise NotFound("作品记忆范围不存在或无权访问")
-    return MemoryScopeContext(owner, conversation_id, projects)
+    return MemoryScopeContext(owner)
+
+
+def memory_capture_generation(session, owner: int, *, lock=False) -> int | None:
+    query = select(
+        AgentPreference.long_term_memory_enabled, AgentPreference.memory_generation
+    ).where(AgentPreference.owner_user_id == owner)
+    state = session.execute(query.with_for_update() if lock else query).one_or_none()
+    return (state.memory_generation if state.long_term_memory_enabled else None) if state else 0
+
+
+def require_memory_enabled(session, owner: int) -> int:
+    generation = memory_capture_generation(session, owner)
+    if generation is None:
+        raise WorkflowError("assistant_memory_disabled", "长期记忆已关闭", 403)
+    return generation
+
+
+def extraction_generation_matches(session, job) -> bool:
+    if job.kind != "extract":
+        return True
+    generation = memory_capture_generation(session, job.owner_user_id, lock=True)
+    return generation is not None and generation == job.source_snapshot.get("memory_generation")
 
 
 def memory_snapshot(row):
@@ -69,8 +78,6 @@ def memory_snapshot(row):
             "pinned",
             "state",
             "origin",
-            "scope_type",
-            "scope_key",
             "kind",
             "memory_key",
         )
@@ -80,9 +87,6 @@ def memory_snapshot(row):
 def memory_read(session, row):
     return MemoryRead(
         id=row.id,
-        scope_type=row.scope_type,
-        conversation_id=row.conversation_id,
-        project_id=row.project_id,
         kind=row.kind,
         memory_key=row.memory_key,
         title=row.title,
@@ -93,15 +97,6 @@ def memory_read(session, row):
         state=row.state,
         origin=row.origin,
         content_version=row.content_version,
-        sources=[
-            {
-                "conversation_id": str(source.conversation_id),
-                "message_id": str(source.message_id) if source.message_id else None,
-                "seq": source.source_seq,
-                "subject_keys": source.subject_keys,
-            }
-            for source in AgentMemoryDAO(session).sources(row)
-        ],
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -120,11 +115,7 @@ def source_rows(session, owner, conversation_id, identifiers):
         raise NotFound("记忆来源消息不存在")
     return [
         {
-            "conversation_id": conversation_id,
-            "message_id": row.id,
-            "seq": row.seq,
             "hash": digest({"role": row.role, "content": row.content}),
-            "subject_keys": [],
         }
         for row in rows
     ]
@@ -141,17 +132,13 @@ def append_revision(session, row, change, sources=()):
             created_at=utcnow(),
         )
     )
-    for source in sources:
+    for fingerprint in dict.fromkeys(source["hash"] for source in sources):
         session.add(
             AgentMemorySource(
                 id=next_id(),
                 memory_id=row.id,
                 content_version=row.content_version,
-                conversation_id=source["conversation_id"],
-                message_id=source.get("message_id"),
-                source_seq=source["seq"],
-                source_hash=source["hash"],
-                subject_keys=source.get("subject_keys", []),
+                source_hash=fingerprint,
                 created_at=utcnow(),
             )
         )
@@ -160,11 +147,7 @@ def append_revision(session, row, change, sources=()):
 def source_values(sources):
     return [
         {
-            "conversation_id": source.conversation_id,
-            "message_id": source.message_id,
-            "seq": source.source_seq,
             "hash": source.source_hash,
-            "subject_keys": source.subject_keys,
         }
         for source in sources
     ]
@@ -192,6 +175,22 @@ def search_text(row):
 
 
 def memory_job_read(job):
+    hint = None
+    if job.status == "failed":
+        if job.provider_state in {"sending", "unknown"}:
+            hint = "供应商受理结果不明，请先核对原调用；不会自动重发，也不能直接重试。"
+        elif job.source_snapshot.get("retry_job_id"):
+            hint = "已安排后续整理，请查看关联的重试记录。"
+        elif (job.error or {}).get("code") == "invalid_agent_memory_result":
+            hint = (
+                "整理结果未通过内容或完整来源引用校验，原来源已保留。可重试此记录；"
+                "若原模型已修改、停用或删除，请使用可用模型在同一会话新建任务以恢复整理。"
+            )
+        else:
+            hint = (
+                "原来源和调用记录已保留。请核对模型与上下文容量后重试；"
+                "若原模型已失效，请使用可用模型在同一会话新建任务以恢复整理。"
+            )
     return {
         "id": str(job.id),
         "kind": job.kind,
@@ -201,7 +200,9 @@ def memory_job_read(job):
         "from_seq": job.from_seq,
         "to_seq": job.to_seq,
         "attempts": job.attempts,
-        "error": job.error,
+        "error": {"code": job.error.get("code"), **({"message": hint} if hint else {})}
+        if job.error
+        else None,
         "usage": job.usage,
         "created_at": job.created_at,
         "finished_at": job.finished_at,
@@ -221,7 +222,7 @@ def memory_summary_read(summary):
     }
 
 
-def blocked_extraction(session, owner, scope_type, scope_key, kind, key, sources):
+def blocked_extraction(session, owner, kind, key, sources):
     fingerprints = {source["hash"] for source in sources}
     rules = session.scalars(
         select(AgentMemoryForgetRule).where(
@@ -229,8 +230,7 @@ def blocked_extraction(session, owner, scope_type, scope_key, kind, key, sources
         )
     ).all()
     return any(
-        (rule.scope_type, rule.scope_key, rule.kind, rule.memory_key)
-        == (scope_type, scope_key, kind, key)
+        (rule.kind, rule.memory_key) == (kind, key)
         or fingerprints.intersection(rule.source_fingerprints)
         for rule in rules
     )
@@ -247,29 +247,17 @@ def create_memory_locked(
     sources=(),
     clarifications=None,
 ):
-    scope_key = (
-        "user"
-        if values.scope_type == "user"
-        else str(
-            values.conversation_id if values.scope_type == "conversation" else values.project_id
-        )
-    )
-    checked_scope(
-        session, owner, values.conversation_id, (values.project_id,) if values.project_id else ()
-    )
     existing = session.scalar(
         select(AgentMemoryItem)
         .where(
             AgentMemoryItem.owner_user_id == owner,
-            AgentMemoryItem.scope_type == values.scope_type,
-            AgentMemoryItem.scope_key == scope_key,
             AgentMemoryItem.kind == values.kind,
             AgentMemoryItem.memory_key == values.memory_key,
         )
         .with_for_update()
     )
     if origin == "extracted" and blocked_extraction(
-        session, owner, values.scope_type, scope_key, values.kind, values.memory_key, sources
+        session, owner, values.kind, values.memory_key, sources
     ):
         return None
     if existing:
@@ -288,26 +276,18 @@ def create_memory_locked(
                     )
                 return None
             prior = source_values(AgentMemoryDAO(session).sources(existing))
-            identities = {(source["conversation_id"], source["seq"]) for source in prior}
-            additions = [
-                source
-                for source in sources
-                if (source["conversation_id"], source["seq"]) not in identities
-            ]
+            identities = {source["hash"] for source in prior}
+            additions = [source for source in sources if source["hash"] not in identities]
             if additions:
                 existing.content_version += 1
                 existing.updated_at = utcnow()
                 append_revision(session, existing, "extract", [*prior, *additions])
             return existing
-        raise Conflict("此范围已有同一记忆，请编辑原条目；遗忘条目需明确恢复")
+        raise Conflict("已有同一记忆，请编辑原条目；遗忘条目需明确恢复")
     now = utcnow()
     row = AgentMemoryItem(
         id=next_id(),
         owner_user_id=owner,
-        scope_type=values.scope_type,
-        scope_key=scope_key,
-        conversation_id=values.conversation_id,
-        project_id=values.project_id,
         kind=values.kind,
         memory_key=values.memory_key,
         title=values.title,
@@ -333,28 +313,7 @@ def create_memory_locked(
     return row
 
 
-def invalidate_source_summaries(session, sources):
-    identifiers = {source.conversation_id for source in sources}
-    for identifier in sorted(identifiers):
-        conversation = session.scalar(
-            select(AgentConversation).where(AgentConversation.id == identifier).with_for_update()
-        )
-        if conversation is None:
-            continue
-        conversation.active_summary_id = None
-        conversation.summary_covers_until_seq = 0
-        conversation.summary_generation += 1
-        for summary in session.scalars(
-            select(AgentConversationSummary).where(
-                AgentConversationSummary.conversation_id == identifier,
-                AgentConversationSummary.status.in_(("active", "ready")),
-            )
-        ).all():
-            summary.status = "invalidated"
-    return identifiers
-
-
-def invalidate_memory_runs(session, row, source_conversations=()):
+def invalidate_memory_runs(session, owner: int):
     latest_attempt = (
         select(func.max(AgentRun.id))
         .where(AgentRun.task_id == AgentTask.id)
@@ -365,7 +324,7 @@ def invalidate_memory_runs(session, row, source_conversations=()):
         select(AgentRun, AgentTask)
         .join(AgentTask, AgentTask.id == AgentRun.task_id)
         .where(
-            AgentRun.initiated_by == row.owner_user_id,
+            AgentRun.initiated_by == owner,
             or_(
                 AgentRun.status.in_(("queued", "running", "waiting_generation", "waiting_input")),
                 # A paused Harness can receive a normal continuation message.
@@ -377,20 +336,11 @@ def invalidate_memory_runs(session, row, source_conversations=()):
         )
         .with_for_update()
     ).all()
-    for run, task in runs:
-        affected = (
-            run.conversation_id in source_conversations
-            or row.scope_type == "user"
-            or row.scope_type == "conversation"
-            and run.conversation_id == row.conversation_id
-            or row.scope_type == "project"
-            and str(row.project_id) in task.memory_project_ids
-        )
-        if affected:
-            checkpoint = dict(run.checkpoint or {})
-            checkpoint["memory_epoch"] = checkpoint.get("memory_epoch", 0) + 1
-            checkpoint["memory_invalidated"] = True
-            run.checkpoint = checkpoint
+    for run, _task in runs:
+        checkpoint = dict(run.checkpoint or {})
+        checkpoint["memory_epoch"] = checkpoint.get("memory_epoch", 0) + 1
+        checkpoint["memory_invalidated"] = True
+        run.checkpoint = checkpoint
 
 
 def forget_memory_locked(session, row, *, change="forget"):
@@ -410,8 +360,6 @@ def forget_memory_locked(session, row, *, change="forget"):
             id=next_id(),
             memory_id=row.id,
             owner_user_id=row.owner_user_id,
-            scope_type=row.scope_type,
-            scope_key=row.scope_key,
             kind=row.kind,
             memory_key=row.memory_key,
             forget_version=row.content_version,
@@ -427,7 +375,7 @@ def forget_memory_locked(session, row, *, change="forget"):
         set(rule.source_fingerprints) | {source.source_hash for source in sources}
     )
     append_revision(session, row, change, source_values(sources))
-    invalidate_memory_runs(session, row, invalidate_source_summaries(session, sources))
+    invalidate_memory_runs(session, row.owner_user_id)
 
 
 def apply_memory_command_locked(session, row, action, content, new_sources):
@@ -439,12 +387,8 @@ def apply_memory_command_locked(session, row, action, content, new_sources):
         return
     sources = AgentMemoryDAO(session).sources(row)
     values = source_values(sources)
-    identities = {(source["conversation_id"], source["seq"]) for source in values}
-    values.extend(
-        source
-        for source in new_sources
-        if (source["conversation_id"], source["seq"]) not in identities
-    )
+    identities = {source["hash"] for source in values}
+    values.extend(source for source in new_sources if source["hash"] not in identities)
     if action == "update":
         if row.state != "active":
             raise Conflict("请先明确重新记住原条目，再修改内容")
@@ -469,78 +413,10 @@ def apply_memory_command_locked(session, row, action, content, new_sources):
     row.search_text = search_text(row)
     append_revision(session, row, "edit" if action == "update" else "restore", values)
     session.flush()
-    invalidate_memory_runs(
-        session, row, invalidate_source_summaries(session, AgentMemoryDAO(session).sources(row))
-    )
+    invalidate_memory_runs(session, row.owner_user_id)
 
 
-def deletion_memory_query(conversation):
-    related = (
-        select(AgentMemorySource.id)
-        .where(
-            AgentMemorySource.memory_id == AgentMemoryItem.id,
-            AgentMemorySource.content_version == AgentMemoryItem.content_version,
-            AgentMemorySource.conversation_id == conversation.id,
-        )
-        .exists()
-    )
-    return select(AgentMemoryItem).where(
-        AgentMemoryItem.owner_user_id == conversation.owner_user_id,
-        AgentMemoryItem.scope_type.in_(("user", "project")),
-        AgentMemoryItem.state == "active",
-        related,
-    )
-
-
-def deletion_memory_read(session, row, conversation):
-    reasons = []
-    if row.last_user_edit_at is not None and row.last_user_edit_at > row.created_at:
-        reasons.append("user_edited")
-    if any(
-        source.conversation_id != conversation.id for source in AgentMemoryDAO(session).sources(row)
-    ):
-        reasons.append("independent_sources")
-    return {
-        "id": str(row.id),
-        "content_version": str(row.content_version),
-        "scope_type": row.scope_type,
-        "project_id": str(row.project_id) if row.project_id else None,
-        "title": row.title,
-        "content_preview": row.content[:500],
-        "protection_reasons": reasons,
-    }
-
-
-def prepare_deletion_memory_locked(session, conversation, selections):
-    # The caller locks the owner's conversations first, matching explicit memory edits.
-    selected = {int(item["id"]): int(item["content_version"]) for item in selections}
-    rows = (
-        session.scalars(
-            deletion_memory_query(conversation)
-            .where(AgentMemoryItem.id.in_(selected))
-            .order_by(AgentMemoryItem.id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        ).all()
-        if selected
-        else []
-    )
-    if {row.id for row in rows} != set(selected) or any(
-        row.content_version != selected[row.id] for row in rows
-    ):
-        raise Conflict("待清理记忆已变化，请重新预览并明确选择；对话尚未删除")
-    local = session.scalars(
-        select(AgentMemoryItem)
-        .where(
-            AgentMemoryItem.owner_user_id == conversation.owner_user_id,
-            AgentMemoryItem.conversation_id == conversation.id,
-            AgentMemoryItem.state == "active",
-        )
-        .order_by(AgentMemoryItem.id)
-        .with_for_update()
-    ).all()
-    for row in [*rows, *local]:
-        forget_memory_locked(session, row, change="invalidate")
+def prepare_deletion_memory_locked(session, conversation):
     conversation.active_summary_id = None
     conversation.summary_covers_until_seq = 0
     conversation.summary_generation += 1
@@ -582,7 +458,6 @@ def memory_catalog_locked(session, scope, *, offset=0, limit=30, token_budget=12
     for row in rows:
         item = {
             "id": str(row.id),
-            "scope_type": row.scope_type,
             "kind": row.kind,
             "title": row.title,
             "content_version": str(row.content_version),
@@ -657,7 +532,6 @@ def search_memory_locked(session, scope, query, *, limit=12):
             {
                 "id": str(row.id),
                 "title": row.title,
-                "scope_type": row.scope_type,
                 "kind": row.kind,
                 "content_version": str(row.content_version),
             }

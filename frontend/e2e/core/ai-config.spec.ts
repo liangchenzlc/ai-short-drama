@@ -1,596 +1,228 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { AiModelConfigDto, ModelConfigurationOptionsDto } from '../../src/types/ai-config/api';
+import type { AssistantSettings } from '../../src/types/assistant/api';
+import type { MemoryItem } from '../../src/types/assistant/settings/memory';
 import { fixture } from '../support/studio-fixture';
-import type { AiRuntimeProfileDto } from '../../src/types/ai-config/api';
 
-async function configsFixture(page: Page) {
+async function settingsFixture(page: Page) {
   const base = await fixture(page, true);
-  const config = {
-    id: '78', name: '剧本模型', model_key: 'fixture-text', service_type: 'text',
-    provider: '测试替身', base_url: 'https://fixture.invalid/v1', enabled: 1, is_default: 0,
-    is_deleted: 0, row_version: '9007199254740993', has_api_key: true,
-    has_secret_key: true, headers: [] as { name: string; has_value: boolean }[],
-    credential_source: 'manual', runtime_profile: null as AiRuntimeProfileDto | null,
+  const textOptions: ModelConfigurationOptionsDto = {
+    interfaces: [
+      { id: 'auto', label: '自动识别', api_format: 'auto', requires_secret_key: false },
+      { id: 'chat-completion', label: 'OpenAI Chat Completions', api_format: 'openai', requires_secret_key: false },
+      { id: 'openai-response', label: 'OpenAI Responses', api_format: 'openai', requires_secret_key: false },
+      { id: 'claude-messages', label: 'Claude Messages', api_format: 'claude', requires_secret_key: false },
+    ],
+    providers: [{ id: 'openai', label: 'OpenAI', base_url: 'https://api.openai.com/v1', interface_type: 'chat-completion' }], models: [],
   };
-  const state = { config, creates: 0, updates: [] as Record<string, unknown>[], defaults: [] as Record<string, unknown>[], defaultFailures: 0, updateConflicts: 0 };
-  const assistant = { value: { custom_instructions: null as string | null, default_instructions: '系统默认指令', model_call_limit: 100, output_token_limit: 1000000, subagent_max_concurrency: 3, default_media_limits: { images: null, videos: 0, audio: 2 }, settings_version: '9007199254740993', deployment_limits: { model_call_limit: 2000, output_token_limit: 20000000, subagent_max_concurrency: 3 } }, patches: [] as Record<string, any>[], conflict: false };
-  const tokenState = { items: [] as Record<string, any>[], creates: [] as Record<string, any>[], deletions: [] as string[], deleteFailure: false };
-  await page.route('**/api/v1/assistant/settings', route => {
-    if (route.request().method() === 'GET') return route.fulfill({ json: assistant.value });
-    const body = route.request().postDataJSON(); assistant.patches.push(body);
-    if (assistant.conflict) { assistant.conflict = false; assistant.value.settings_version = String(BigInt(assistant.value.settings_version) + 1n); return route.fulfill({ status: 409, json: { error: { code: 'conflict' } } }); }
-    Object.assign(assistant.value, body, { settings_version: String(BigInt(assistant.value.settings_version) + 1n) });
-    return route.fulfill({ json: assistant.value });
-  });
-  await page.route('**/api/v1/account/mcp-tokens**', route => {
-    const request = route.request(), url = new URL(request.url());
-    if (url.pathname.endsWith('/options')) return route.fulfill({ json: { projects: [{ id: '10', name: '测试作品' }], tools: [{ name: 'workbench__read_project', description: '读取测试作品', modes: ['standard'], mutating: false }] } });
-    if (request.method() === 'GET') return route.fulfill({ json: tokenState.items });
-    if (request.method() === 'POST') { const body = request.postDataJSON(); tokenState.creates.push(body); const token = { ...body, id: String(301 + tokenState.items.length), token_hint: 'sdmcp_…abcd', created_at: '2026-10-29T00:00:00Z' }; tokenState.items.push(token); return route.fulfill({ status: 201, json: { ...token, secret: 'fixture-once-secret' } }); }
-    const id = url.pathname.split('/').at(-1)!; tokenState.deletions.push(id);
-    if (tokenState.deleteFailure) { tokenState.deleteFailure = false; return route.fulfill({ status: 403, json: { error: { code: 'permission_denied' } } }); }
-    tokenState.items = tokenState.items.filter(item => item.id !== id); return route.fulfill({ status: 204 });
-  });
-  function apply(body: Record<string, unknown>) {
-    const { apikey, secret_key, headers, ...publicFields } = body;
-    Object.assign(state.config, publicFields);
-    if (apikey !== undefined) state.config.has_api_key = apikey !== null;
-    if (secret_key !== undefined) state.config.has_secret_key = secret_key !== null;
-    if (Array.isArray(headers)) state.config.headers = headers.map(item => ({ name: item.name, has_value: true }));
-  }
-  await page.route('**/api/v1/ai-model-configs**', async route => {
-    const request = route.request();
-    const url = new URL(request.url());
-    const path = url.pathname.slice('/api/v1'.length);
-    const body = request.postDataJSON() ?? {};
-    const reply = (json: unknown, status = 200) => route.fulfill({ json, status });
-    if (path === '/ai-model-configs' && request.method() === 'GET') return reply({ items: [state.config], total: 1, offset: 0, limit: 20 });
-    if (path === '/ai-model-configs' && request.method() === 'POST') {
-      state.creates += 1;
-      apply(body); state.config.row_version = '9007199254740994';
-      return reply(state.config, 201);
-    }
-    if (path === '/ai-model-configs/78' && request.method() === 'GET') return reply(state.config);
-    if (path === '/ai-model-configs/78' && request.method() === 'PATCH') {
-      state.updates.push(body);
-      if (state.updateConflicts > 0) { state.updateConflicts -= 1; return reply({ error: { code: 'CONFIG_VERSION_CONFLICT' } }, 409); }
-      const nextVersion = String(BigInt(state.config.row_version) + 1n);
-      apply(body); state.config.row_version = nextVersion;
-      if (!state.config.enabled) state.config.is_default = 0;
-      return reply(state.config);
-    }
-    if (path === '/ai-model-configs/78/default') {
-      state.defaults.push(body);
-      if (state.defaultFailures > 0) {
-        state.defaultFailures -= 1;
-        return reply({ error: { code: 'TEST_OFFLINE' } }, 503);
-      }
-      state.config.is_default = 1;
-      state.config.row_version = String(BigInt(state.config.row_version) + 1n);
-      return reply(state.config);
-    }
-    return route.fallback();
-  });
-  return { ...base, state, assistant, tokenState };
-}
-
-const runtimeProfile: AiRuntimeProfileDto = {
-  version: 1, api_format: 'openai', protocol: 'chat-completion',
-  reference_asset_origin: 'https://assets.fixture.invalid',
-  capability_config: { supportsThinking: true, maxOutputTokens: 4096 },
-  default_options: { temperature: 0.35 },
-  logical_capability_spec: { mode: 'text', input: { text: true } },
-  logical_capability_profiles: [{ model: 'fixture-text', capability: 'text', protocol: 'chat-completion' }],
-  video_capabilities_version: 'fixture-v1', concurrency_limit: 2,
-};
-
-test('Task11 runtime settings retain conflict drafts, refresh version and preserve null versus zero', async ({ page }, info) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  const data = await generationPolicyFixture(page); data.assistant.conflict = true;
-  await page.goto('/ai_config'); await page.getByRole('tab', { name: '创作助手', exact: true }).click();
-  const input = page.getByRole('textbox', { name: '自定义指令', exact: true }); await expect(input).toBeVisible(); await input.fill('保留的自定义指令🙂');
-  await page.getByRole('button', { name: '保存运行设置', exact: true }).click();
-  await expect(page.getByText('设置已在其他窗口变化，草稿已保留。请读取最新版本后核对并保存。', { exact: true })).toBeVisible();
-  await expect(input).toHaveValue('保留的自定义指令🙂');
-  await page.getByRole('button', { name: '读取最新版本', exact: true }).click(); await expect(input).toHaveValue('保留的自定义指令🙂');
-  await page.getByRole('button', { name: '保存运行设置', exact: true }).click();
-  await expect.poll(() => data.assistant.value.custom_instructions).toBe('保留的自定义指令🙂');
-  expect(data.assistant.patches[1].settings_version).toBe('9007199254740994'); expect(data.assistant.patches[1].default_media_limits).toEqual({ images: null, videos: 0, audio: 2 });
-  await page.getByRole('button', { name: '恢复默认指令', exact: true }).click(); await page.getByRole('button', { name: '保存运行设置', exact: true }).click();
-  await expect.poll(() => data.assistant.value.custom_instructions).toBeNull();
-  await input.fill('刷新读取也须保留'); await page.getByRole('button', { name: '读取最新版本', exact: true }).click(); await expect(input).toHaveValue('刷新读取也须保留');
-  for (const close of await page.getByRole('button', { name: '关闭提示', exact: true }).all()) await close.click();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: info.outputPath('task11-settings-desktop.png'), fullPage: true });
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('Task11 MCP token uses server scopes, one-time secret and confirmed delete with failure feedback', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  const data = await generationPolicyFixture(page);
-  data.tokenState.items.push({ id: '300', name: '过期令牌', token_hint: 'sdmcp_…old', project_ids: ['10'], tool_names: ['workbench__read_project'], expires_at: '2020-01-01T00:00:00Z', allowed_ips: [], created_at: '2019-01-01T00:00:00Z' });
-  await page.goto('/ai_config'); await page.getByRole('tab', { name: '创作助手', exact: true }).click();
-  await expect(page.getByRole('row').filter({ hasText: '过期令牌' })).toContainText('已过期');
-  await page.getByRole('button', { name: '创建令牌', exact: true }).click(); const form = page.getByRole('dialog', { name: '创建 MCP 令牌', exact: true });
-  await form.getByRole('textbox', { name: '令牌名称', exact: true }).fill('桌面客户端');
-  await form.getByRole('textbox', { name: 'IP / CIDR 白名单（可选）', exact: true }).fill('192.0.2.1\n192.0.2.0/24');
-  await form.getByRole('combobox', { name: '授权项目', exact: true }).click(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); await page.keyboard.press('Escape');
-  await form.getByRole('combobox', { name: '授权工具', exact: true }).click(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); await page.keyboard.press('Escape');
-  await form.getByRole('button', { name: '创建', exact: true }).click(); const secret = page.getByRole('dialog', { name: '保存 MCP 密钥', exact: true });
-  await expect(secret.getByLabel('一次性 MCP 密钥')).toHaveText('fixture-once-secret');
-  expect(data.tokenState.creates[0]).toEqual({ name: '桌面客户端', expires_at: null, allowed_ips: ['192.0.2.1', '192.0.2.0/24'], project_ids: ['10'], tool_names: ['workbench__read_project'] });
-  expect(await page.evaluate(() => Object.values(localStorage).join('').includes('fixture-once-secret'))).toBe(false);
-  await secret.getByRole('button', { name: '已保存，关闭', exact: true }).click(); await expect(page.getByText('fixture-once-secret', { exact: true })).toHaveCount(0);
-  await page.reload(); await page.getByRole('tab', { name: '创作助手', exact: true }).click(); await expect(page.getByText('fixture-once-secret', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: '删除 桌面客户端', exact: true }).click(); data.tokenState.deleteFailure = true;
-  const confirmation = page.getByRole('dialog', { name: '删除 MCP 令牌', exact: true }); await confirmation.getByRole('button', { name: '确认删除', exact: true }).click();
-  await expect(confirmation).toContainText('删除未确认'); await expect(page.getByRole('row').filter({ hasText: '桌面客户端' })).toHaveCount(1);
-  await confirmation.getByRole('button', { name: '确认删除', exact: true }).click(); await expect(confirmation).toHaveCount(0); await expect(page.getByRole('row').filter({ hasText: '桌面客户端' })).toHaveCount(0);
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('Task11 MCP waits for a list refresh before allowing deletion of its old rows', async ({ page }) => {
-  const data = await generationPolicyFixture(page);
-  data.tokenState.items.push({ id: '300', name: '列表读取中的令牌', token_hint: 'sdmcp_…old', project_ids: ['10'], tool_names: ['workbench__read_project'], expires_at: null, allowed_ips: [], created_at: '2026-10-29T00:00:00Z' });
-  await page.goto('/ai_config'); await page.getByRole('tab', { name: '创作助手', exact: true }).click();
-  const remove = page.getByRole('button', { name: '删除 列表读取中的令牌', exact: true }); await expect(remove).toBeEnabled();
-  let release!: () => void, started!: () => void;
-  const wait = new Promise<void>(resolve => { release = resolve; }); const requested = new Promise<void>(resolve => { started = resolve; });
-  await page.route('**/api/v1/account/mcp-tokens', async route => { started(); await wait; return route.fulfill({ json: data.tokenState.items }); });
-  await page.getByRole('button', { name: '读取令牌列表', exact: true }).click(); await requested;
-  try { await expect(remove).toBeDisabled(); } finally { release(); }
-  await expect(remove).toBeEnabled();
-  expect(data.tokenState.deletions).toHaveLength(0); expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-async function toolsFixture(page: Page) {
-  const data = await configsFixture(page);
+  const row: AiModelConfigDto = {
+    id: '78', service_type: 'text', name: '剧本模型', provider: 'openai', model_key: 'gpt-5',
+    base_url: 'https://api.openai.com/v1', enabled: 1, is_deleted: 0, is_default: 0,
+    row_version: '9007199254740993', has_api_key: true, has_secret_key: false,
+    headers: [], credential_source: 'manual', runtime_profile: { version: 1, api_format: 'openai', protocol: 'chat-completion', default_options: { temperature: 0 } },
+    interface_type: 'chat-completion', create_key: null, created_at: '2026-11-04T00:00:00Z', updated_at: '2026-11-04T00:00:00Z',
+  };
+  const value: AssistantSettings = { custom_instructions: null, default_instructions: '系统默认指令',
+    workbench_enabled: true, media_generation_enabled: true, long_term_memory_enabled: true, settings_version: '9007199254740993' };
   const state = {
-    calls: [] as string[], testKeys: [] as string[], testBodies: [] as Record<string, unknown>[],
-    testFailures: 0, modelTest: { id: 'test-78', status: 'queued', canCancel: true } as Record<string, unknown>,
-    discoveries: [] as Record<string, unknown>[],
+    rows: [row], value, updates: [] as Record<string, unknown>[], creates: [] as { key: string; body: Record<string, unknown> }[],
+    defaults: [] as Record<string, unknown>[], patches: [] as Record<string, unknown>[], discoveries: [] as Record<string, unknown>[],
+    loseCreate: false, loseTest: false, conflict: false, modelTests: [] as { key: string; body: Record<string, unknown> }[],
   };
-  await page.route('**/api/v1/canvas-runtime/**', async route => {
-    const request = route.request();
-    const path = new URL(request.url()).pathname.slice('/api/v1/canvas-runtime'.length);
-    state.calls.push(`${request.method()} ${path}`);
-    const reply = (json: unknown, status = 200) => route.fulfill({ json, status });
-    if (path === '/plugins/catalog') return reply({ providers: [{ id: 'chat-completion', name: 'OpenAI 聊天', enabled: true, categories: ['text'] }] });
-    if (path === '/ai/models') {
-      const body = request.postDataJSON(); state.discoveries.push(body);
-      if (body.apiKey === null) return reply({ error: { code: 'canvas_model_catalog_credential' } }, 422);
-      return reply({ models: [{ id: 'fixture-discovered' }] });
-    }
-    if (path === '/model-tests' && request.method() === 'POST') {
-      state.testKeys.push(request.headers()['idempotency-key']); state.testBodies.push(request.postDataJSON());
-      if (state.testFailures > 0) { state.testFailures -= 1; return reply({ error: { code: 'TEST_OFFLINE' } }, 503); }
-      return reply(state.modelTest, 201);
-    }
-    if (path === '/model-tests/test-78') return reply(state.modelTest);
-    if (path === '/model-tests/test-78/cancel') { state.modelTest = { id: 'test-78', status: 'cancelled', canCancel: false }; return reply(state.modelTest); }
-    return route.fallback();
-  });
-  return { ...data, tools: state };
-}
-
-test('AI settings use the new route, separate columns, and a single material navigation entry', async ({ page }) => {
-  const data = await configsFixture(page);
-  await page.goto('/ai');
-  await expect(page).toHaveURL(/\/ai_config$/);
-  await expect(page.getByRole('heading', { name: 'AI 配置', exact: true })).toBeVisible();
-  await expect(page.getByRole('columnheader', { name: '模型', exact: true })).toBeVisible();
-  await expect(page.getByRole('columnheader', { name: '服务地址', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '刷新列表', exact: true })).toHaveCount(0);
-  await expect(page.getByText('为每类选择一个默认模型，创作时自动选用。保存配置不会发起生成。', { exact: true })).toHaveCount(0);
-  const navigation = page.getByRole('navigation', { name: '主导航', exact: true });
-  await expect(navigation.getByRole('link', { name: '资产库', exact: true })).toHaveCount(1);
-  await expect(navigation.getByRole('link', { name: '素材库', exact: true })).toHaveCount(0);
-  for (const name of ['角色', '场景', '道具']) await expect(navigation.getByRole('link', { name, exact: true })).toHaveCount(0);
-  expect(data.errors).toEqual([]);
-  expect(data.unexpected).toEqual([]);
-});
-
-test('editing can set a default using the version returned by saving the configuration', async ({ page }) => {
-  const data = await configsFixture(page);
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '编辑文本模型', exact: true });
-  await form.getByRole('checkbox', { name: '设为默认配置', exact: true }).check();
-  await form.getByRole('textbox', { name: '配置名称', exact: true }).fill('新的剧本模型');
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form).toHaveCount(0);
-  await expect(page.getByText('默认模型', { exact: true })).toBeVisible();
-  expect(data.state.updates[0].row_version).toBe('9007199254740993');
-  expect(data.state.defaults).toEqual([{ row_version: '9007199254740994' }]);
-  expect(data.state.config.name).toBe('新的剧本模型');
-  expect(data.errors).toEqual([]);
-});
-
-test('a default failure preserves the saved identity and draft so retry never creates a duplicate', async ({ page }) => {
-  const data = await configsFixture(page);
-  data.state.defaultFailures = 1;
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '添加文本模型', exact: true }).click();
-  const form = page.getByRole('dialog', { name: /添加文本模型|编辑文本模型/ });
-  await form.getByRole('textbox', { name: '配置名称', exact: true }).fill('可重试的配置');
-  await form.getByRole('textbox', { name: '厂商名称', exact: true }).fill('测试替身');
-  await form.getByRole('combobox', { name: '模型标识', exact: true }).fill('fixture-text');
-  await form.getByRole('checkbox', { name: '设为默认配置', exact: true }).check();
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form.getByRole('alert')).toContainText('配置内容已保存，但设为默认配置未完成');
-  await expect(form.getByRole('textbox', { name: '配置名称', exact: true })).toHaveValue('可重试的配置');
-  await expect(form.getByRole('checkbox', { name: '设为默认配置', exact: true })).toBeChecked();
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form).toHaveCount(0);
-  expect(data.state.creates).toBe(1);
-  expect(data.state.updates[0].row_version).toBe('9007199254740994');
-  expect(data.state.defaults).toEqual([{ row_version: '9007199254740994' }, { row_version: '9007199254740995' }]);
-  expect(data.errors).toEqual([]);
-});
-
-test('a disabled configuration cannot be selected as default and disabling the current default clears it', async ({ page }) => {
-  const data = await configsFixture(page);
-  data.state.config.is_default = 1;
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '编辑文本模型', exact: true });
-  const defaultChoice = form.getByRole('checkbox', { name: '设为默认配置', exact: true });
-  await expect(defaultChoice).toBeChecked();
-  await expect(defaultChoice).toBeDisabled();
-  await form.getByRole('checkbox', { name: '启用此配置', exact: true }).uncheck();
-  await expect(defaultChoice).not.toBeChecked();
-  await expect(defaultChoice).toBeDisabled();
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form).toHaveCount(0);
-  expect(data.state.config.is_default).toBe(0);
-  expect(data.state.defaults).toEqual([]);
-  expect(data.errors).toEqual([]);
-});
-
-test('advanced editing retains every runtime field without exposing or resubmitting saved credentials', async ({ page }) => {
-  const data = await toolsFixture(page);
-  data.state.config.runtime_profile = structuredClone(runtimeProfile);
-  data.state.config.headers = [{ name: 'X-Workspace', has_value: true }];
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '编辑文本模型', exact: true });
-  await expect(form.getByLabel('API 密钥', { exact: true })).toHaveValue('');
-  await expect(form.getByLabel('Secret Key（第二密钥）', { exact: true })).toHaveValue('');
-  await form.locator('summary').filter({ hasText: /^自定义请求头/ }).click();
-  await expect(form.getByLabel('请求头 1 值', { exact: true })).toHaveValue('');
-  const advanced = form.locator('summary').filter({ hasText: /^高级配置/ });
-  await advanced.focus(); await page.keyboard.press('Enter');
-  await expect(form.getByLabel('请求协议', { exact: true })).toHaveValue('chat-completion');
-  await expect(form.getByLabel(/^默认参数 JSON/)).toHaveValue(JSON.stringify(runtimeProfile.default_options, null, 2));
-  await page.screenshot({ path: '.runtime/ai-config-runtime-desktop.png' });
-  await page.setViewportSize({ width: 1280, height: 844 });
-  await expect(form.getByLabel(/^逻辑能力配置集 JSON/)).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-  await page.screenshot({ path: '.runtime/ai-config-runtime-desktop-1280.png' });
-  await form.getByRole('textbox', { name: '配置名称', exact: true }).fill('完整保留的配置');
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form).toHaveCount(0);
-  expect(data.state.updates[0].runtime_profile).toEqual(runtimeProfile);
-  for (const key of ['apikey', 'secret_key', 'headers']) expect(data.state.updates[0]).not.toHaveProperty(key);
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('a persisted minimal runtime profile restores null optionals as empty fields and allows an unchanged-profile rename', async ({ page }) => {
-  const data = await toolsFixture(page);
-  data.state.config.runtime_profile = { version: 1, api_format: 'openai', protocol: 'chat-completion', reference_asset_origin: null, capability_config: null, default_options: { temperature: 0 }, logical_capability_spec: null, logical_capability_profiles: null, video_capabilities_version: null, concurrency_limit: null };
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '编辑文本模型', exact: true });
-  await form.locator('summary').filter({ hasText: /^高级配置/ }).click();
-  for (const label of ['参考资源源站', '能力配置 JSON', '逻辑能力规范 JSON', '逻辑能力配置集 JSON', '视频能力版本', '并发上限']) await expect(form.getByLabel(new RegExp(`^${label}`))).toHaveValue('');
-  await expect(form.getByLabel(/^默认参数 JSON/)).toHaveValue(JSON.stringify({ temperature: 0 }, null, 2));
-  await form.getByLabel('配置名称', { exact: true }).fill('重载后修改名称');
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form).toHaveCount(0);
-  expect(data.state.updates).toHaveLength(1);
-  expect(data.state.updates[0]).toMatchObject({ name: '重载后修改名称', runtime_profile: { version: 1, api_format: 'openai', protocol: 'chat-completion', default_options: { temperature: 0 } } });
-  for (const key of ['apikey', 'secret_key', 'headers']) expect(data.state.updates[0]).not.toHaveProperty(key);
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('invalid JSON never submits and a version conflict preserves advanced and secret drafts without automatic retry', async ({ page }) => {
-  const data = await toolsFixture(page);
-  data.state.config.runtime_profile = structuredClone(runtimeProfile);
-  data.state.updateConflicts = 1;
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '编辑文本模型', exact: true });
-  await form.locator('summary').filter({ hasText: /^高级配置/ }).click();
-  await form.getByLabel(/^默认参数 JSON/).fill('{broken');
-  await form.getByLabel('Secret Key（第二密钥）', { exact: true }).fill('fixture-only-secret-draft');
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form.getByRole('alert')).toContainText('不是有效 JSON');
-  expect(data.state.updates).toEqual([]);
-  await form.getByLabel(/^默认参数 JSON/).fill('{"temperature":0.6}');
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form.getByRole('alert')).toContainText('数据已被修改');
-  await expect(form.getByLabel(/^默认参数 JSON/)).toHaveValue('{"temperature":0.6}');
-  await expect(form.getByLabel('Secret Key（第二密钥）', { exact: true })).toHaveValue('fixture-only-secret-draft');
-  await expect(form.getByRole('button', { name: '保存配置', exact: true })).toBeDisabled();
-  expect(data.state.updates).toHaveLength(1);
-  await form.getByRole('button', { name: '取消', exact: true }).click();
-  await page.getByRole('dialog', { name: '未保存的修改', exact: true }).getByRole('button', { name: '取消', exact: true }).click();
-  await expect(form.getByLabel(/^默认参数 JSON/)).toHaveValue('{"temperature":0.6}');
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('clearing keys and deleting all headers uses explicit null and an empty list', async ({ page }) => {
-  const data = await toolsFixture(page);
-  data.state.config.headers = [{ name: 'X-Workspace', has_value: true }];
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '编辑文本模型', exact: true });
-  await form.getByRole('checkbox', { name: '清除已保存的密钥', exact: true }).check();
-  await form.getByRole('checkbox', { name: '清除已保存的第二密钥', exact: true }).check();
-  await form.locator('summary').filter({ hasText: /^自定义请求头/ }).click();
-  await form.getByRole('button', { name: '删除请求头 1', exact: true }).click();
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form).toHaveCount(0);
-  expect(data.state.updates[0]).toMatchObject({ apikey: null, secret_key: null, headers: [], runtime_profile: null });
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('returning to the independent canvas preserves the deep link and is disabled while editing', async ({ page }) => {
-  const data = await configsFixture(page);
-  const target = '/canvas-app/canvas/999900001111?panel=model%2Fdetail#node-fixture';
-  await page.route('**/canvas-app/canvas/**', route => route.fulfill({ contentType: 'text/html', body: '<main>画布入口测试替身</main>' }));
-  await page.goto(`/ai_config?return_to=${encodeURIComponent(target)}`);
-  const back = page.getByRole('button', { name: '返回画布', exact: true });
-  await expect(back).toBeEnabled();
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
-  await expect(back).toBeDisabled();
-  await page.getByRole('dialog', { name: '编辑文本模型', exact: true }).getByRole('button', { name: '取消', exact: true }).click();
-  await back.click();
-  await expect(page).toHaveURL(`http://127.0.0.1:4175${target}`);
-  for (const unsafeTarget of ['https://external.fixture.invalid', '/canvas-app/canvas/../settings', '/canvas-app/settings']) {
-    await page.goto(`/ai_config?return_to=${encodeURIComponent(unsafeTarget)}`);
-    await expect(page.getByRole('button', { name: '返回画布', exact: true })).toHaveCount(0);
-  }
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('unknown model-test admission reuses its original identity after closing and reports success only after a completed result', async ({ page }) => {
-  const data = await toolsFixture(page);
-  data.tools.testFailures = 1;
-  await page.goto('/ai_config');
-  const open = async () => {
-    await page.getByRole('button', { name: '更多操作：剧本模型', exact: true }).click();
-    await page.getByRole('menuitem', { name: '测试模型', exact: true }).click();
-  };
-  await open();
-  let dialog = page.getByRole('dialog', { name: '测试模型 · 剧本模型', exact: true });
-  await expect(dialog).toContainText('可能产生费用');
-  await dialog.getByRole('button', { name: '开始模型测试', exact: true }).click();
-  await expect(dialog).toContainText('受理结果尚未确认');
-  await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await open();
-  dialog = page.getByRole('dialog', { name: '测试模型 · 剧本模型', exact: true });
-  await dialog.getByRole('button', { name: '核对原测试', exact: true }).click();
-  await expect(dialog.getByRole('status')).toHaveText('排队中');
-  expect(data.tools.testKeys).toHaveLength(2);
-  expect(data.tools.testKeys[0]).toBe(data.tools.testKeys[1]);
-  expect(data.tools.testBodies[0]).toEqual(data.tools.testBodies[1]);
-  expect(data.tools.testBodies[0]).toMatchObject({ channel: { id: 'host-78', scope: 'system' } });
-  await expect(dialog).not.toContainText('模型已返回真实结果');
-  data.tools.modelTest = { id: 'test-78', status: 'succeeded', canCancel: false, result: { mode: 'text', text: 'OK，测试替身结果' } };
-  await expect(dialog.getByRole('status')).toHaveText('模型已返回真实结果');
-  await expect(dialog).toContainText('OK，测试替身结果');
-  expect(data.state.creates).toBe(0);
-  expect(data.requests.filter(item => item.method === 'POST' && item.path === '/projects')).toEqual([]);
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('a cancellable model test uses the server cancellation receipt', async ({ page }) => {
-  const data = await toolsFixture(page);
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '更多操作：剧本模型', exact: true }).click();
-  await page.getByRole('menuitem', { name: '测试模型', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '测试模型 · 剧本模型', exact: true });
-  await dialog.getByRole('button', { name: '开始模型测试', exact: true }).click();
-  await dialog.getByRole('button', { name: '取消测试任务', exact: true }).click();
-  await expect(dialog.getByRole('status')).toHaveText('测试已取消');
-  expect(data.tools.calls).toContain('POST /model-tests/test-78/cancel');
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-for (const advanced of [false, true]) {
-  test(`${advanced ? 'runtime' : 'ordinary'} discovery retains same-address header placeholders, rejects masked headers at a changed address, and clears keys explicitly`, async ({ page }) => {
-    const data = await toolsFixture(page);
-    data.state.config.runtime_profile = advanced ? structuredClone(runtimeProfile) : null;
-    data.state.config.headers = [{ name: 'X-Workspace', has_value: true }];
-    await page.goto('/ai_config');
-    await page.getByRole('button', { name: '编辑', exact: true }).click();
-    const form = page.getByRole('dialog', { name: '编辑文本模型', exact: true });
-    expect(data.tools.discoveries).toEqual([]);
-    await form.getByRole('button', { name: '获取模型', exact: true }).click();
-    await expect(form.getByRole('status')).toContainText('已获取 1 个模型');
-    expect(data.tools.discoveries[0]).toEqual({ baseUrl: 'https://fixture.invalid/v1', apiFormat: 'openai', channelId: 'host-78', credentialRef: 'host:78', headers: [{ name: 'X-Workspace', value: '' }] });
-    await form.getByRole('checkbox', { name: '清除已保存的密钥', exact: true }).check();
-    await form.getByRole('button', { name: '获取模型', exact: true }).click();
-    await expect.poll(() => data.tools.discoveries.length).toBe(2);
-    expect(data.tools.discoveries[1]).toMatchObject({ channelId: 'host-78', apiKey: null });
-    await expect(form.getByRole('alert')).toContainText('请填写有效的 API 密钥及请求头');
-    await form.getByRole('checkbox', { name: '清除已保存的密钥', exact: true }).uncheck();
-    await form.getByLabel('服务地址（Base URL）', { exact: true }).fill('https://new.fixture.invalid/v1');
-    await form.getByLabel('API 密钥', { exact: true }).fill('fixture-only-new-address-key');
-    await form.getByRole('button', { name: '获取模型', exact: true }).click();
-    await expect(form.getByRole('alert')).toContainText('服务地址已修改');
-    expect(data.tools.discoveries).toHaveLength(2);
-    await form.locator('summary').filter({ hasText: /^自定义请求头/ }).click();
-    await form.getByLabel('请求头 1 值', { exact: true }).fill('fixture-only-new-address-header');
-    await form.getByRole('button', { name: '获取模型', exact: true }).click();
-    await expect.poll(() => data.tools.discoveries.length).toBe(3);
-    expect(data.tools.discoveries[2]).toEqual({ baseUrl: 'https://new.fixture.invalid/v1', apiFormat: 'openai', apiKey: 'fixture-only-new-address-key', headers: [{ name: 'X-Workspace', value: 'fixture-only-new-address-header' }] });
-    expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-  });
-}
-
-test('ordinary discovery sends newly entered headers only after an explicit click and leaves the runtime disabled', async ({ page }) => {
-  const data = await toolsFixture(page);
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '添加文本模型', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '添加文本模型', exact: true });
-  await form.getByLabel('配置名称', { exact: true }).fill('带请求头的普通配置');
-  await form.getByLabel('厂商名称', { exact: true }).fill('测试替身');
-  await form.getByLabel('服务地址（Base URL）', { exact: true }).fill('https://new.fixture.invalid/v1');
-  await form.getByLabel('API 密钥', { exact: true }).fill('fixture-only-new-key');
-  await form.getByLabel('Secret Key（第二密钥）', { exact: true }).fill('fixture-only-second-key');
-  await form.locator('summary').filter({ hasText: /^自定义请求头/ }).click();
-  await form.getByRole('button', { name: '添加请求头', exact: true }).click();
-  await form.getByLabel('请求头 1 名称', { exact: true }).fill('X-Workspace');
-  await form.getByLabel('请求头 1 值', { exact: true }).fill('fixture-only-new-header');
-  expect(data.tools.discoveries).toEqual([]);
-  await form.getByRole('button', { name: '获取模型', exact: true }).click();
-  await expect(form.getByRole('status')).toContainText('已获取 1 个模型');
-  expect(data.tools.discoveries).toEqual([{ baseUrl: 'https://new.fixture.invalid/v1', apiFormat: 'openai', apiKey: 'fixture-only-new-key', headers: [{ name: 'X-Workspace', value: 'fixture-only-new-header' }] }]);
-  expect(data.requests.filter(item => item.path === '/ai-model-configs/discover-models')).toEqual([]);
-  await form.getByRole('combobox', { name: '模型标识', exact: true }).fill('fixture-manual');
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form).toHaveCount(0);
-  expect(data.state.config.runtime_profile).toBeNull();
-  expect(data.state.creates).toBe(1);
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('ordinary discovery deleting every saved header submits an empty list and never restores the deleted headers', async ({ page }) => {
-  const data = await toolsFixture(page);
-  data.state.config.headers = [{ name: 'X-Workspace', has_value: true }];
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '编辑文本模型', exact: true });
-  await form.locator('summary').filter({ hasText: /^自定义请求头/ }).click();
-  await form.getByRole('button', { name: '删除请求头 1', exact: true }).click();
-  await form.getByRole('button', { name: '获取模型', exact: true }).click();
-  await expect(form.getByRole('status')).toContainText('已获取 1 个模型');
-  expect(data.tools.discoveries).toEqual([{ baseUrl: 'https://fixture.invalid/v1', apiFormat: 'openai', channelId: 'host-78', credentialRef: 'host:78', headers: [] }]);
-  expect(data.requests.filter(item => item.path === '/ai-model-configs/discover-models')).toEqual([]);
-  await form.getByRole('combobox', { name: '模型标识', exact: true }).fill('fixture-manual');
-  await form.getByRole('button', { name: '保存配置', exact: true }).click();
-  await expect(form).toHaveCount(0);
-  expect(data.state.updates[0].model_key).toBe('fixture-manual');
-  expect(data.state.updates[0].headers).toEqual([]);
-  expect(data.state.updates[0].runtime_profile).toBeNull();
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-test('catalog errors use fixed public feedback without reflecting supplier credentials or raw messages', async ({ page }) => {
-  const data = await toolsFixture(page);
-  data.state.config.runtime_profile = structuredClone(runtimeProfile);
-  await page.route('**/api/v1/canvas-runtime/ai/models', route => route.fulfill({ status: 422, json: { error: { code: 'canvas_model_catalog_format', message: 'fixture-sensitive-message-that-must-not-render' } } }));
-  await page.goto('/ai_config');
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
-  const form = page.getByRole('dialog', { name: '编辑文本模型', exact: true });
-  await form.getByRole('button', { name: '获取模型', exact: true }).click();
-  await expect(form.getByRole('alert')).toContainText('该协议不支持读取模型目录');
-  await expect(page.locator('body')).not.toContainText('fixture-sensitive-message-that-must-not-render');
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
-
-async function generationPolicyFixture(page: Page) {
-  const data = await configsFixture(page);
-  const policy = { media_generation_enabled: true, policy_version: '9007199254740993', configured_media: ['image'], available_media: [] };
-  const state = { policy, reads: 0, patches: [] as Record<string, unknown>[], conflicts: 0, loseReply: false, readFailures: 0 };
-  await page.route('**/api/v1/assistant/generation-policy', async route => {
-    if (route.request().method() === 'GET') {
-      state.reads += 1;
-      if (state.readFailures > 0) { state.readFailures -= 1; return route.fulfill({ status: 503, json: { error: { code: 'database_unavailable' } } }); }
-      return route.fulfill({ json: state.policy });
-    }
+  await page.route('**/api/v1/assistant/settings', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: state.value });
     const body = route.request().postDataJSON(); state.patches.push(body);
-    if (state.conflicts > 0) {
-      state.conflicts -= 1;
-      state.policy.policy_version = String(BigInt(state.policy.policy_version) + 1n);
-      return route.fulfill({ status: 409, json: { error: { code: 'conflict' } } });
+    if (state.conflict) {
+      state.conflict = false; state.value.custom_instructions = '另一个窗口的指令';
+      state.value.settings_version = String(BigInt(state.value.settings_version) + 1n);
+      return route.fulfill({ status: 409, json: { error: { code: 'conflict', message: '设置版本冲突' } } });
     }
-    expect(body.policy_version).toBe(state.policy.policy_version);
-    state.policy.media_generation_enabled = body.media_generation_enabled;
-    state.policy.policy_version = String(BigInt(state.policy.policy_version) + 1n);
-    if (state.loseReply) { state.loseReply = false; return route.abort('failed'); }
-    return route.fulfill({ json: state.policy });
+    Object.assign(state.value, body, { settings_version: String(BigInt(state.value.settings_version) + 1n) });
+    return route.fulfill({ json: state.value });
   });
-  return { ...data, policy: state };
+  await page.route('**/api/v1/ai-model-configs**', route => {
+    const request = route.request(), url = new URL(request.url());
+    const body: Record<string, unknown> = request.postDataJSON() ?? {};
+    if (url.pathname.endsWith('/options')) return route.fulfill({ json: textOptions });
+    if (url.pathname.endsWith('/discover-models')) { state.discoveries.push(body); return route.fulfill({ json: { items: [{ id: 'gpt-5' }, { id: 'gpt-5-mini' }], truncated: false, status: 'available', source: 'provider' } }); }
+    if (url.pathname.endsWith('/default')) {
+      state.defaults.push(body); row.is_default = 1; row.row_version = String(BigInt(row.row_version) + 1n);
+      return route.fulfill({ json: row });
+    }
+    if (request.method() === 'PATCH') {
+      state.updates.push(body); Object.assign(row, body, { row_version: String(BigInt(row.row_version) + 1n) });
+      if ('apikey' in body) row.has_api_key = body.apikey !== null;
+      return route.fulfill({ json: row });
+    }
+    if (request.method() === 'POST') {
+      const key = request.headers()['idempotency-key']; state.creates.push({ key, body });
+      const created = { ...row, ...body, id: '79', create_key: key } as AiModelConfigDto;
+      state.rows.push(created);
+      return state.loseCreate ? route.abort('failed') : route.fulfill({ status: 201, json: created });
+    }
+    if (url.pathname.endsWith('/78')) return route.fulfill({ json: row });
+    const key = url.searchParams.get('create_key'), type = url.searchParams.get('service_type');
+    const rows = state.rows.filter(item => (!key || item.create_key === key) && (!type || item.service_type === type));
+    return route.fulfill({ json: { items: rows, total: rows.length, offset: 0, limit: 20 } });
+  });
+  await page.route('**/api/v1/canvas-runtime/model-tests', route => {
+    state.modelTests.push({ key: route.request().headers()['idempotency-key'], body: route.request().postDataJSON() });
+    if (state.loseTest) { state.loseTest = false; return route.abort('failed'); }
+    return route.fulfill({ status: 202, json: { id: '501', status: 'succeeded', canCancel: false, result: { text: 'OK' } } });
+  });
+  return { ...base, state };
 }
 
-for (const width of [1440, 1280]) test(`assistant media switch saves its own version and restores a disabled preference at ${width}px`, async ({ page }, info) => {
-  await page.setViewportSize({ width, height: 960 });
-  const data = await generationPolicyFixture(page);
-  await page.goto('/ai_config');
-  await expect(page.getByRole('tab', { name: '文本模型', exact: true })).toBeVisible();
-  expect(data.policy.reads).toBe(0);
-  await page.getByRole('tab', { name: '文本模型', exact: true }).focus();
-  await page.keyboard.press('End');
-  const panel = page.getByRole('tabpanel', { name: '创作助手', exact: true });
-  const toggle = panel.getByRole('switch', { name: '允许生成图片、视频、音频', exact: true });
-  await expect(toggle).toBeChecked(); await expect(toggle).toBeEnabled();
-  await toggle.focus(); await page.keyboard.press('Space');
-  await expect(panel.getByText('选择尚未保存', { exact: true })).toBeVisible();
-  await page.getByRole('tab', { name: '文本模型', exact: true }).click();
-  await page.getByRole('tab', { name: '创作助手', exact: true }).click();
-  await expect(toggle).not.toBeChecked();
-  await panel.getByRole('button', { name: '保存设置', exact: true }).click();
-  await expect(panel.getByText('当前已保存：关闭生成', { exact: true })).toBeVisible();
-  expect(data.policy.patches).toEqual([{ media_generation_enabled: false, policy_version: '9007199254740993' }]);
-  expect(data.state.updates).toEqual([]);
-  await page.reload();
-  await page.getByRole('tab', { name: '创作助手', exact: true }).click();
-  await expect(toggle).not.toBeChecked(); await expect(toggle).toBeEnabled();
-  await expect(panel.getByRole('button', { name: '保存设置', exact: true })).toBeDisabled();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
-  await page.screenshot({ path: info.outputPath(`assistant-policy-${width}.png`), fullPage: true });
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+for (const width of [1280, 1440]) test(`配置在工作台壳内展示，原位获取模型且编辑测试使用图标 ${width}px`, async ({ page }, info) => {
+  await page.setViewportSize({ width, height: 900 });
+  const { state, errors } = await settingsFixture(page);
+  await page.goto('/settings/models/text');
+  await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '配置导航' })).toBeVisible();
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '编辑模型：剧本模型' })).toBeVisible();
+  await page.getByRole('button', { name: '新增文本模型' }).click();
+  const dialog = page.getByRole('dialog', { name: '新增文本模型' });
+  await dialog.getByLabel('服务商', { exact: true }).selectOption('openai');
+  await expect(dialog.getByLabel('接口类型')).toHaveValue('chat-completion');
+  await expect(dialog.getByLabel('接口类型').locator('option')).toHaveCount(4);
+  const model = dialog.getByRole('combobox', { name: '模型标识' }); await model.fill('手填模型');
+  await dialog.getByRole('button', { name: '获取模型', exact: true }).click();
+  await dialog.getByText('gpt-5-mini', { exact: true }).click();
+  await expect(model).toHaveValue('gpt-5-mini');
+  await expect(dialog.getByRole('combobox', { name: '模型标识' })).toHaveCount(1);
+  const address = dialog.getByLabel('服务地址'); await address.focus();
+  expect(await address.evaluate(element => getComputedStyle(element).outlineStyle)).toBe('none');
+  expect(await address.evaluate(element => getComputedStyle(element).boxShadow)).toBe('none');
+  await page.screenshot({ path: info.outputPath(`model-dialog-${width}.png`) });
+  await model.focus(); await model.press('Escape');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('.ant-select-open')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: '未保存的修改' }).getByRole('button', { name: '放弃修改' }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(state.discoveries[0]).toMatchObject({ service_type: 'text', interface_type: 'chat-completion' });
+  expect(errors).toEqual([]);
 });
 
-test('assistant media switch keeps the chosen value on conflict and requires an explicit version review', async ({ page }) => {
-  const data = await generationPolicyFixture(page); data.policy.conflicts = 1;
-  await page.goto('/ai_config');
-  await page.getByRole('tab', { name: '创作助手', exact: true }).click();
-  const panel = page.getByRole('tabpanel', { name: '创作助手', exact: true });
-  const toggle = panel.getByRole('switch');
-  await expect(toggle).toBeEnabled(); await toggle.click();
-  await panel.getByRole('button', { name: '保存设置', exact: true }).click();
-  await expect(panel.getByText('设置已在其他窗口变化。你的选择已保留，请读取最新状态后核对。', { exact: true })).toBeVisible();
-  await expect(toggle).not.toBeChecked(); await expect(toggle).toBeDisabled();
-  await expect(panel.getByRole('button', { name: '保存设置', exact: true })).toBeDisabled();
-  await expect(panel.getByRole('button', { name: '保存设置', exact: true })).toHaveAttribute('aria-busy', 'false');
-  expect(data.policy.patches).toHaveLength(1);
-  await panel.getByRole('button', { name: '读取最新状态', exact: true }).click();
-  await expect(toggle).toBeEnabled(); await expect(toggle).not.toBeChecked();
-  await expect(panel.getByText('选择尚未保存', { exact: true })).toBeVisible();
-  expect(data.policy.patches).toHaveLength(1);
-  await panel.getByRole('button', { name: '保存设置', exact: true }).click();
-  await expect(panel.getByText('当前已保存：关闭生成', { exact: true })).toBeVisible();
-  expect(data.policy.patches[1]).toEqual({ media_generation_enabled: false, policy_version: '9007199254740994' });
-  data.policy.policy.media_generation_enabled = true;
-  data.policy.policy.policy_version = '9007199254740996';
-  await panel.getByRole('button', { name: '读取最新状态', exact: true }).click();
-  await expect(toggle).toBeChecked();
-  await expect(panel.getByRole('button', { name: '保存设置', exact: true })).toBeDisabled();
-  expect(data.policy.patches).toHaveLength(2);
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+test('直接删除遮罩密钥，改名保留隐藏参数，默认操作使用新版本', async ({ page }) => {
+  const { state } = await settingsFixture(page); await page.goto('/settings/models/text');
+  await page.getByRole('button', { name: '编辑模型：剧本模型' }).click();
+  const dialog = page.getByRole('dialog', { name: '编辑文本模型' });
+  await dialog.getByLabel('显示名称').fill('新模型');
+  await dialog.getByLabel('API 密钥', { exact: true }).press('Backspace');
+  await dialog.getByRole('switch', { name: '设为默认' }).click();
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(state.updates[0]).toMatchObject({ apikey: null, name: '新模型' });
+  expect(state.updates[0]).not.toHaveProperty('interface_type');
+  expect(state.updates[0]).not.toHaveProperty('runtime_profile');
+  expect(state.defaults[0].row_version).toBe('9007199254740994');
+  await page.getByRole('button', { name: '编辑模型：新模型' }).click();
+  await expect(dialog.getByRole('switch', { name: '设为默认' })).toBeChecked();
+  await expect(dialog.getByRole('switch', { name: '设为默认' })).toBeDisabled();
 });
 
-test('assistant media settings recover a failed read and a lost save reply by reading, without an automatic resubmit', async ({ page }) => {
-  const data = await generationPolicyFixture(page); data.policy.readFailures = 1;
-  await page.goto('/ai_config');
-  await page.getByRole('tab', { name: '创作助手', exact: true }).click();
-  const panel = page.getByRole('tabpanel', { name: '创作助手', exact: true });
-  const toggle = panel.getByRole('switch');
-  await expect(panel.getByRole('alert')).toContainText('读取助手生成设置失败');
-  await expect(toggle).toBeDisabled(); expect(data.policy.patches).toHaveLength(0);
-  await panel.getByRole('button', { name: '读取最新状态', exact: true }).click();
-  await expect(toggle).toBeEnabled(); await toggle.click();
-  data.policy.loseReply = true;
-  await panel.getByRole('button', { name: '保存设置', exact: true }).click();
-  await expect(panel.getByText('保存结果待核对。你的选择已保留，请读取最新状态。', { exact: true })).toBeVisible();
-  await expect(toggle).not.toBeChecked(); await expect(toggle).toBeDisabled();
-  await panel.getByRole('button', { name: '读取最新状态', exact: true }).click();
-  await expect(panel.getByText('当前已保存：关闭生成', { exact: true })).toBeVisible();
-  await expect(toggle).toBeEnabled();
-  expect(data.policy.patches).toHaveLength(1);
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+test('创建响应丢失按原create_key核对，模型测试沿原身份核对', async ({ page }) => {
+  const { state } = await settingsFixture(page); state.loseCreate = true;
+  await page.goto('/settings/models/text'); await page.getByRole('button', { name: '新增文本模型' }).click();
+  const dialog = page.getByRole('dialog', { name: '新增文本模型' });
+  await dialog.getByLabel('服务商', { exact: true }).selectOption('openai');
+  await dialog.getByRole('combobox', { name: '模型标识' }).fill('gpt-5-mini');
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await dialog.getByRole('button', { name: '核对保存结果', exact: true }).click();
+  await expect(dialog).not.toBeVisible(); expect(state.creates).toHaveLength(1);
+  state.loseTest = true; await page.getByRole('button', { name: '测试模型：剧本模型', exact: true }).first().click();
+  await page.getByRole('button', { name: '开始模型测试' }).click();
+  await page.getByRole('button', { name: '核对原测试' }).click();
+  await expect(page.getByText('OK', { exact: true })).toBeVisible();
+  expect(state.modelTests).toHaveLength(2);
+  expect(state.modelTests[0].key).toBe(state.modelTests[1].key);
+  expect(state.modelTests[0].body).toMatchObject({ config_id: '78' });
+  expect(state.modelTests[0].body).not.toHaveProperty('channel');
+});
+
+test('助手父子开关和指令跨页静默自动保存，仅提交改动字段', async ({ page }) => {
+  const { state } = await settingsFixture(page); await page.goto('/settings/assistant/general');
+  await page.getByRole('switch', { name: '工作台操作', exact: true }).click();
+  await expect(page.getByRole('switch', { name: '允许生成图片、视频、音频' })).toHaveCount(0);
+  await expect.poll(() => state.patches.length).toBe(1);
+  expect(state.patches[0]).toEqual({ settings_version: '9007199254740993', workbench_enabled: false });
+  await page.getByRole('link', { name: '个性化指令', exact: true }).click();
+  await page.getByRole('textbox').fill('对白保持简短');
+  await page.getByRole('link', { name: '长期记忆', exact: true }).click();
+  await expect.poll(() => state.value.custom_instructions).toBe('对白保持简短');
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '长期记忆', exact: true })).toHaveCount(0);
+  expect(state.patches[1]).not.toHaveProperty('workbench_enabled');
+});
+
+test('指令冲突保留输入且关闭核对不自动选择', async ({ page }) => {
+  const { state } = await settingsFixture(page); state.conflict = true;
+  await page.goto('/settings/assistant/instructions');
+  const input = page.getByRole('textbox'); await input.fill('我的创作偏好');
+  const review = page.getByRole('dialog', { name: '核对设置变更' }); await expect(review).toBeVisible();
+  await review.getByRole('button', { name: '关闭弹窗' }).click();
+  await expect(input).toHaveValue('我的创作偏好'); expect(state.patches).toHaveLength(1);
+  await page.getByRole('button', { name: /提示详情/ }).click();
+  await page.getByRole('button', { name: '核对变更', exact: true }).click();
+  await review.getByRole('button', { name: '保留我的输入' }).click();
+  await expect.poll(() => state.patches.length).toBe(2);
+  expect(state.patches[1]).toMatchObject({ settings_version: '9007199254740994', custom_instructions: '我的创作偏好' });
+});
+
+test('账号记忆自动保存，关闭重开保留失败草稿，删除使用当前版本', async ({ page }) => {
+  await settingsFixture(page);
+  const item: MemoryItem = {
+    id: '801', kind: 'preference', memory_key: 'dialogue-style', title: '对白偏好', content: '对白保持简短',
+    aliases: [], tags: [], pinned: false, state: 'active', origin: 'explicit', content_version: '9007199254740993',
+    created_at: '2026-11-04T00:00:00Z', updated_at: '2026-11-04T00:00:00Z',
+  };
+  let failNext = false;
+  const writes: Record<string, unknown>[] = [];
+  await page.route('**/api/v1/assistant/memory**', route => {
+    const request = route.request();
+    const body = request.postDataJSON() ?? {};
+    if (request.method() === 'PATCH') {
+      writes.push(body);
+      if (failNext) {
+        failNext = false;
+        return route.fulfill({ status: 503, json: { error: { code: 'unavailable', message: '暂时无法同步' } } });
+      }
+      Object.assign(item, body, { content_version: String(BigInt(item.content_version) + 1n) });
+    }
+    if (request.method() === 'DELETE') {
+      expect(body).toEqual({ content_version: item.content_version });
+      item.state = 'forgotten';
+    }
+    return route.fulfill({ json: new URL(request.url()).pathname.endsWith('/801') ? item : {
+      items: item.state === 'active' ? [item] : [], total: item.state === 'active' ? 1 : 0, offset: 0, limit: 20,
+    } });
+  });
+  await page.goto('/settings/assistant/memory');
+  await page.getByRole('button', { name: '管理记忆', exact: true }).click();
+  await page.getByRole('button', { name: '编辑记忆：对白偏好', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: '编辑记忆', exact: true });
+  await editor.getByRole('textbox', { name: '记忆内容' }).fill('每句对白尽量不超过二十字');
+  await expect.poll(() => item.content).toBe('每句对白尽量不超过二十字');
+  expect(writes[0]).toMatchObject({ content_version: '9007199254740993' });
+  failNext = true;
+  await editor.getByRole('textbox', { name: '记忆内容' }).fill('让人物用行动表达情绪');
+  await expect(editor.getByRole('button', { name: /提示详情/ })).toBeVisible();
+  await editor.getByRole('button', { name: '关闭弹窗' }).click();
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '项目管理', exact: true }).click();
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '配置', exact: true }).click();
+  await page.getByRole('navigation', { name: '配置导航' }).getByRole('link', { name: '长期记忆', exact: true }).click();
+  await page.getByRole('button', { name: '管理记忆', exact: true }).click();
+  await expect(editor.getByRole('textbox', { name: '记忆内容' })).toHaveValue('让人物用行动表达情绪');
+  expect(item.content).toBe('每句对白尽量不超过二十字');
+  await editor.getByRole('button', { name: /提示详情/ }).click();
+  await editor.getByRole('button', { name: '重新核对', exact: true }).click();
+  await expect.poll(() => item.content).toBe('让人物用行动表达情绪');
+  await editor.getByRole('button', { name: '返回记忆', exact: true }).click();
+  const manager = page.getByRole('dialog', { name: '管理记忆', exact: true });
+  await manager.getByRole('button', { name: '删除记忆：对白偏好', exact: true }).click();
+  await page.getByRole('dialog', { name: '删除记忆', exact: true }).getByRole('button', { name: '删除', exact: true }).click();
+  await expect(manager.getByText('还没有长期记忆', { exact: true })).toBeVisible();
+  await expect(manager.getByRole('button', { name: '保存', exact: true })).toHaveCount(0);
 });

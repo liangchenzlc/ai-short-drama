@@ -46,7 +46,6 @@ def test_discovery_uses_real_http_and_normalizes_models(upstream, path):
     [
         (401, "model_discovery_auth"),
         (403, "model_discovery_auth"),
-        (404, "model_discovery_unsupported"),
         (429, "model_discovery_rate_limit"),
         (500, "model_discovery_unavailable"),
         (302, "model_discovery_redirect"),
@@ -102,6 +101,14 @@ def test_empty_catalog_is_valid(upstream):
     assert response.status_code == 200 and response.json()["items"] == []
 
 
+def test_missing_model_catalog_keeps_manual_model_entry_available(upstream):
+    base, _, state = upstream
+    state["status"] = 404
+    response = discover({"base_url": base}, allow_local=True)
+    assert response.status_code == 200
+    assert response.json()["items"] == [] and response.json()["status"] == "unavailable"
+
+
 @pytest.mark.parametrize(
     "body, expected, truncated",
     [
@@ -119,7 +126,12 @@ def test_alternate_catalog_formats(upstream, body, expected, truncated):
     state["body"] = body
     response = discover({"base_url": base}, allow_local=True)
     assert response.status_code == 200
-    assert response.json() == {"items": [{"id": expected}], "truncated": truncated}
+    assert response.json() == {
+        "items": [{"id": expected}],
+        "truncated": truncated,
+        "source": "provider",
+        "status": "available",
+    }
 
 
 def test_oversized_response_is_bounded(upstream):

@@ -15,7 +15,7 @@ from short_drama.schemas.canvas.models.model_catalog import (
 
 class ModelRuntimeProfile(InputModel):
     version: Literal[1] = 1
-    api_format: Literal["openai", "gemini", "claude"] = "openai"
+    api_format: Literal["auto", "openai", "gemini", "claude"] = "openai"
     protocol: str = Field(min_length=1, max_length=120)
     reference_asset_origin: str | None = Field(None, max_length=2048)
     capability_config: dict[str, JsonValue] | None = None
@@ -39,6 +39,8 @@ class ModelRuntimeProfile(InputModel):
         value = value.strip()
         if not value:
             raise ValueError("runtime protocol cannot be blank")
+        if value == "runninghub-workflow-image":
+            raise ValueError("RunningHub image workflows are retired")
         return value
 
     @model_validator(mode="after")
@@ -50,7 +52,6 @@ class ModelRuntimeProfile(InputModel):
         if self.reference_asset_origin:
             validate_channel_url(self.reference_asset_origin)
         if self.runninghub_workflow is not None and self.protocol not in {
-            "runninghub-workflow-image",
             "runninghub-workflow-video",
             "runninghub-workflow-audio",
         }:

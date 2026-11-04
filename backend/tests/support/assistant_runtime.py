@@ -3,6 +3,10 @@
 import json
 
 
+class WorkerLost(BaseException):
+    """模拟进程消失：绕过普通异常处理，保留最后一次已提交的数据库状态。"""
+
+
 class RuntimeTransport:
     def __init__(self, replies, *, before_reply=None, selections=None):
         self.replies = iter(replies)

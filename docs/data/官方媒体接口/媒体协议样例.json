@@ -1,0 +1,66 @@
+{
+  "description": "公开合同最小样例，所有图片 URL、任务 ID 和结果均为演示值，不是真实供应商回执。",
+  "verified_at": "2026-11-04",
+  "examples": [
+    {
+      "interface_type": "minimax-video",
+      "method": "POST",
+      "url": "https://api.minimax.io/v2/video_generation",
+      "request": {
+        "model": "MiniMax-H3",
+        "content": [{"type": "text", "text": "A slow camera pan across a quiet room"}],
+        "duration": 5,
+        "resolution": "768P",
+        "ratio": "16:9"
+      },
+      "created": {"task_id": "example-task-1"},
+      "poll_url": "https://api.minimax.io/v2/query/video_generation/example-task-1",
+      "completed": {
+        "task": {
+          "id": "example-task-1",
+          "status": "succeeded",
+          "content": {"url": "https://media.example/video.mp4"}
+        }
+      }
+    },
+    {
+      "interface_type": "kling-video",
+      "method": "POST",
+      "url": "https://api-beijing.klingai.com/image-to-video/kling-4.0",
+      "request": {
+        "contents": [
+          {"type": "prompt", "text": "A slow camera pan across a quiet room"},
+          {"type": "first_frame", "url": "https://media.example/first.png"},
+          {"type": "last_frame", "url": "https://media.example/last.png"}
+        ],
+        "settings": {"resolution": "1080p", "duration": 5}
+      },
+      "created": {"code": 0, "data": {"id": "example-task-2", "status": "submitted"}},
+      "poll_url": "https://api-beijing.klingai.com/tasks?task_ids=example-task-2",
+      "completed": {
+        "code": 0,
+        "data": {
+          "result": [{
+            "id": "example-task-2",
+            "status": "succeeded",
+            "outputs": [{"type": "video", "url": "https://media.example/video.mp4"}]
+          }]
+        }
+      }
+    },
+    {
+      "interface_type": "gemini-image",
+      "method": "POST",
+      "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent",
+      "request": {
+        "contents": [{"role": "user", "parts": [{"text": "A quiet room"}]}],
+        "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}
+      },
+      "completed": {
+        "candidates": [{
+          "content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": "<BASE64_IMAGE>"}}]}
+        }]
+      }
+    }
+  ]
+}

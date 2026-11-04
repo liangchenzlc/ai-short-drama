@@ -5,13 +5,7 @@ import type {
   AgentSendInput,
   AgentSendResult,
 } from '@host/types/assistant/engine';
-import type { AssistantExecutionDisplay, AssistantTraceBlock } from '@host/types/assistant/trace';
-export interface AssistantGenerationPolicy {
-  media_generation_enabled: boolean;
-  policy_version: string;
-  configured_media: ('image' | 'video' | 'audio')[];
-  available_media: ('image' | 'video' | 'audio')[];
-}
+import type { AssistantExecutionDisplay, AssistantTraceBlock, ToolTraceVisibility } from '@host/types/assistant/trace';
 
 export interface AssistantConversation extends AgentConversation {
   scope_version: 2;
@@ -56,24 +50,16 @@ export interface TaskExecutionTarget {
   project_id: string;
   canvas_id?: string | null;
 }
-export interface TaskMediaLimits {
-  images: number | null;
-  videos: number | null;
-  audio: number | null;
-}
-export interface AssistantRuntimeLimits {
-  model_call_limit: number;
-  output_token_limit: number;
-  subagent_max_concurrency: number;
-}
-export interface AssistantSettingsPatch extends AssistantRuntimeLimits {
+export interface AssistantPreferences {
   custom_instructions: string | null;
-  default_media_limits: TaskMediaLimits;
-  settings_version: string;
+  workbench_enabled: boolean;
+  media_generation_enabled: boolean;
+  long_term_memory_enabled: boolean;
 }
-export interface AssistantSettings extends AssistantSettingsPatch {
+export type AssistantSettingsPatch = Partial<AssistantPreferences> & { settings_version: string };
+export interface AssistantSettings extends AssistantPreferences {
+  settings_version: string;
   default_instructions: string;
-  deployment_limits: AssistantRuntimeLimits;
 }
 export type AssistantSubjectKind = 'asset' | 'shot' | 'node' | 'image_group' | 'image_slot' | 'sound_line';
 export interface AssistantSubjectReference {
@@ -187,9 +173,12 @@ export interface AssistantOperation extends Partial<Omit<AssistantExecutionDispl
   task_id: string;
   run_id: string;
   call_id: string;
+  turn_id?: string | null;
   tool_name: string;
   item_seq?: number | null;
-  visibility?: 'silent' | 'step' | 'artifact';
+  trace_visibility?: ToolTraceVisibility;
+  event_seq?: number | null;
+  result_seq?: number | null;
   label?: string;
   tool_version: string;
   plan_revision: string;
@@ -218,7 +207,6 @@ export interface AssistantTask {
   control_state: 'none' | 'stop_pending' | 'redirect_pending' | 'delete_pending';
   interruptions?: { stop: boolean; redirect: boolean; resume: boolean };
   execution_target: TaskExecutionTarget | null;
-  memory_project_ids: string[];
   source_context: {
     kind: 'project' | 'canvas';
     id: string;
@@ -233,7 +221,6 @@ export interface AssistantTask {
     builtin: boolean;
   }[];
   skill_activations?: AssistantSkillActivation[];
-  media_limits: TaskMediaLimits;
   media_usage: Record<string, unknown>;
   active_operation: AssistantOperation | null;
   error: { code: string; message?: string } | null;
@@ -247,8 +234,6 @@ export interface AssistantTaskSendInput extends AssistantSendInput {
   subject_selection?: AssistantSubjectSelection;
   attachment_selection?: AssistantAttachmentSelection;
   execution_target?: TaskExecutionTarget | null;
-  memory_project_ids?: string[];
-  media_limits?: TaskMediaLimits;
 }
 export interface AssistantScriptReference {
   project_id: string;
@@ -271,31 +256,8 @@ export interface AssistantScriptProposal {
 export interface AssistantTaskAccepted extends AgentSendResult {
   task: AssistantTask;
 }
-export interface AssistantMemorySelection {
-  id: string;
-  content_version: string;
-}
 export interface AssistantDeletionInput {
   row_version: string;
-  clear_derived_memory: boolean;
-  memory_selections?: AssistantMemorySelection[];
-}
-export interface AssistantDeletionMemory {
-  id: string;
-  content_version: string;
-  scope_type: 'user' | 'project';
-  project_id: string | null;
-  title: string;
-  content_preview: string;
-  protection_reasons: ('user_edited' | 'independent_sources')[];
-}
-export interface AssistantDeletionPreview {
-  conversation_id: string;
-  row_version: string;
-  items: AssistantDeletionMemory[];
-  total: number;
-  offset: number;
-  limit: number;
 }
 export interface AssistantControlInput {
   kind: 'stop';

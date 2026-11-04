@@ -1,4 +1,5 @@
 import base64
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -58,10 +59,10 @@ class GenerationSubmissions(GatewayBase):
         adapter = adapter or select_adapter(snapshot)
         count = request_data.get("parameters", {}).get("count", 1)
         if (
-            adapter in {"openai_images.v1", "ark_images.v1"}
+            adapter in {"openai_images.v1", "ark_images.v1", "gemini_images.v1"}
             and type(count) is int
             and count > 1
-            and "canvas_request" not in request_data
+            and ("canvas_request" not in request_data or adapter == "gemini_images.v1")
         ):
             return self._submit_image_batch(
                 snapshot, request_data, credential, adapter, reference_loader, mask_reference_loader
@@ -112,17 +113,20 @@ class GenerationSubmissions(GatewayBase):
             if remaining <= 0:
                 raise GenerationError("timeout")
             snapshot = {**snapshot, "budget_seconds": remaining}
-        if adapter in {"ark_video.v1", "dashscope_video.v1"} and reference_loader is not None:
+        if (
+            adapter in {"ark_video.v1", "dashscope_video.v1", "minimax_video.v2", "kling_video.v4"}
+            and reference_loader is not None
+        ):
             deadline = time.monotonic() + float(snapshot.get("budget_seconds", 1800))
             frame_urls = []
+            inputs = request_data["input"]
+            limit = (30 if adapter == "minimax_video.v2" else 10) * 1024**2
             for index in range(
-                sum(
-                    bool(request_data["input"].get(f"{name}_frame_media_id"))
-                    for name in ("first", "last")
-                )
+                sum(bool(inputs.get(f"{name}_frame_media_id")) for name in ("first", "last"))
+                + len(inputs.get("reference_media_ids", []))
             ):
-                data = reference_loader(index, 10 * 1024**2, deadline)
-                if len(data) > 10 * 1024**2:
+                data = reference_loader(index, limit, deadline)
+                if len(data) > limit:
                     raise GenerationError("reference_images_too_large")
                 try:
                     with Image.open(BytesIO(data)) as frame:
@@ -134,10 +138,16 @@ class GenerationSubmissions(GatewayBase):
                         raise ValueError
                 except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
                     raise GenerationError("invalid_reference_image") from None
-                frame_urls.append(f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}")
-            if adapter == "ark_video.v1":
+                encoded = base64.b64encode(data).decode("ascii")
+                frame_urls.append(
+                    encoded if adapter == "kling_video.v4" else f"data:{mime};base64,{encoded}"
+                )
+            if adapter in {"ark_video.v1", "minimax_video.v2"}:
                 for item, url_value in zip(body["content"][1:], frame_urls, strict=True):
                     item["image_url"]["url"] = url_value
+            elif adapter == "kling_video.v4":
+                for item, url_value in zip(body["contents"][1:], frame_urls, strict=True):
+                    item["url"] = url_value
             else:
                 keys = [
                     key
@@ -146,6 +156,11 @@ class GenerationSubmissions(GatewayBase):
                 ]
                 for key, url_value in zip(keys, frame_urls, strict=True):
                     body["input"][key] = url_value
+            if (
+                adapter == "minimax_video.v2"
+                and len(json.dumps(body, ensure_ascii=False).encode()) > 64 * 1024**2
+            ):
+                raise GenerationError("reference_images_too_large")
         if snapshot.get("service_type") == "text" and body.get("stream"):
             headers["Accept"] = "text/event-stream, application/json"
         secret, headers, secrets = _authentication(snapshot, credential, headers, adapter=adapter)
@@ -277,9 +292,9 @@ class GenerationSubmissions(GatewayBase):
         validated = validate_request(snapshot, request_data, adapter)
         count = request_data.get("parameters", {}).get("count", 1)
         if (
-            validated["adapter"] in {"openai_images.v1", "ark_images.v1"}
+            validated["adapter"] in {"openai_images.v1", "ark_images.v1", "gemini_images.v1"}
             and count > 1
-            and "canvas_request" not in request_data
+            and ("canvas_request" not in request_data or validated["adapter"] == "gemini_images.v1")
         ):
             single = deepcopy(request_data)
             single["parameters"]["count"] = 1

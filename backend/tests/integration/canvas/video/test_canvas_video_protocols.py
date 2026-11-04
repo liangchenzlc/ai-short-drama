@@ -294,6 +294,7 @@ def protocol_seed(runtime, adapter):
     )
     saved = client.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "name": "受控视频协议模型",
             "model_key": model,

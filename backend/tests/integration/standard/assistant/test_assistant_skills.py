@@ -3,11 +3,12 @@
 import io
 import json
 from contextlib import contextmanager
+from threading import get_ident
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 import short_drama.agent.skill.runtime as skill_runtime
 import tests.integration.standard.assistant.test_global_assistant_tasks as task_tests
@@ -25,6 +26,53 @@ from tests.integration.standard.assistant.test_global_assistant_tasks import (
 
 pytestmark = pytest.mark.integration
 task_workspace = task_tests.task_workspace
+
+
+def test_freeze_catalog_versions_are_batched_per_page_and_owner_is_preserved(skill_workspace):
+    from short_drama.agent.skill.progressive import freeze_catalog_locked
+
+    factory, settings, _model, _storage = skill_workspace
+    counts, expected = [], {}
+    for size in (10, 100, 250):
+        for index in range(len(expected), size):
+            item = create_skill(
+                skill_workspace,
+                name=f"批量方法{index}",
+                slug=f"batch-{index}",
+                instructions="短方法正文",
+                resources=[],
+            )
+            expected[item.id] = item.content_version
+        statements = []
+
+        def measured(
+            _connection, _cursor, statement, _parameters, _context, _many, captured=statements
+        ):
+            if statement.lstrip().upper().startswith("SELECT"):
+                captured.append(statement)
+
+        event.listen(factory.kw["bind"], "before_cursor_execute", measured)
+        try:
+            with factory.begin() as session:
+                frozen = freeze_catalog_locked(session, 1, settings, tool_lookup=get_spec)
+        finally:
+            event.remove(factory.kw["bind"], "before_cursor_execute", measured)
+        counts.append(len(statements))
+        personal = {item["id"]: item for item in frozen if not item["builtin"]}
+        assert set(personal) == set(expected)
+        with factory() as session:
+            versions = {
+                str(row.id): row for row in session.scalars(select(AgentSkillVersion)).all()
+            }
+            for key, item in personal.items():
+                version = versions[item["version_id"]]
+                assert version.skill_key == key and version.content_version == expected[key]
+                assert (
+                    version.owner_user_id == 1
+                    and version.checksum_sha256 == item["package_checksum"]
+                )
+        assert len(statements) <= 5 * ((size + 99) // 100)
+    assert counts[1] == counts[0]
 
 
 def test_run_freezes_metadata_only_and_search_has_distinct_truncation(skill_workspace):
@@ -80,24 +128,41 @@ class _Storage:
     def __init__(self, factory):
         self.factory, self.objects, self.reads = factory, {}, 0
         self.fail = False
+        self.connection_threads = {}
+        engine = factory.kw["bind"]
+        event.listen(engine, "checkout", self._checkout)
+        event.listen(engine, "checkin", self._checkin)
+
+    def _checkout(self, _connection, record, _proxy):
+        self.connection_threads[id(record)] = get_ident()
+
+    def _checkin(self, _connection, record):
+        self.connection_threads.pop(id(record), None)
+
+    def _assert_no_transaction(self):
+        threads = self.connection_threads.copy()
+        assert get_ident() not in threads.values(), {
+            "reading_thread": get_ident(),
+            "connection_threads": threads,
+        }
 
     def stat(self, bucket, key):
         from types import SimpleNamespace
 
-        assert self.factory.kw["bind"].pool.checkedout() == 0
+        self._assert_no_transaction()
         if (bucket, key) not in self.objects:
             raise NotFound("object missing")
         return SimpleNamespace(bucket=bucket, object_name=key)
 
     def put(self, bucket, key, source, size, _mime):
-        assert self.factory.kw["bind"].pool.checkedout() == 0
+        self._assert_no_transaction()
         self.objects[bucket, key] = source.read()
         assert len(self.objects[bucket, key]) == size
         return self.stat(bucket, key)
 
     @contextmanager
     def open(self, bucket, key):
-        assert self.factory.kw["bind"].pool.checkedout() == 0
+        self._assert_no_transaction()
         self.reads += 1
         if self.fail:
             raise OSError("fixture storage offline")
@@ -118,6 +183,43 @@ def skill_workspace(task_workspace, monkeypatch):
         )._resource_bytes(manifest),
     )
     return factory, settings, model, storage
+
+
+def test_skill_resource_io_guard_tracks_reading_thread_not_control_thread(skill_workspace):
+    import hashlib
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    factory, settings, _model, storage = skill_workspace
+    storage.objects["guard-test", "body"] = b"resource bytes"
+    manifest = {
+        "bucket": "guard-test",
+        "object_name": "body",
+        "path": "body.txt",
+        "byte_size": 14,
+        "checksum_sha256": hashlib.sha256(b"resource bytes").hexdigest(),
+    }
+    service = AgentSkillService(None, settings, storage, tool_lookup=get_spec)
+    ready, release = Event(), Event()
+
+    def control_read():
+        with factory() as session:
+            session.scalar(select(1))
+            ready.set()
+            assert release.wait(10)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(control_read)
+        try:
+            assert ready.wait(5)
+            assert service._resource_bytes(manifest) == "resource bytes"
+        finally:
+            release.set()
+            future.result()
+    with factory() as session:
+        session.scalar(select(1))
+        with pytest.raises(AssertionError):
+            service._resource_bytes(manifest)
 
 
 def create_skill(workspace, *, owner=1, **changes):

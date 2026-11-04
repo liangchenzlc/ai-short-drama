@@ -3,13 +3,10 @@ import type {
   AssistantAttachmentMetadata,
   AssistantControlAccepted,
   AssistantControlInput,
-  AssistantDeletionPreview,
-  AssistantGenerationPolicy,
   AssistantSettings,
   AssistantSettingsPatch,
   AssistantQuestionAnswer,
   AssistantQuestionAnswerReceipt,
-  AssistantMemorySelection,
   AssistantOperation,
   AssistantSubjectKind,
   AssistantSubjectMetadata,
@@ -96,21 +93,6 @@ export const assistantApi = {
       )
     ).data;
   },
-  async generationPolicy(signal?: AbortSignal) {
-    return (
-      await http.get<AssistantGenerationPolicy>(`${root}/generation-policy`, {
-        signal,
-      })
-    ).data;
-  },
-  async updateGenerationPolicy(media_generation_enabled: boolean, policy_version: string) {
-    return (
-      await http.patch<AssistantGenerationPolicy>(`${root}/generation-policy`, {
-        media_generation_enabled,
-        policy_version,
-      })
-    ).data;
-  },
   async globalConversations(projectId: string, offset = 0, signal?: AbortSignal, query = '') {
     return (
       await http.get<Page<ProjectAssistantConversation>>(`${root}/global/conversations`, {
@@ -144,27 +126,15 @@ export const assistantApi = {
       })
     ).data;
   },
-  async deletionMemory(id: string, offset = 0, signal?: AbortSignal) {
-    return (
-      await http.get<AssistantDeletionPreview>(`${globalPath(id)}/deletion-memory`, {
-        params: { offset, limit: 30 },
-        signal,
-      })
-    ).data;
-  },
   async deleteGlobalConversation(
     id: string,
     row_version: string,
-    clear_derived_memory: boolean,
     key: string,
-    memory_selections?: AssistantMemorySelection[],
   ) {
     return (
       await http.delete<ProjectAssistantConversation>(globalPath(id), {
         data: {
           row_version,
-          clear_derived_memory,
-          ...(memory_selections ? { memory_selections } : {}),
         },
         headers: { 'Idempotency-Key': key },
       })

@@ -76,7 +76,6 @@ class ReleaseSkill(InputModel):
 
 
 class RememberMemory(InputModel):
-    scope_type: Literal["user", "conversation", "project"] = "conversation"
     kind: MemoryKind = "setting"
     memory_key: Annotated[str, Field(min_length=1, max_length=120)]
     title: Annotated[str, Field(min_length=1, max_length=200)]

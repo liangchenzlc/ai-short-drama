@@ -8,16 +8,25 @@ from pydantic import SecretStr
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from short_drama.ai.adapters.model_protocols import (
+    interface_options,
+    interface_profile,
+    public_interface_type,
+)
 from short_drama.ai.model_identity import model_credential_identity
+from short_drama.ai.types import GenerationError
 from short_drama.core.config import Settings
 from short_drama.core.crypto import KeyCipher
 from short_drama.core.exceptions import (
     BusinessError,
     ConfigurationError,
     Conflict,
+    GenerationRequestError,
     NotFound,
     WorkflowError,
 )
+from short_drama.core.identity import require_actor
+from short_drama.dao.ai_config.management.models import AIModelConfigDAO
 from short_drama.domain import AIModelConfig, CanvasChannelModel
 from short_drama.schemas.ai_config.management.models import (
     AIModelConfigCreate,
@@ -32,6 +41,7 @@ from short_drama.service.ai_config.management.runtime import (
     model_runtime_public,
 )
 from short_drama.service.base import BaseService, utcnow
+from short_drama.utils.json_digest import digest
 
 
 class _RetryDefault(Exception):
@@ -48,6 +58,7 @@ class AIModelConfigService(BaseService):
         super().__init__(session)
         self.cipher = cipher
         self.settings = settings
+        self.dao = AIModelConfigDAO(session)
 
     def _key_cipher(self):
         if self.cipher is None:
@@ -74,10 +85,33 @@ class AIModelConfigService(BaseService):
         public = model_runtime_public(entity, cipher, binding)
         public.pop("runtime_profile")
         return self.read_schema.model_validate(
-            {**super()._read(entity).model_dump(), "has_api_key": bool(entity.apikey), **public}
+            {
+                **super()._read(entity).model_dump(),
+                "has_api_key": bool(entity.apikey),
+                "interface_type": public_interface_type(
+                    (entity.runtime_profile or {}).get("protocol", "auto"), entity.service_type
+                ),
+                **public,
+            }
         )
 
     def _runtime_values(self, values, entity=None):
+        if "interface_type" in values:
+            selected = values.pop("interface_type")
+            if selected is not None:
+                kind = values.get("service_type") or entity.service_type
+                try:
+                    profile = interface_profile(selected, kind)
+                except GenerationError as error:
+                    raise GenerationRequestError(error.code) from None
+                values["runtime_profile"] = {
+                    **deepcopy(
+                        values.get("runtime_profile")
+                        or (entity.runtime_profile if entity else None)
+                        or {}
+                    ),
+                    **profile,
+                }
         if "runtime_profile" in values and values["runtime_profile"] is not None:
             values["runtime_profile"] = ModelRuntimeProfile.model_validate(
                 values["runtime_profile"]
@@ -125,13 +159,41 @@ class AIModelConfigService(BaseService):
             raise NotFound("Model configuration does not exist")
         return entity
 
-    def create(self, payload):
+    def create(self, payload, key=None):
+        return self.create_once(payload, key)[0]
+
+    def create_once(self, payload, key):
         values = self._payload(self.create_schema, payload)
+        values["name"] = values.get("name", "").strip() or values["model_key"]
+        original = deepcopy(values)
+        for field in ("apikey", "secret_key"):
+            if original.get(field) is not None:
+                original[field] = original[field].get_secret_value()
+        if original.get("headers") is not None:
+            original["headers"] = [
+                {"name": item["name"], "value": item["value"].get_secret_value()}
+                for item in original["headers"]
+            ]
+        request_hash = digest(original)
         values = self._runtime_values(values)
         if "apikey" in values:
             values["apikey"] = self._encrypt_key(values["apikey"])
         with self._transaction():
-            return self._read(self.dao.create(self._creation_audit(values)))
+            if key is not None:
+                owner = require_actor(self.session).user_id
+                self.dao.lock_owner(owner)
+                previous = self.dao.created_request(owner, key)
+                if previous is not None:
+                    if previous.create_hash != request_hash:
+                        raise Conflict("相同创建标识不能更改模型配置")
+                    if previous.is_deleted:
+                        raise Conflict("原次创建的模型已删除，请重新开始创建")
+                    return self._read(previous), False
+                values.update(create_key=key, create_hash=request_hash)
+            return self._read(self.dao.create(self._creation_audit(values))), True
+
+    def options(self, service_type):
+        return interface_options(service_type)
 
     def get(self, identifier):
         identifier = parse_identifier(identifier)
@@ -229,6 +291,8 @@ class AIModelConfigService(BaseService):
             if entity.row_version != expected:
                 raise Conflict("Model configuration version is stale")
             values = self._runtime_values(values, entity)
+            if "name" in values:
+                values["name"] = values["name"].strip() or values.get("model_key", entity.model_key)
             if "apikey" in values:
                 secret = values.pop("apikey")
                 plaintext = secret.get_secret_value() if secret else ""

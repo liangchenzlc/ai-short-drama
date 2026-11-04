@@ -30,6 +30,35 @@ pytestmark = pytest.mark.integration
 task_workspace = harness_workspace
 
 
+@pytest.mark.parametrize(
+    ("codec", "payload", "code"),
+    [
+        ("future-codec", b"opaque", "agent_checkpoint_codec_unsupported"),
+        ("msgpack", b"\xc1", "agent_checkpoint_corrupt"),
+    ],
+)
+def test_checkpoint_decode_errors_are_classified(task_workspace, codec, payload, code, caplog):
+    _, accepted = new_task(task_workspace)
+    saver = saver_for(bound(task_workspace, accepted))
+    with pytest.raises(WorkflowError) as caught:
+        saver._decode(codec, payload)
+    assert caught.value.code == code
+    assert caplog.records[-1].exc_info is not None
+
+
+def test_checkpoint_engine_version_fence_has_its_own_code(task_workspace):
+    _, accepted = new_task(task_workspace)
+    service = bound(task_workspace, accepted)
+    saver = saver_for(service)
+    config = saver.put(saver._config(), empty_checkpoint(), {}, {})
+    with service.factory.begin() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        run.checkpoint = {**run.checkpoint, "engine": "obsolete-engine"}
+    with pytest.raises(WorkflowError) as caught:
+        saver.get_tuple(config)
+    assert caught.value.code == "agent_checkpoint_version_mismatch"
+
+
 def bound(workspace, accepted, *, owner=1, version=1):
     factory, _, _ = workspace
     with factory.begin() as session:

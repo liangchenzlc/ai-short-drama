@@ -8,7 +8,7 @@ import { EmailProofPage } from '@host/pages/identity/verify-email/index';
 import { NotFoundPage } from '@host/pages/not-found/index';
 import { ProjectsPage } from '@host/pages/projects/list/index';
 import { preloadable } from '@host/shared/async/preloadable';
-import { aiConfigPath, skillsPath } from '@host/shared/navigation/paths';
+import { settingsPath, skillsPath } from '@host/shared/navigation/paths';
 import { lazy } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import '../../features/generations/tasks/generations.css';
@@ -17,9 +17,9 @@ const SkillsPage = lazy(() =>
     default: module.SkillsPage,
   })),
 );
-const AiConfigPage = lazy(() =>
-  import('../../pages/ai-config/index').then((module) => ({
-    default: module.AiConfigPage,
+const SettingsPage = lazy(() =>
+  import('../../pages/settings/index').then((module) => ({
+    default: module.SettingsPage,
   })),
 );
 const AccountCenterPage = lazy(() =>
@@ -41,7 +41,7 @@ function AiConfigRoute() {
     const returnTo = safeCanvasReturn(params.get('return_to'));
     return <Navigate to={skillsPath + (returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : '')} replace />;
   }
-  return <AiConfigPage />;
+  return <Navigate to={`${settingsPath}${search}`} replace />;
 }
 function MediaLibraryRoute() {
   const { kind } = useParams();
@@ -74,8 +74,9 @@ export function AppRoutes() {
             <Route path=":projectId/:stage" element={<ProjectRoute />} />
           </Route>
 
-          <Route path="ai" element={<Navigate to={aiConfigPath} replace />} />
+          <Route path="ai" element={<Navigate to={settingsPath} replace />} />
           <Route path="ai_config" element={<AiConfigRoute />} />
+          <Route path="settings/*" element={<SettingsPage />} />
           <Route path="skills" element={<SkillsPage />} />
           <Route path="account" element={<AccountCenterPage />} />
 

@@ -2,7 +2,6 @@ import { assistantApi } from '@host/api/assistant/conversations/requests';
 import { AgentContextComposer } from '@host/features/assistant/attachments/AgentContextComposer';
 import { AssistantComposerTools } from '@host/features/assistant/composer/AssistantComposerTools';
 import { AssistantMentionTextarea } from '@host/features/assistant/composer/AssistantMentionTextarea';
-import { TaskMediaLimits } from '@host/features/assistant/composer/TaskMediaLimits';
 import { useAssistantComposer } from '@host/features/assistant/composer/useAssistantComposer';
 import { AssistantDiscussionHistory } from '@host/features/assistant/history/AssistantDiscussionHistory';
 import { AssistantTranscript } from '@host/features/assistant/messages/AssistantTranscript';
@@ -29,6 +28,11 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
   } = props;
   const {
     runtime,
+    recoveryError,
+    rereadRecovery,
+    cleanupRecovery,
+    acceptedSend,
+    acceptedControl,
     pinned,
     historyRequest,
     setHistoryRequest,
@@ -48,8 +52,6 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
     skills,
     setSkills,
     setSkillsDirty,
-    mediaLimits,
-    setMediaLimits,
     draftError,
     setDraftError,
     models,
@@ -145,7 +147,7 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
       setActionError={setActionError}
       selectedSkills={selectedSkills}
       changeSkills={changeSkills}
-    /><TaskMediaLimits value={mediaLimits} frozen={task?.media_limits} onChange={setMediaLimits} disabled={toolsDisabled} /></>
+    /></>
   );
   return (
     <div className="ai-assistant-runtime">
@@ -154,6 +156,7 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
           <StudioFeedback
             scope="chat"
             type="error"
+            quiet
             title="AI 创作助手"
             message={runtime.error}
             noticeKey={`assistant-connection:${conversation.id}`}
@@ -390,10 +393,6 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
                   return true;
                 }}
                 onReference={async (reference) => {
-                  if (uncertain || busy) {
-                    setActionError('上一条消息的结果还没确认，确认后再添加新素材。');
-                    return false;
-                  }
                   return addMaterials([reference]);
                 }}
               />
@@ -407,7 +406,19 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
             当前项目只读，可以查看已有对话。
           </span>
         ) : null}
-        {pendingControl && !busy && (
+        {recoveryError ? (
+          <StudioFeedback scope="chat" type="warning" persistent quiet title="本机恢复记录无法读取"
+            message="当前输入可复制保存。重新读取并核对服务端消息与任务；清理损坏记录只影响本机，不会删除服务端历史。"
+            noticeKey={`assistant-recovery:${conversation.id}`}
+            description={<div className="ai-assistant-uncertain">
+              <Button size="small" disabled={!!busy} onClick={rereadRecovery}>重新读取本机记录</Button>
+              <Button size="small" disabled={!!busy} onClick={cleanupRecovery}>清理损坏的本机记录</Button>
+            </div>} />
+        ) : null}
+        {(acceptedSend || acceptedControl) && !busy ? (
+          <Button size="small" onClick={cleanupRecovery}>清理已受理的本机记录</Button>
+        ) : null}
+        {pendingControl && !acceptedControl && !busy && (
           <StudioFeedback
             scope="chat"
             type="warning"
@@ -431,7 +442,7 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
             正在保存…
           </span>
         ) : null}
-        {uncertain ? (
+        {uncertain && !acceptedSend ? (
           layout === 'standard' ? (
             <StudioFeedback
               scope="chat"

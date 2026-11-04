@@ -177,8 +177,11 @@ def gateway():
     return GenerationGateway(SimpleNamespace(generation_allowed_hosts=["127.0.0.1"]))
 
 
-def snapshot(base, kind="text", model="model"):
-    return {"base_url": base, "service_type": kind, "model_key": model, "budget_seconds": 5}
+def snapshot(base, kind="text", model="model", *, protocol=None):
+    value = {"base_url": base, "service_type": kind, "model_key": model, "budget_seconds": 5}
+    if protocol is not None:
+        value["runtime_profile"] = {"api_format": "openai", "protocol": protocol}
+    return value
 
 
 @pytest.mark.parametrize("adapter", ["ark_video.v1", "dashscope_video.v1"])
@@ -585,7 +588,7 @@ def test_openai_images_preserves_count_and_base64(gateway, provider):
     base, state, calls = provider
     state["body"] = {"data": [{"b64_json": "aW1hZ2U="}], "usage": {"total_tokens": 8}}
     result = gateway.submit(
-        snapshot(base + "/v1", "image", "gpt-image-2"),
+        snapshot(base + "/v1", "image", "gpt-image-2", protocol="openai-image"),
         {
             "input": {"prompt": "scene"},
             "parameters": {"count": 1, "aspect": "1:1", "resolution": "1024x1024"},
@@ -661,7 +664,9 @@ def test_parallel_images_preserve_successes_and_never_resubmit_unknown_requests(
 
     monkeypatch.setattr(gateway, "_json_request", respond)
     args = (
-        snapshot("https://provider.example/v1", "image", "gpt-image-2.5-flare"),
+        snapshot(
+            "https://provider.example/v1", "image", "gpt-image-2.5-flare", protocol="openai-image"
+        ),
         {"input": {"prompt": "scene"}, "parameters": {"count": 4}},
         "test-secret",
     )
@@ -707,7 +712,9 @@ def test_gpt_image_edits_upload_all_references_without_leaking_credentials(
         "parameters": {"count": 2, "aspect": "16:9", "resolution": "2K"},
     }
     result = gateway.submit(
-        snapshot(base + base_path, "image", "gpt-image-2.5-flare"), request, "test-secret"
+        snapshot(base + base_path, "image", "gpt-image-2.5-flare", protocol="openai-image"),
+        request,
+        "test-secret",
     )
     downloads = [call for call in calls if call[0] == "GET"]
     submissions = [call for call in calls if call[0] == "POST"]
@@ -741,7 +748,7 @@ def test_gpt_image_edits_upload_all_references_without_leaking_credentials(
 def test_gpt_image_reference_admission_is_pure_and_matches_capabilities(model):
     from short_drama.ai import capabilities, validate_request
 
-    snap = snapshot("https://provider.example/v1", "image", model)
+    snap = snapshot("https://provider.example/v1", "image", model, protocol="openai-image")
     request = {"input": {"prompt": "scene", "reference_media_ids": ["1", "2"]}}
     assert capabilities(snap)["reference_images"] is True
     assert validate_request(snap, request)["resolved_parameters"] == {"n": 1}
@@ -753,7 +760,7 @@ def test_unsupported_image_edits_are_rejected_before_any_http(gateway, provider,
     from short_drama.ai import GenerationError, capabilities
 
     base, _, calls = provider
-    snap = snapshot(base, "image", model)
+    snap = snapshot(base, "image", model, protocol="openai-image")
     with pytest.raises(GenerationError, match="unsupported_parameters"):
         gateway.submit(
             snap, {"input": {"prompt": "hi", "reference_urls": [base + "/ref"] * count}}, "secret"
@@ -771,7 +778,7 @@ def test_invalid_reference_file_never_submits_generation(gateway, provider, data
     state["media"] = {"/ref": (data, "image/png")}
     with pytest.raises(GenerationError) as error:
         gateway.submit(
-            snapshot(base, "image", "gpt-image-2"),
+            snapshot(base, "image", "gpt-image-2", protocol="openai-image"),
             {"input": {"prompt": "scene", "reference_urls": [base + "/ref"]}},
             "secret",
         )
@@ -790,7 +797,7 @@ def test_edit_error_never_falls_back_to_text_to_image(gateway, provider, status,
     state.update(media={"/ref": (reference_image(), "image/png")}, status=status)
     with pytest.raises(GenerationError) as error:
         gateway.submit(
-            snapshot(base, "image", "gpt-image-2"),
+            snapshot(base, "image", "gpt-image-2", protocol="openai-image"),
             {"input": {"prompt": "scene", "reference_urls": [base + "/ref"]}},
             "secret",
         )
@@ -805,7 +812,9 @@ def test_edit_reference_download_blocks_private_destinations(provider):
     gateway = GenerationGateway(SimpleNamespace())
     with pytest.raises(GenerationError) as error:
         gateway.submit(
-            snapshot("https://provider.example/v1", "image", "gpt-image-2"),
+            snapshot(
+                "https://provider.example/v1", "image", "gpt-image-2", protocol="openai-image"
+            ),
             {"input": {"prompt": "scene", "reference_urls": [base + "/ref"]}},
             "secret",
         )
@@ -824,7 +833,7 @@ def test_trusted_references_upload_in_order_without_fetching_private_urls(gatewa
         return images[index]
 
     result = gateway.submit(
-        snapshot(base, "image", "gpt-image-2.5-flare"),
+        snapshot(base, "image", "gpt-image-2.5-flare", protocol="openai-image"),
         {"input": {"prompt": "scene", "reference_urls": ["http://10.0.0.1/ref"] * 3}},
         "test-secret",
         reference_loader=load,
@@ -843,7 +852,7 @@ def test_corrupt_trusted_reference_never_submits(gateway, provider):
     base, _, calls = provider
     with pytest.raises(GenerationError, match="invalid_reference_image"):
         gateway.submit(
-            snapshot(base, "image", "gpt-image-2"),
+            snapshot(base, "image", "gpt-image-2", protocol="openai-image"),
             {"input": {"prompt": "scene", "reference_urls": ["http://10.0.0.1/ref"]}},
             "secret",
             reference_loader=lambda *_: b"broken",
@@ -867,7 +876,7 @@ def test_edit_downloads_enforce_file_and_total_limits(
     state["media"] = {"/a": (data, "image/png"), "/b": (data, "image/png")}
     with pytest.raises(GenerationError) as error:
         gateway.submit(
-            snapshot(base, "image", "gpt-image-2"),
+            snapshot(base, "image", "gpt-image-2", protocol="openai-image"),
             {"input": {"prompt": "scene", "reference_urls": [base + "/a", base + "/b"]}},
             "secret",
         )
@@ -890,7 +899,7 @@ def test_edit_downloads_and_post_share_one_deadline(gateway, provider, monkeypat
 
     monkeypatch.setattr(gateway.transport, "request", request)
     gateway.submit(
-        snapshot(base, "image", "gpt-image-2"),
+        snapshot(base, "image", "gpt-image-2", protocol="openai-image"),
         {"input": {"prompt": "scene", "reference_urls": [base + "/ref"]}},
         "secret",
     )
@@ -908,11 +917,19 @@ def test_gpt_image_2_default_storyboard_resolution_preserves_aspect(aspect, size
         "parameters": {"aspect": aspect, "resolution": "2K"},
     }
     value = validate_request(
-        snapshot("https://provider.example/v1", "image", "gpt-image-2.5-flare"), request
+        snapshot(
+            "https://provider.example/v1", "image", "gpt-image-2.5-flare", protocol="openai-image"
+        ),
+        request,
     )
     assert value["resolved_parameters"] == {"n": 1, "size": size}
     with pytest.raises(GenerationError) as error:
-        validate_request(snapshot("https://provider.example/v1", "image", "gpt-image-1"), request)
+        validate_request(
+            snapshot(
+                "https://provider.example/v1", "image", "gpt-image-1", protocol="openai-image"
+            ),
+            request,
+        )
     assert error.value.code == "unsupported_image_size"
 
 
@@ -1100,7 +1117,7 @@ def test_unsupported_parameter_rejected_before_post(gateway, provider):
     base, _, calls = provider
     with pytest.raises(GenerationError) as error:
         gateway.submit(
-            snapshot(base, "image"),
+            snapshot(base, "image", protocol="openai-image"),
             {"input": {"prompt": "hi"}, "parameters": {"invented": True}},
             "test-secret",
             "openai_images.v1",
@@ -1216,7 +1233,10 @@ def test_json_url_with_credential_cannot_escape_to_manifest(gateway, provider):
     state["body"] = {"data": [{"url": "https://example.com/test-secret"}]}
     with pytest.raises(GenerationError) as error:
         gateway.submit(
-            snapshot(base, "image"), {"input": {"prompt": "hi"}}, "test-secret", "openai_images.v1"
+            snapshot(base, "image", protocol="openai-image"),
+            {"input": {"prompt": "hi"}},
+            "test-secret",
+            "openai_images.v1",
         )
     assert error.value.accepted_unknown
 
@@ -1296,7 +1316,7 @@ def test_dashscope_image_inputs_follow_model_contract(model, inputs, params):
 
     with pytest.raises(GenerationError) as error:
         validate_request(
-            snapshot("https://dashscope.aliyuncs.com", "image", model),
+            snapshot("https://dashscope.aliyuncs.com", "image", model, protocol="qwen-image"),
             {"input": inputs, "parameters": params},
         )
     assert error.value.code == "unsupported_parameters"
@@ -1369,7 +1389,10 @@ def test_output_manifest_cannot_exceed_application_limit(gateway, provider):
     state["body"] = {"data": [{"url": "https://cdn.example/image.png"}] * 5}
     with pytest.raises(GenerationError) as error:
         gateway.submit(
-            snapshot(base, "image"), {"input": {"prompt": "hi"}}, "test-secret", "openai_images.v1"
+            snapshot(base, "image", protocol="openai-image"),
+            {"input": {"prompt": "hi"}},
+            "test-secret",
+            "openai_images.v1",
         )
     assert error.value.code == "invalid_response" and error.value.accepted_unknown
 

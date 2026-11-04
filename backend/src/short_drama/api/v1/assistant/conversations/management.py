@@ -7,7 +7,6 @@ from short_drama.schemas.assistant.conversations.engine import (
     ConversationRead,
 )
 from short_drama.schemas.assistant.tasks.task import (
-    DeletionMemoryPreview,
     GlobalConversationCreate,
     GlobalConversationDelete,
     GlobalConversationPatch,
@@ -56,16 +55,3 @@ def delete_global_conversation(
     idempotency_key: Key,
 ):
     return service.delete_global_conversation(conversation_id, payload, idempotency_key)
-
-
-@router.get(
-    "/global/conversations/{conversation_id}/deletion-memory",
-    response_model=DeletionMemoryPreview,
-)
-def deletion_memory_preview(
-    conversation_id: Identifier,
-    service: Tasks,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 30,
-):
-    return service.deletion_memory_preview(conversation_id, offset, limit)

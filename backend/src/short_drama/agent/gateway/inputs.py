@@ -4,18 +4,18 @@ from pydantic import ValidationError
 
 from short_drama.agent.gateway.contracts import AgentGatewayError
 from short_drama.ai.adapters.catalog import select_adapter
+from short_drama.ai.adapters.model_protocols import INTERFACE_BY_ID, PROTOCOL_ADAPTERS
 from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
 
 
 def select_protocol(snapshot: dict) -> str:
     profile = snapshot.get("runtime_profile") or {}
-    if profile:
-        protocol = {
-            ("openai", "chat-completion"): "openai_chat.v1",
-            ("openai", "openai-response"): "openai_responses.v1",
-            ("claude", "claude-messages"): "claude_messages.v1",
-            ("claude", "messages"): "claude_messages.v1",
-        }.get((profile.get("api_format"), profile.get("protocol")))
+    if profile and profile.get("protocol") != "auto":
+        interface = INTERFACE_BY_ID.get(profile.get("protocol"))
+        api_format = interface.api_format if interface is not None else "openai"
+        if profile.get("api_format") != api_format:
+            raise AgentGatewayError("unsupported_agent_protocol")
+        protocol = PROTOCOL_ADAPTERS.get(profile.get("protocol"))
     else:
         protocol = select_adapter(snapshot)
     if snapshot.get("service_type") != "text" or protocol not in {

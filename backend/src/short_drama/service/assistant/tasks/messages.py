@@ -25,7 +25,6 @@ from short_drama.service.ai_config.management.assistant_models import (
 )
 from short_drama.service.assistant.context.attachment import attachment_key
 from short_drama.service.assistant.execution.run import read_run
-from short_drama.service.assistant.settings.preferences import settings_locked
 from short_drama.service.assistant.tasks.base import TaskServiceBase
 from short_drama.service.base import utcnow
 from short_drama.utils.json_digest import digest
@@ -93,20 +92,12 @@ class TaskMessageOperations(TaskServiceBase):
                     applied_control_seq=0,
                     control_state="none",
                     execution_target=None,
-                    memory_project_ids=[],
                     context_snapshot=None,
                     selected_skills=[],
                     effective_state={
                         "engine": ENGINE_VERSION,
                         "agent_policy": {"stop": "boundary.v1"},
                     },
-                    media_limits=(
-                        inputs.media_limits
-                        if "media_limits" in inputs.model_fields_set
-                        else settings_locked(
-                            self.session, conversation.owner_user_id, self.settings
-                        ).default_media_limits
-                    ).model_dump(),
                     media_usage={},
                     created_at=now,
                     updated_at=now,
@@ -114,12 +105,6 @@ class TaskMessageOperations(TaskServiceBase):
                 self.session.add(task)
                 self.session.flush()
             else:
-                if "media_limits" in inputs.model_fields_set:
-                    raise WorkflowError(
-                        "assistant_task_media_limits_frozen",
-                        "任务创建后媒体数量固定，请新建任务调整",
-                        409,
-                    )
                 model, snapshot = None, previous.config_snapshot
                 if previous.checkpoint.get("discussion_revision"):
                     raise WorkflowError(
@@ -186,8 +171,9 @@ class TaskMessageOperations(TaskServiceBase):
             return self._accepted(conversation, task, run, message)
 
     def _accepted(self, conversation, task, run, message):
+        event_metadata = self._message_event_metadata([message]).get(str(message.id))
         return TaskMessageAccepted(
-            message=self._message_read(message),
+            message=self._message_read(message, event_metadata),
             task=read_task(self.session, task),
             run=read_run(self.session, run),
             cursor=conversation.next_event_seq - 1,

@@ -1,86 +1,31 @@
-"""Real-time account media policy, kept separate from task authority and model credentials."""
+"""Read-only projection of current assistant capabilities for Agent tools."""
 
-from sqlalchemy import select
-
-from short_drama.core.exceptions import Conflict, NotFound
-from short_drama.core.identity import require_actor
-from short_drama.domain import AIModelConfig
-from short_drama.domain.assistant.operations.preference import AgentPreference
-from short_drama.domain.identity.accounts.user import User
-from short_drama.schemas.assistant.tasks.policy import GenerationPolicyPatch, GenerationPolicyRead
-from short_drama.schemas.base import UINT64_MAX
-from short_drama.service.base import BaseService, utcnow
-from short_drama.utils.snowflake import next_id
+from short_drama.dao.ai_config.management.models import AIModelConfigDAO
+from short_drama.dao.assistant.settings.preferences import AssistantSettingsDAO
+from short_drama.schemas.assistant.tasks.policy import GenerationPolicyRead
 
 MEDIA_KINDS = ("image", "video", "audio")
 
 
 def policy_state_locked(session, owner: int, *, lock=False) -> tuple[bool, int]:
-    statement = select(
-        AgentPreference.media_generation_enabled, AgentPreference.policy_version
-    ).where(AgentPreference.owner_user_id == owner)
-    row = session.execute(statement.with_for_update() if lock else statement).one_or_none()
-    return (bool(row[0]), row[1]) if row else (True, 0)
+    row = AssistantSettingsDAO(session).preference(owner, lock=lock)
+    return (
+        (bool(row.workbench_enabled and row.media_generation_enabled), row.settings_version)
+        if row
+        else (True, 0)
+    )
 
 
 def generation_policy_locked(session, owner: int) -> GenerationPolicyRead:
-    enabled, version = policy_state_locked(session, owner)
-    configured = set(
-        session.scalars(
-            select(AIModelConfig.service_type).where(
-                AIModelConfig.owner_user_id == owner,
-                AIModelConfig.service_type.in_(MEDIA_KINDS),
-                AIModelConfig.enabled == 1,
-                AIModelConfig.is_deleted == 0,
-            )
-        )
-    )
+    row = AssistantSettingsDAO(session).preference(owner)
+    workbench = bool(row.workbench_enabled) if row else True
+    enabled = workbench and (bool(row.media_generation_enabled) if row else True)
+    configured = AIModelConfigDAO(session).enabled_service_types(owner)
     return GenerationPolicyRead(
+        workbench_enabled=workbench,
+        long_term_memory_enabled=bool(row.long_term_memory_enabled) if row else True,
         media_generation_enabled=enabled,
-        policy_version=version,
+        settings_version=row.settings_version if row else 0,
         configured_media=[kind for kind in MEDIA_KINDS if kind in configured],
         available_media=[kind for kind in MEDIA_KINDS if kind in configured] if enabled else [],
     )
-
-
-class AssistantPolicyService(BaseService):
-    model = AgentPreference
-
-    def get_generation_policy(self) -> GenerationPolicyRead:
-        owner = require_actor(self.session).user_id
-        with self._transaction(read_only=True):
-            return generation_policy_locked(self.session, owner)
-
-    def update_generation_policy(self, payload) -> GenerationPolicyRead:
-        values = GenerationPolicyPatch.model_validate(payload)
-        owner = require_actor(self.session).user_id
-        with self._transaction():
-            user = self.session.scalar(select(User.id).where(User.id == owner).with_for_update())
-            if user is None:
-                raise NotFound("账号不存在或已停止使用")
-            row = self.session.scalar(
-                select(AgentPreference)
-                .where(AgentPreference.owner_user_id == owner)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-            version = row.policy_version if row else 0
-            if values.policy_version != version:
-                raise Conflict("助手生成设置已变化，请重新读取后保存")
-            if row is None:
-                row = AgentPreference(
-                    id=next_id(),
-                    owner_user_id=owner,
-                    media_generation_enabled=int(values.media_generation_enabled),
-                    policy_version=1,
-                    updated_at=utcnow(),
-                )
-                self.session.add(row)
-            elif bool(row.media_generation_enabled) != values.media_generation_enabled:
-                if version == UINT64_MAX:
-                    raise Conflict("助手生成设置版本已达到上限")
-                row.media_generation_enabled = int(values.media_generation_enabled)
-                row.policy_version += 1
-                row.updated_at = utcnow()
-            self.session.flush()
-            return generation_policy_locked(self.session, owner)

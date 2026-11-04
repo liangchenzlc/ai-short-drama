@@ -8,14 +8,33 @@ function compile(source) {
 }
 const source = readFileSync(new URL('../../src/features/assistant/recovery/assistant-draft.ts', import.meta.url), 'utf8');
 const drafts = await import(`data:text/javascript;base64,${Buffer.from(compile(source)).toString('base64')}`);
+
+test('corrupt local recovery can be cleared, but valid unknown requests and unreadable storage stay protected', () => {
+  const local = storage();
+  const key = drafts.assistantPendingSendKey('1', '20');
+  local.setItem(key, '{broken');
+  assert.equal(drafts.clearCorruptAssistantRecovery('1', '20', 'send', local), true);
+  assert.equal(local.getItem(key), null);
+  const pending = { version: 1, key: 'original', draft: '草稿', body: { content: '草稿' } };
+  assert.equal(drafts.saveAssistantPendingSend('1', '20', pending, local), true);
+  assert.equal(drafts.clearCorruptAssistantRecovery('1', '20', 'send', local), false);
+  assert.deepEqual(drafts.readAssistantPendingSend('1', '20', local).pending, pending);
+  assert.equal(drafts.clearCorruptAssistantRecovery('1', '20', 'send', { getItem() { throw new Error('denied'); }, removeItem() { throw new Error('must not remove'); } }), false);
+  local.setItem(key, '{broken');
+  assert.equal(drafts.clearCorruptAssistantRecovery('1', '20', 'send', { getItem: local.getItem, removeItem() { throw new Error('denied'); } }), false);
+});
 const historyDraftSource = readFileSync(new URL('../../src/features/assistant/recovery/assistant-history-draft.ts', import.meta.url), 'utf8');
 const historyDrafts = await import(`data:text/javascript;base64,${Buffer.from(compile(historyDraftSource)).toString('base64')}`);
 const undoSource = readFileSync(new URL('../../src/features/assistant/recovery/assistant-undo-draft.ts', import.meta.url), 'utf8');
 const undoDrafts = await import(`data:text/javascript;base64,${Buffer.from(compile(undoSource)).toString('base64')}`);
 const projectionCode = readFileSync(new URL('../../src/features/assistant/runtime/assistant-task-state.ts', import.meta.url), 'utf8');
 const traceCode = readFileSync(new URL('../../src/features/assistant/runtime/assistant-trace.ts', import.meta.url), 'utf8');
+const traceTypesCode = readFileSync(new URL('../../src/types/assistant/trace.ts', import.meta.url), 'utf8');
 const traceModule = `data:text/javascript;base64,${Buffer.from(compile(traceCode)).toString('base64')}`;
-const projection = await import(`data:text/javascript;base64,${Buffer.from(compile(projectionCode).replace('@host/features/assistant/runtime/assistant-trace', traceModule)).toString('base64')}`);
+const traceTypesModule = `data:text/javascript;base64,${Buffer.from(compile(traceTypesCode)).toString('base64')}`;
+const projection = await import(`data:text/javascript;base64,${Buffer.from(compile(projectionCode)
+  .replace('@host/features/assistant/runtime/assistant-trace', traceModule)
+  .replace('@host/types/assistant/trace', traceTypesModule)).toString('base64')}`);
 const receiptCode = readFileSync(new URL('../../src/features/assistant/runtime/assistant-receipt.ts', import.meta.url), 'utf8');
 const receipts = await import(`data:text/javascript;base64,${Buffer.from(compile(receiptCode)).toString('base64')}`);
 
@@ -195,14 +214,12 @@ test('uncertain multi-source requests preserve the original selection revision a
 test('attachment selection lives in the send body and drafts no longer keep a task attachment draft', () => {
   const local = storage();
   const draft = { version: 1, text: '后续移除附件', skills: [], taskId: '9007199254740993', settingsDirty: true,
-    executionTarget: { mode: 'infinite_canvas', project_id: '9007199254740995', canvas_id: 'canvas-b' },
-    memoryProjectIds: ['9007199254740997'] };
+    executionTarget: { mode: 'infinite_canvas', project_id: '9007199254740995', canvas_id: 'canvas-b' } };
   assert.equal(drafts.saveAssistantDraft('1', '20', draft, local), true);
   const restored = drafts.readAssistantDraft('1', '20', local);
   assert.equal(restored.attachmentDraft, undefined);
   assert.equal(restored.settingsDirty, true);
   assert.deepEqual(restored.executionTarget, draft.executionTarget);
-  assert.deepEqual(restored.memoryProjectIds, draft.memoryProjectIds);
   assert.equal('attachmentDraft' in JSON.parse(local.getItem(drafts.assistantDraftKey('1', '20'))), false);
   const request = { version: 1, key: 'remove-attachment', draft: draft.text, body: { content: draft.text, task_id: draft.taskId,
     attachment_selection: { expected_input_revision: '4', retain_ids: [] } } };
@@ -229,7 +246,7 @@ test('control and deletion recovery preserve the original payload, account and r
   const local = storage();
   for (const request of [
     { version: 1, kind: 'control', targetId: '9007199254740993', key: 'stop-original', body: { kind: 'stop' } },
-    { version: 1, kind: 'delete', targetId: '9007199254740993', key: 'delete-original', body: { row_version: '7', clear_derived_memory: true } },
+    { version: 1, kind: 'delete', targetId: '9007199254740993', key: 'delete-original', body: { row_version: '7' } },
   ]) {
     assert.equal(drafts.saveAssistantPendingAction('1', '20', request, local), true);
     assert.deepEqual(drafts.readAssistantPendingAction('1', '20', request.kind, local), { pending: request, error: '' });
@@ -259,17 +276,17 @@ test('malformed control recovery is retained and prevents replacing the uncertai
   }
 });
 
-test('uncertain deletion retains exactly the selected memory identities and versions', () => {
+test('uncertain deletion retains only the conversation version and rejects retired memory choices', () => {
   const local = storage();
   const request = { version: 1, kind: 'delete', targetId: '9007199254740993', key: 'delete-memory', body: {
-    row_version: '3', clear_derived_memory: true, memory_selections: [{ id: '9007199254740995', content_version: '7' }],
+    row_version: '3',
   } };
   assert.equal(drafts.saveAssistantPendingAction('1', 'history', request, local), true);
   assert.deepEqual(drafts.readAssistantPendingAction('1', 'history', 'delete', local).pending, request);
   for (const change of [
     { clear_derived_memory: false },
     { memory_selections: [{ id: 9007199254740995, content_version: '7' }] },
-    { memory_selections: [request.body.memory_selections[0], request.body.memory_selections[0]] },
+    { memory_selections: [{ id: '4', content_version: '7' }] },
     { memory_selections: [{ id: '4', content_version: '7', owner_user_id: '2' }] },
   ]) assert.equal(drafts.saveAssistantPendingAction('1', 'other', { ...request, body: { ...request.body, ...change } }, local), false);
 });
@@ -382,7 +399,7 @@ const traceBlock = (block_version = '9007199254740993', preview = '雨🙂', sta
   block_id: '9007199254740995', block_version, run_id: '7', execution_scope_id: '11', parent_call_id: null,
   kind: 'reasoning', source: 'assistant', action: '模型思考', target: { kind: 'model', id: '13', display_name: '模型' },
   title: '模型提供的思考', status, started_seq: 1, started_at: '2026-10-30', updated_at: '2026-10-30',
-  finished_at: status === 'succeeded' ? '2026-10-30' : null, visibility: 'step', resources: [], result_refs: [],
+  finished_at: status === 'succeeded' ? '2026-10-30' : null, trace_visibility: 'visible', resources: [], result_refs: [],
   channels: { reasoning: { preview, offset: 0, total_bytes: Buffer.byteLength(preview), truncated: false } },
 });
 const traceEvent = (seq, event_type, payload) => ({ seq, event_type, run_id: '7', created_at: '2026-10-30', payload });
@@ -524,11 +541,11 @@ test('older task pages merge their entities without lowering the live snapshot w
   assert.equal(state.tasks['9'].status, 'stopped');
 });
 
-test('global task recovery retains three independent scopes and request identity', () => {
+test('global task recovery retains reference and execution scopes with the original request identity', () => {
   const local = storage(); const request = pending();
   request.body = { content: '补充一个条件', task_id: '9007199254740993',
     subject_selection: { expected_input_revision: '0', retain_keys: [], subjects: [{ project_id: '11', source_kind: 'project', source_id: '11', kind: 'asset', id: '16', revision: '7' }] },
-    execution_target: { mode: 'infinite_canvas', project_id: '12', canvas_id: 'canvas-uuid' }, memory_project_ids: ['13'], media_limits: { images: 2, videos: 0, audio: null },
+    execution_target: { mode: 'infinite_canvas', project_id: '12', canvas_id: 'canvas-uuid' },
   };
   assert.equal(drafts.saveAssistantPendingSend('1', '3', request, local), true);
   assert.deepEqual(drafts.readAssistantPendingSend('1', '3', local).pending, request);

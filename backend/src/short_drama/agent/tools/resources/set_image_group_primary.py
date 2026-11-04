@@ -8,6 +8,7 @@ SPEC = ToolSpec(
     args_schema=SetImageGroupPrimary,
     handler=set_image_group_primary_business_locked,
     effect="write",
+    required_capability="workbench_write",
     expose_mcp=True,
     modes=frozenset({"standard"}),
 )

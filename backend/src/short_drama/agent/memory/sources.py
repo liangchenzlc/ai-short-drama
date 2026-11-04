@@ -50,27 +50,61 @@ def restricted_messages(session, conversation_id):
     conversation = session.get(AgentConversation, conversation_id)
     if conversation is None:
         return set(), set()
-    sources = session.execute(
-        select(AgentMemorySource.message_id, AgentMessage.task_id)
-        .join(AgentMemoryItem, AgentMemoryItem.id == AgentMemorySource.memory_id)
-        .join(
-            AgentMemoryRevision,
-            (AgentMemoryRevision.memory_id == AgentMemorySource.memory_id)
-            & (AgentMemoryRevision.content_version == AgentMemorySource.content_version),
+    fingerprints = set(
+        session.scalars(
+            select(AgentMemorySource.source_hash)
+            .join(AgentMemoryItem, AgentMemoryItem.id == AgentMemorySource.memory_id)
+            .join(
+                AgentMemoryRevision,
+                (AgentMemoryRevision.memory_id == AgentMemorySource.memory_id)
+                & (AgentMemoryRevision.content_version == AgentMemorySource.content_version),
+            )
+            .where(
+                AgentMemoryItem.owner_user_id == conversation.owner_user_id,
+                (AgentMemoryItem.state != "active")
+                | (
+                    (AgentMemoryItem.origin == "explicit")
+                    & (
+                        AgentMemoryRevision.snapshot["content"].as_string()
+                        != AgentMemoryItem.content
+                    )
+                ),
+            )
+            .with_for_update()
+        ).all()
+    )
+    rules = session.scalars(
+        select(AgentMemoryForgetRule).where(
+            AgentMemoryForgetRule.owner_user_id == conversation.owner_user_id,
+            AgentMemoryForgetRule.active == 1,
         )
-        .outerjoin(AgentMessage, AgentMessage.id == AgentMemorySource.message_id)
-        .where(
-            AgentMemorySource.conversation_id == conversation_id,
-            AgentMemoryItem.owner_user_id == conversation.owner_user_id,
-            (AgentMemoryItem.state != "active")
-            | (
-                (AgentMemoryItem.origin == "explicit")
-                & (AgentMemoryRevision.snapshot["content"].as_string() != AgentMemoryItem.content)
-            ),
-        )
-        .with_for_update()
     ).all()
-    return {row.message_id for row in sources}, {row.task_id for row in sources if row.task_id}
+    fingerprints.update(value for rule in rules for value in rule.source_fingerprints)
+    if not fingerprints:
+        return set(), set()
+    messages = session.scalars(
+        select(AgentMessage).where(AgentMessage.conversation_id == conversation_id)
+    ).all()
+    restricted = [
+        row
+        for row in messages
+        if digest({"role": row.role, "content": row.content}) in fingerprints
+    ]
+    return {row.id for row in restricted}, {row.task_id for row in restricted if row.task_id}
+
+
+def extraction_sources(messages: list[dict], generation: int | None) -> list[dict]:
+    if generation is None:
+        return []
+    return [
+        row
+        for row in messages
+        if row["role"] == "user"
+        and row["input_applied"]
+        and not row.get("memory_restricted")
+        and not row.get("explicit_memory_processed")
+        and row.get("memory_capture_generation") == generation
+    ]
 
 
 def message_sources(session, conversation_id, from_seq, to_seq, *, limit=500, message_ids=None):
@@ -166,7 +200,10 @@ def message_sources(session, conversation_id, from_seq, to_seq, *, limit=500, me
             "seq": row.seq,
             "role": row.role,
             "row_version": str(row.row_version),
-            "content": "这条历史来源已被纠正或遗忘，已停止自动注入。"
+            "interrupted": any(ref.get("type") == "interrupted_response" for ref in row.references),
+            "content": "这条助手回复在生成过程中中断，未构成完整回答。"
+            if any(ref.get("type") == "interrupted_response" for ref in row.references)
+            else "这条历史来源已被纠正或遗忘，已停止自动注入。"
             if row.id in suppressed_ids
             or row.role == "assistant"
             and row.task_id in suppressed_tasks
@@ -178,6 +215,7 @@ def message_sources(session, conversation_id, from_seq, to_seq, *, limit=500, me
             "task_status": tasks[row.task_id].status if row.task_id in tasks else None,
             "input_applied": row.id not in inputs or inputs[row.id] is not None,
             "explicit_memory_processed": str(row.id) in explicit_memory_messages,
+            "memory_capture_generation": row.memory_capture_generation,
             "hash": digest({"role": row.role, "content": row.content}),
             "subject_keys": message_subject_keys(row, tasks, legacy_attachments)
             if row.role == "assistant" and row.task_id in tasks
@@ -207,6 +245,7 @@ def source_hash(messages):
                     "memory_restricted",
                     "input_applied",
                     "explicit_memory_processed",
+                    "memory_capture_generation",
                 )
             }
             for row in messages

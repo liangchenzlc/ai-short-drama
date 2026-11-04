@@ -32,7 +32,7 @@ from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
 from short_drama.schemas.canvas.generation.runninghub.runninghub import RunningHubField
 from short_drama.service.ai_config.management.runtime import refresh_runtime_model
 
-IMAGE = "canvas_runninghub_workflow_image.v1"
+ADAPTER = "canvas_runninghub_workflow_video.v1"
 WORKFLOW = {
     "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "旧正向"}, "_meta": {"title": "正向"}},
     "10": {
@@ -51,7 +51,7 @@ WORKFLOW = {
 }
 
 
-def snapshot(kind="image"):
+def snapshot(kind="video"):
     return {
         "base_url": "https://runninghub.example/openapi/v2",
         "model_key": "workflow-17",
@@ -63,7 +63,7 @@ def snapshot(kind="image"):
     }
 
 
-def request(kind="image", *, fields=None, workflow=None, references=None, app=False):
+def request(kind="video", *, fields=None, workflow=None, references=None, app=False):
     return {
         "source": {"scene": "canvas_node"},
         "input": {"prompt": "新提示词"},
@@ -87,7 +87,7 @@ def request(kind="image", *, fields=None, workflow=None, references=None, app=Fa
     }
 
 
-@pytest.mark.parametrize("kind", ["image", "video", "audio"])
+@pytest.mark.parametrize("kind", ["video", "audio"])
 def test_saved_builtin_profile_selects_an_independent_adapter(kind):
     model = SimpleNamespace(
         runtime_profile={
@@ -168,8 +168,8 @@ def test_dynamic_fields_do_not_collapse_two_same_sources_and_seed_freezes_once()
     assert changed[2].random_enabled is False
     payload = request(fields=changed)
     before = deepcopy(payload)
-    first = validate_request(snapshot(), payload, IMAGE)
-    second = validate_request(snapshot(), payload, IMAGE)
+    first = validate_request(snapshot(), payload, ADAPTER)
+    second = validate_request(snapshot(), payload, ADAPTER)
     assert first == second and payload == before
     assert [item["fieldValue"] for item in first["resolved_parameters"]["nodeInfoList"][:2]] == [
         "640",
@@ -195,7 +195,7 @@ def test_invalid_parameters_fail_before_paid_create(values):
     ]
     with pytest.raises(GenerationError):
         changed = apply_parameters(fields, {}, values)
-        build_submission(snapshot(), request(fields=changed), IMAGE)
+        build_submission(snapshot(), request(fields=changed), ADAPTER)
 
 
 def test_media_slot_order_and_mask_are_enforced():
@@ -240,13 +240,13 @@ def test_nested_task_status_wins_over_success_envelope(body, code):
     "body", [{"data": {"taskId": "original-17"}}, {"code": 0, "task_id": "original-17"}]
 )
 def test_create_can_omit_code_but_must_retain_task_id(body):
-    assert parse_runninghub_result(body, IMAGE, submitted=True).provider_task_id == "original-17"
+    assert parse_runninghub_result(body, ADAPTER, submitted=True).provider_task_id == "original-17"
 
 
 @pytest.mark.parametrize("body", [{}, {"code": 0}, {"data": {"taskId": "bad id"}}])
 def test_missing_create_identity_is_unknown(body):
     with pytest.raises(GenerationError) as caught:
-        parse_runninghub_result(body, IMAGE, submitted=True)
+        parse_runninghub_result(body, ADAPTER, submitted=True)
     assert caught.value.accepted_unknown
 
 
@@ -265,7 +265,7 @@ def test_output_container_traversal_and_source_result_precedence():
                 "secret_debug_url": "https://untrusted.example/debug",
             },
         },
-        IMAGE,
+        ADAPTER,
         submitted=False,
         task_id="original-17",
         root="https://runninghub.example",
@@ -318,7 +318,7 @@ def test_download_mime_classification_skips_unsupported_types(url, mime, expecte
 def test_inline_empty_or_unsupported_output_does_not_discard_valid_media(ignored):
     result = parse_runninghub_result(
         {"code": 0, "data": [ignored, "data:image/png;base64,aW1hZ2U="]},
-        IMAGE,
+        ADAPTER,
         submitted=False,
         task_id="original-17",
     )
@@ -329,7 +329,7 @@ def test_all_inline_empty_or_unsupported_outputs_fail_without_new_submission():
     with pytest.raises(GenerationError, match="workflow_output_type_unsupported"):
         parse_runninghub_result(
             {"code": 0, "data": ["data:text/plain;base64,aHRtbA==", "data:image/png;base64,"]},
-            IMAGE,
+            ADAPTER,
             submitted=False,
             task_id="original-17",
         )
@@ -342,7 +342,7 @@ def test_archive_completion_can_resume_with_ignored_outputs_but_not_all_ignored(
         status="failed", error={"code": "archive_timeout"}, locked_until=None, next_action=None
     )
     record = SimpleNamespace(
-        adapter=IMAGE,
+        adapter=ADAPTER,
         status="succeeded",
         text_content=None,
         response_data={
@@ -395,7 +395,7 @@ def test_gateway_uses_json_points_key_and_separate_multipart_upload_key():
         snapshot(),
         payload,
         credential,
-        IMAGE,
+        ADAPTER,
         canvas_reference_loader=lambda *_args: b"fixture-image",
     )
     assert result.provider_task_id == "original-17"
@@ -415,7 +415,7 @@ def test_gateway_uses_json_points_key_and_separate_multipart_upload_key():
     assert "fixture-upload" not in str(result.resolved_parameters)
 
 
-@pytest.mark.parametrize("kind", ["image", "video", "audio"])
+@pytest.mark.parametrize("kind", ["video", "audio"])
 def test_poll_post_keeps_original_identity_without_create_and_download_has_no_credentials(kind):
     adapter = next(key for key, value in RUNNINGHUB_ADAPTERS.items() if value == kind)
     gateway = GenerationGateway(SimpleNamespace())
@@ -444,7 +444,7 @@ def test_poll_failure_is_retryable_query_failure_and_never_paid_unknown(failure)
     gateway = GenerationGateway(SimpleNamespace())
     gateway.transport = Transport([failure])
     with pytest.raises(GenerationError) as caught:
-        gateway.poll(snapshot(), "original-17", CanvasCredentials(apiKey="fixture-points"), IMAGE)
+        gateway.poll(snapshot(), "original-17", CanvasCredentials(apiKey="fixture-points"), ADAPTER)
     assert not caught.value.accepted_unknown and caught.value.retryable
     assert len(gateway.transport.calls) == 1
 
@@ -454,7 +454,7 @@ def test_workflow_and_app_use_distinct_create_endpoints():
         (False, "create", "workflowId"),
         (True, "ai-app/run", "webappId"),
     ):
-        url, headers, body = build_submission(snapshot(), request(app=app), IMAGE)
+        url, headers, body = build_submission(snapshot(), request(app=app), ADAPTER)
         assert url.endswith("/task/openapi/" + suffix) and identity in body and headers == {}
     assert runninghub_root("https://runninghub.example/OPENAPI/v2/") == "https://runninghub.example"
 
@@ -495,11 +495,11 @@ def test_saved_legacy_parameter_keys_match_only_a_trusted_field(key):
 
 def test_missing_schema_defers_media_slots_until_worker_schema_fetch():
     payload = request(references=[{"id": "r", "storageKey": "resource:17"}])
-    assert validate_request(snapshot(), payload, IMAGE)["resolved_parameters"] == {
+    assert validate_request(snapshot(), payload, ADAPTER)["resolved_parameters"] == {
         "workflowId": "workflow-17"
     }
     with pytest.raises(GenerationError, match="workflow_media_slots_exceeded"):
-        runninghub_submission(snapshot(), payload, IMAGE, files={})
+        runninghub_submission(snapshot(), payload, ADAPTER, files={})
 
 
 def test_failed_query_can_resume_only_a_known_runninghub_task_within_budget():
@@ -517,7 +517,7 @@ def test_failed_query_can_resume_only_a_known_runninghub_task_within_budget():
         started_at=utcnow(),
     )
     record = SimpleNamespace(
-        adapter=IMAGE,
+        adapter=ADAPTER,
         status="sent",
         provider_task_id="original-17",
         response_data={},

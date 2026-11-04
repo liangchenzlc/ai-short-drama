@@ -11,7 +11,11 @@ from short_drama.schemas.assistant.conversations.engine import Title
 from short_drama.schemas.assistant.operations.questions import PendingQuestion
 from short_drama.schemas.assistant.operations.runtime import MessageRead, RunRead
 from short_drama.schemas.assistant.operations.script import ScriptReference
-from short_drama.schemas.assistant.operations.trace import ExecutionTarget, TraceBlock
+from short_drama.schemas.assistant.operations.trace import (
+    ExecutionTarget,
+    ToolTraceVisibility,
+    TraceBlock,
+)
 from short_drama.schemas.base import (
     Identifier,
     InputModel,
@@ -63,44 +67,8 @@ class GlobalConversationPatch(ConversationTitle):
     title: Title
 
 
-class MemoryCleanupSelection(InputModel):
-    id: Identifier
-    content_version: Identifier
-
-
 class GlobalConversationDelete(InputModel):
     row_version: Identifier
-    clear_derived_memory: bool = False
-    memory_selections: Annotated[list[MemoryCleanupSelection], Field(max_length=200)] = Field(
-        default_factory=list
-    )
-
-    @model_validator(mode="after")
-    def selected_memory_versions(self):
-        if self.memory_selections and not self.clear_derived_memory:
-            raise ValueError("Memory cleanup selections require explicit cleanup")
-        if len({item.id for item in self.memory_selections}) != len(self.memory_selections):
-            raise ValueError("Memory cleanup selections must be unique")
-        return self
-
-
-class DeletionMemoryRead(ReadModel):
-    id: Identifier
-    content_version: Identifier
-    scope_type: Literal["user", "project"]
-    project_id: Identifier | None
-    title: str
-    content_preview: str
-    protection_reasons: list[Literal["user_edited", "independent_sources"]]
-
-
-class DeletionMemoryPreview(ReadModel):
-    conversation_id: Identifier
-    row_version: Identifier
-    items: list[DeletionMemoryRead]
-    total: int
-    offset: int
-    limit: int
 
 
 class TaskSubjectReference(InputModel):
@@ -239,12 +207,6 @@ class TaskAttachmentMetadata(ReadModel):
     items: list[TaskAttachmentRead]
 
 
-class TaskMediaLimits(InputModel):
-    images: Annotated[int, Field(strict=True, ge=0, le=1000)] | None = None
-    videos: Annotated[int, Field(strict=True, ge=0, le=1000)] | None = None
-    audio: Annotated[int, Field(strict=True, ge=0, le=1000)] | None = None
-
-
 class AssistantTaskMessage(AssistantMessageCreate):
     task_id: Identifier | None = None
     new_task: bool = False
@@ -252,10 +214,6 @@ class AssistantTaskMessage(AssistantMessageCreate):
     subject_selection: TaskSubjectSelection | None = None
     attachment_selection: TaskAttachmentSelection | None = None
     execution_target: TaskExecutionTarget | None = None
-    memory_project_ids: Annotated[list[Identifier], Field(max_length=16)] = Field(
-        default_factory=list
-    )
-    media_limits: TaskMediaLimits = Field(default_factory=TaskMediaLimits)
 
     @model_validator(mode="after")
     def independent_task(self):
@@ -265,8 +223,6 @@ class AssistantTaskMessage(AssistantMessageCreate):
             raise ValueError("An explicit selection must provide its revision and desired subjects")
         if "attachment_selection" in self.model_fields_set and self.attachment_selection is None:
             raise ValueError("An attachment selection must provide its revision and retained IDs")
-        if len(set(self.memory_project_ids)) != len(self.memory_project_ids):
-            raise ValueError("Memory projects must be unique")
         return self
 
 
@@ -282,9 +238,12 @@ class OperationRead(ReadModel):
     task_id: Identifier
     run_id: Identifier
     call_id: Identifier
+    turn_id: Identifier | None = None
     tool_name: str
     item_seq: int | None = None
-    visibility: Literal["silent", "step", "artifact"] = "step"
+    event_seq: int | None = None
+    result_seq: int | None = None
+    trace_visibility: ToolTraceVisibility = ToolTraceVisibility.VISIBLE
     label: str = ""
     tool_version: Identifier
     plan_revision: Identifier
@@ -324,12 +283,10 @@ class TaskRead(ReadModel):
         default_factory=lambda: {"stop": True, "redirect": False, "resume": False}
     )
     execution_target: TaskExecutionTarget | None
-    memory_project_ids: list[Identifier]
     selected_subjects: list[TaskSubjectRead]
     source_context: dict | None
     skills: list[dict]
     skill_activations: list[dict] = Field(default_factory=list)
-    media_limits: TaskMediaLimits
     media_usage: dict
     active_operation: OperationRead | None
     error: dict | None

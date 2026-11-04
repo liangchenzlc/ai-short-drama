@@ -3,7 +3,7 @@
 本目录存档从候选清单（`AI漫剧制作可下载Skill清单（30个）.xlsx`，含主清单 30 项、备选 7 项、微表情专项 10 项、画质专项 12 项，共 **59 项**）中筛选出的高质量 skill，按制作环节分类归档，仅作方法论与规则参考。
 
 - 快照时间：2026-10-20
-- 候选 59 项 → **入选 9 项**（15.3%）；**补充收录 1 项**（用户追加的 Seedance 2.0 提示词库，不在原 59 候选清单内）
+- 候选 59 项 → **入选 9 项**（15.3%）；**补充收录 1 项**（用户追加的 Seedance 2.0 提示词库，不在原 59 候选清单内）；**本项目合成 1 项**（`portrait-texture-edit`，非上游归档，见第十一节）
 - 归档体积：约 16 MB / 578 个文件（只收文本资产，图片、演示素材与运行时依赖不入库）
 - 每项来源、许可、评分与取舍理由见各自目录下的 `UPSTREAM.md`
 
@@ -171,7 +171,10 @@ docs/skills/
 ├── 01-script/ai-short-drama-writer/
 ├── 02-storyboard/manga-script-master/
 ├── 03-asset/seedance-2.0/         # 64 份 references
-├── 04-prompt-performance/awesome-seedance-2.5-prompts/   # 1,114 条提示词
+├── 04-prompt-performance/
+│   ├── awesome-seedance-2.5-prompts/   # 1,114 条提示词
+│   ├── awesome-seedance-2-prompts/     # 2,706 条提示词（含中文版）
+│   └── portrait-texture-edit/          # 本项目合成：人物质感编辑 · 去 AI 味（单图）
 ├── 05-audio/multi-voice-dubbing/
 └── 06-post/
     ├── ffmpeg-skill/              # 44 个脚本 + 5 份 references
@@ -214,3 +217,35 @@ docs/skills/
 - 补充收录的 `04-prompt-performance/awesome-seedance-2-prompts`：中文指南 `PROMPTING_GUIDE.zh.md` 与中文数据 `zh.json` 已就位；英文 `prompts.json` 为原始数据（非技能说明文档），无需翻译。
 
 **校验**：20 个 `SKILL.md` 的 YAML frontmatter 全部合法；翻译后 4 个纯英文技能的"纯正文中文占比"由 0% 提升到 35–56%，其余英文均为命令/路径/代码（按上述原则保留）。
+
+## 十一、本项目合成技能（first-party）
+
+与前十节的「上游归档」性质不同：这一类是本项目自行编写的方法论技能，用于填补上游没有覆盖的链路缺口，**不适用 star / 下载量维度**。
+
+### `04-prompt-performance/portrait-texture-edit` 人物质感编辑 · 去 AI 味（单图）
+
+| 项 | 内容 |
+| --- | --- |
+| 性质 | 本项目合成（first-party），非上游快照 |
+| 合成时间 | 2026-10-29 |
+| 应用场景 | **已有一张人像，用提示词提升质感、去 AI 味** |
+| 硬约束 | 不换人、不改景别、不改构图、不改机位、不改背景、不改姿态表情、不改光向 |
+| 覆盖环节 | 范围判定 → 诊断 → 提示词 → 局部重绘 → 验收（**出图数量由用户决定**） |
+| 交付物 | `SKILL.md` + 6 份 `references`，其中 `evidence.md` 逐条登记规则出处 |
+| 来源与取舍 | 见该目录 `UPSTREAM.md` |
+
+**为什么自建**：本期检索到的同类 skill 都只覆盖单点，且多数是「从零生成」思路——photorealistic-skill 的核心是生成流程（还要求一次出 2–4 张），photo-retouch-pro 偏通用照片，im2-image-skills 面向 GPT Image 2 的整图重绘，没有一个同时满足「编辑已有图 + 锁死画框 + 可逐条溯源」。项目需要的是能直接回答"这张图怎么改才像真的、又不改人"的方法论，因此以 `xxg-portrait-rebuild-light` 的 scope 机制为主干重写，并为每条规则标注出处（`references/evidence.md` 的 R1–R39）。
+
+**准入对照**（对照第二节五道硬门槛）：
+
+1. 可获取 —— 自有源码，不涉及抓取；
+2. 许可可用 —— 本项目自有，参考的上游中 MIT 部分只吸收方法、未复制文本；
+3. 无闭源强依赖 —— 明确排除需要账号额度的 `beatra-ai/ai-image-realism-skill` 渲染链路；
+4. 不与已装套装重复 —— 与 `03-asset/seedance-2.0` 分工：后者管身份契约与表演，本技能只管质感；
+5. 采用度托底 —— 自有资产，该维度不适用。
+
+**维护约定**：
+
+- 后处理参数为经验值，换模型或换分辨率需重新标定，标定记录写回该目录 `UPSTREAM.md`；
+- 上游方法论升级时回原地址核对，不静默沿用旧结论；
+- 禁止把付费服务写成流程必需项。

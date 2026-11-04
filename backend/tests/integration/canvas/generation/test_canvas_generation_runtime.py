@@ -84,6 +84,7 @@ def seed(identity_app, username, *, client=None, user=None, project=None, kind="
     }
     model = client.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "service_type": kind,
             "name": "画布测试模型",

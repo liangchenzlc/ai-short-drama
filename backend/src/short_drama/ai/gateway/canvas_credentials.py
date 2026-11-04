@@ -26,6 +26,8 @@ CANVAS_AUTH_ADAPTERS = frozenset(
         "claude_messages.v1",
         "gemini_generate_content.v1",
         "openai_images.v1",
+        "gemini_images.v1",
+        "grok_images.v1",
         "openai_speech.v1",
         "canvas_async_audio.v1",
         "ark_images.v1",
@@ -33,6 +35,8 @@ CANVAS_AUTH_ADAPTERS = frozenset(
         "dashscope_images.v1",
         "dashscope_video.v1",
         "modelhub_video.v1",
+        "minimax_video.v2",
+        "kling_video.v4",
     }
 )
 MODEL_AUTH_ADAPTERS = CANVAS_AUTH_ADAPTERS | frozenset(
@@ -124,9 +128,9 @@ def canvas_authentication(
         raise GenerationError("invalid_credential") from None
     result = dict(headers)
     claude = adapter == "claude_messages.v1"
-    gemini = adapter == "gemini_generate_content.v1"
+    gemini = adapter in {"gemini_generate_content.v1", "gemini_images.v1"}
     runninghub = adapter in RUNNINGHUB_ADAPTERS
-    if (claude or gemini) and not canvas_auth_enabled(snapshot):
+    if (claude or adapter == "gemini_generate_content.v1") and not canvas_auth_enabled(snapshot):
         raise GenerationError("invalid_credential")
     secrets = []
     for item in value.headers:

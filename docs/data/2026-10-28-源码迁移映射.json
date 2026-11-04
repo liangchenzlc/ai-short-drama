@@ -75,8 +75,8 @@
     "frontend/src/types/creation/workspace/model.ts"
   ],
   "frontend/src/pages/ai-config/AiConfigPage.tsx": [
-    "frontend/src/pages/ai-config/index.tsx",
-    "frontend/src/types/ai-config/editor/AiConfigSession.ts",
+    "frontend/src/pages/settings/index.tsx",
+    "frontend/src/types/assistant/settings/editor.ts",
     "frontend/src/types/ai-config/editor/config-model.ts"
   ],
   "frontend/src/pages/skills/SkillsPage.tsx": [
@@ -273,7 +273,8 @@
     "frontend/src/features/creation/workspace/styles/web.css",
     "frontend/src/features/creation/writing/editor/styles/web.css",
     "frontend/src/features/generations/tasks/styles/table.css",
-    "frontend/src/pages/ai-config/index.css",
+    "frontend/src/features/ai-config/editor/config-table.css",
+    "frontend/src/features/creation/assets/editor/asset-editor.css",
     "frontend/src/shared/media/styles/preview.css"
   ],
   "frontend/src/app/workbench.css": [
@@ -578,11 +579,11 @@
     "frontend/src/types/assistant/runtime/agent-events.ts"
   ],
   "frontend/src/features/ai-config/AiConfigSession.tsx": [
-    "frontend/src/features/ai-config/editor/AiConfigSession.tsx",
-    "frontend/src/types/ai-config/editor/AiConfigSession.ts"
+    "frontend/src/features/assistant/settings/SettingsSession.tsx",
+    "frontend/src/types/assistant/settings/editor.ts"
   ],
   "frontend/src/features/ai-config/AssistantGenerationPolicy.tsx": [
-    "frontend/src/features/ai-config/editor/AssistantGenerationPolicy.tsx",
+    "frontend/src/features/assistant/settings/AssistantGeneralSettings.tsx",
     "frontend/src/types/assistant/api.ts"
   ],
   "frontend/src/features/ai-config/config-api.ts": [
@@ -640,16 +641,16 @@
     "frontend/src/types/ai-config/editor/config-model.ts"
   ],
   "frontend/src/features/ai-config/provider-presets.ts": [
-    "frontend/src/features/ai-config/catalog/provider-presets.ts",
-    "frontend/src/types/ai-config/catalog/provider-presets.ts",
+    "frontend/src/features/ai-config/editor/ConfigForm.tsx",
+    "frontend/src/types/ai-config/api.ts",
     "frontend/src/types/ai-config/editor/config-model.ts"
   ],
   "frontend/src/features/ai-config/RunningHubConfigFields.tsx": [
-    "frontend/src/features/ai-config/editor/RunningHubConfigFields.tsx",
+    "frontend/src/features/ai-config/editor/ConfigForm.tsx",
     "frontend/src/types/ai-config/editor/config-model.ts"
   ],
   "frontend/src/features/ai-config/RuntimeConfigFields.tsx": [
-    "frontend/src/features/ai-config/editor/RuntimeConfigFields.tsx",
+    "frontend/src/features/ai-config/editor/ConfigForm.tsx",
     "frontend/src/types/ai-config/editor/config-model.ts",
     "frontend/src/types/ai-config/tools.ts"
   ],
@@ -2398,7 +2399,7 @@
     "backend/src/short_drama/api/v1/assistant/conversations/revisions.py",
     "backend/src/short_drama/api/v1/assistant/tasks/__init__.py",
     "backend/src/short_drama/api/v1/assistant/tasks/operations.py",
-    "backend/src/short_drama/api/v1/assistant/tasks/policy.py",
+    "backend/src/short_drama/api/v1/assistant/settings/preferences.py",
     "backend/src/short_drama/api/v1/assistant/undo/__init__.py",
     "backend/src/short_drama/api/v1/assistant/undo/undo.py"
   ],

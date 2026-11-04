@@ -105,17 +105,7 @@ def condition(table, user_id):
     if name == "agent_tasks":
         return c.conversation_id.in_(allowed_ids("agent_conversations", user_id))
     if name == "agent_memory_items":
-        return and_(
-            c.owner_user_id == user_id,
-            or_(
-                c.scope_type == "user",
-                and_(
-                    c.scope_type == "conversation",
-                    c.conversation_id.in_(allowed_ids("agent_conversations", user_id)),
-                ),
-                and_(c.scope_type == "project", c.project_id.in_(project_ids(user_id))),
-            ),
-        )
+        return c.owner_user_id == user_id
     if name in {"agent_memory_revisions", "agent_memory_sources", "agent_memory_forget_rules"}:
         return c.memory_id.in_(allowed_ids("agent_memory_items", user_id))
     if name in {"agent_conversation_summaries", "agent_memory_jobs"}:

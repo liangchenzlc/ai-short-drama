@@ -76,6 +76,7 @@ def video_seed(runtime):
     )
     response = client.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "service_type": "video",
             "name": "离线 Agnes 首帧合同",

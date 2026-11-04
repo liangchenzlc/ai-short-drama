@@ -13,9 +13,7 @@ from short_drama.domain.assistant.conversations.models import AgentMessage
 from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall
 from short_drama.domain.assistant.memory.memory import (
     AgentConversationSummary,
-    AgentMemoryItem,
     AgentMemoryJob,
-    AgentMemorySource,
 )
 from short_drama.domain.assistant.tasks.task import AgentOperation
 from short_drama.schemas.assistant.conversations.history import (
@@ -65,21 +63,11 @@ def discussion_locked(service, conversation, message):
         )
         .limit(1)
     )
-    task_messages = select(AgentMessage.id).where(AgentMessage.task_id == task.id)
-    memory_dependency = session.scalar(
-        select(AgentMemorySource.id)
-        .join(AgentMemoryItem, AgentMemoryItem.id == AgentMemorySource.memory_id)
-        .where(
-            AgentMemorySource.message_id.in_(task_messages),
-            AgentMemoryItem.state == "active",
-        )
-        .limit(1)
-    )
-    if dependency is not None or memory_dependency is not None:
+    if dependency is not None:
         return (
             task,
             None,
-            ("assistant_history_dependency", "此讨论已有工具或已保存记忆依赖，请发送新消息纠正"),
+            ("assistant_history_dependency", "此讨论已有工具执行依赖，请发送新消息纠正"),
         )
     if (
         session.scalar(

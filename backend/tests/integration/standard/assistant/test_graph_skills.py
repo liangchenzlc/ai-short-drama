@@ -33,6 +33,466 @@ from tests.support.assistant_model import ScriptedModel
 pytestmark = pytest.mark.integration
 
 
+def skill_graph(workspace, accepted, replies, *, required=()):
+    from short_drama.agent.gateway.langchain import build_chat_model
+    from short_drama.agent.resources.graph import GraphResources
+    from short_drama.agent.runtime.middleware import ExecutionMiddleware, SkillToolsMiddleware
+    from short_drama.agent.runtime.model_ledger import RunModelLedger
+    from short_drama.agent.tools.langchain import create_langchain_tool
+    from tests.support.assistant_runtime import RuntimeTransport
+
+    saver, context = runtime(workspace, accepted)
+    with context.factory() as session:
+        snapshot = session.get(AgentRun, context.run_id).config_snapshot
+    transport = RuntimeTransport(replies)
+    resources = GraphResources(context, snapshot, None)
+    model = build_chat_model(
+        snapshot,
+        "",
+        callbacks=RunModelLedger(context).callbacks(hydrate=resources.hydrate),
+        transport=transport,
+    )
+    tools = [get_spec(name).handler for name in ("runtime__load_skill", "runtime__release_skill")]
+    available = [*tools, *[create_langchain_tool(get_spec(name)) for name in required]]
+    graph = build_agent(
+        model=model,
+        tools=tools,
+        middleware=[
+            ContextMiddleware(),
+            ExecutionMiddleware(resources),
+            SkillToolsMiddleware(available),
+        ],
+        checkpointer=saver,
+        system_prompt="按要求加载或释放创作方法。",
+    )
+    return graph, context, saver, transport, resources
+
+
+@pytest.mark.parametrize("budget", ["count", "tokens"])
+@pytest.mark.parametrize("manual", [False, True])
+def test_parallel_skill_admission_uses_merged_active_quota(harness_workspace, budget, manual):
+    factory, settings, model_id = harness_workspace
+    workspace = factory, settings, model_id, _Storage(factory)
+    costs = [10] * 9 if budget == "count" else [6000, 1500, 1500]
+    skills = [
+        create_skill(
+            workspace,
+            name=f"方法{index}",
+            slug=f"quota-{index}",
+            instructions="文" * cost,
+            resources=[],
+        )
+        for index, cost in enumerate(costs)
+    ]
+    _, accepted = new_skill_task(workspace, skills[-1] if manual else None)
+
+    def call(index):
+        return (
+            f"load-{index}",
+            "runtime__load_skill",
+            {
+                "name": skills[index].id,
+                "content_version": "1",
+                "purpose": "配额验证",
+            },
+        )
+
+    graph, context, saver, transport, resources = skill_graph(
+        harness_workspace,
+        accepted,
+        [
+            {"calls": [call(index) for index in range(len(skills) - 2)]},
+            {"calls": [call(len(skills) - 2), call(len(skills) - 1)]},
+            {"text": "已核对配额"},
+        ],
+    )
+    try:
+        result = asyncio.run(
+            graph.ainvoke(
+                {"messages": []},
+                {"configurable": {"thread_id": saver.thread_id}},
+                context=context,
+            )
+        )
+    finally:
+        resources.close()
+    active = [item for item in result["skill_activations"] if item["active"]]
+    assert len(active) <= 8
+    assert sum(item["body_tokens"] for item in active) <= 8000
+    errors = [
+        json.loads(message.content)["error"]
+        for message in result["messages"]
+        if isinstance(message, ToolMessage) and message.status == "error"
+    ]
+    if manual:
+        assert any(
+            item["skill"]["id"] == skills[-1].id and item["source"] == "manual" for item in active
+        )
+    else:
+        assert len(errors) == 1 and errors[0]["code"] == "assistant_skill_budget"
+        details = errors[0]["details"]
+        assert details["active_count"] == (8 if budget == "count" else 2)
+        assert details["body_tokens"] == (80 if budget == "count" else 7500)
+        assert all(
+            item["activation_id"] and item["source"] == "auto" and item["body_tokens"] > 0
+            for item in details["releasable"]
+        )
+    assert len(transport.main_requests) == 3
+
+
+@pytest.mark.parametrize("restriction", ["mode", "policy"])
+def test_changed_skill_eligibility_revokes_body_and_derivations_before_model(
+    harness_workspace,
+    restriction,
+):
+    from short_drama.domain.assistant.operations.preference import AgentPreference
+    from tests.integration.standard.assistant.test_agent_subtasks import new_project_task
+
+    factory, settings, model_id = harness_workspace
+    required = "workbench__submit_generation_batch"
+    skill = create_skill(
+        (factory, settings, model_id, _Storage(factory)),
+        modes=["standard"],
+        required_tools=[required],
+        instructions="REVOKED_SKILL_BODY",
+        resources=[],
+    )
+    accepted, _project_id = new_project_task(harness_workspace)
+    graph, context, saver, transport, resources = skill_graph(
+        harness_workspace,
+        accepted,
+        [
+            {
+                "calls": [
+                    (
+                        "load",
+                        "runtime__load_skill",
+                        {
+                            "name": skill.id,
+                            "content_version": "1",
+                            "purpose": "执行创作方法",
+                        },
+                    )
+                ]
+            },
+            {"text": "已加载"},
+            {"text": "已调整方法"},
+        ],
+        required=[required],
+    )
+    config = {"configurable": {"thread_id": saver.thread_id}}
+    try:
+        loaded = asyncio.run(graph.ainvoke({"messages": []}, config, context=context))
+        assert loaded["skill_activations"][0]["active"]
+        with factory.begin() as session:
+            if restriction == "mode":
+                task = session.get(AgentTask, context.task_id)
+                task.execution_target = {**task.execution_target, "mode": "infinite_canvas"}
+            else:
+                preference = session.scalar(
+                    select(AgentPreference).where(
+                        AgentPreference.owner_user_id == context.owner_id,
+                    )
+                )
+                if preference is None:
+                    from short_drama.utils.snowflake import next_id
+
+                    session.add(
+                        AgentPreference(
+                            id=next_id(), owner_user_id=context.owner_id, media_generation_enabled=0
+                        )
+                    )
+                else:
+                    preference.media_generation_enabled = 0
+        result = asyncio.run(
+            graph.ainvoke(
+                {
+                    "messages": [
+                        HumanMessage(
+                            content="REVOKED_DERIVED_SUMMARY",
+                            additional_kwargs={
+                                "skill_activation_ids": [loaded["skill_activations"][0]["id"]],
+                                "lc_source": "summarization",
+                            },
+                        )
+                    ]
+                },
+                config,
+                context=context,
+            )
+        )
+    finally:
+        resources.close()
+    assert not result["skill_activations"][0]["active"]
+    assert result["skill_activations"][0]["issue"]
+    request = transport.main_requests[-1]
+    assert "REVOKED_SKILL_BODY" not in json.dumps(request)
+    assert "REVOKED_DERIVED_SUMMARY" not in json.dumps(request)
+    assert required not in {tool["function"]["name"] for tool in request["tools"]}
+    assert "issue" in json.dumps(request["messages"])
+
+
+@pytest.mark.parametrize("damage", ["missing", "invalid", "invalid_sibling"])
+def test_missing_or_invalid_skill_archive_stops_with_safe_identity(
+    harness_workspace,
+    caplog,
+    damage,
+):
+    from short_drama.agent.gateway.contracts import AgentGatewayError
+
+    factory, settings, model_id = harness_workspace
+    workspace = factory, settings, model_id, _Storage(factory)
+    skill = create_skill(workspace, instructions="PRIVATE_BODY_NOT_FOR_DIAGNOSTICS", resources=[])
+    sibling = create_skill(
+        workspace,
+        name="同组方法",
+        slug="sibling-method",
+        instructions="PRIVATE_SIBLING_BODY",
+        resources=[],
+    )
+    _, accepted = new_skill_task(workspace)
+    graph, context, saver, transport, resources = skill_graph(
+        harness_workspace,
+        accepted,
+        [
+            {
+                "calls": [
+                    (
+                        "load",
+                        "runtime__load_skill",
+                        {
+                            "name": skill.id,
+                            "content_version": "1",
+                            "purpose": "归档验证",
+                        },
+                    ),
+                    *(
+                        [
+                            (
+                                "sibling",
+                                "runtime__load_skill",
+                                {
+                                    "name": sibling.id,
+                                    "content_version": "1",
+                                    "purpose": "同组归档验证",
+                                },
+                            )
+                        ]
+                        if damage == "invalid_sibling"
+                        else []
+                    ),
+                ]
+            },
+            {"text": "加载完成"},
+            {"text": "不应继续"},
+        ],
+    )
+    config = {"configurable": {"thread_id": saver.thread_id}}
+    try:
+        loaded = asyncio.run(graph.ainvoke({"messages": []}, config, context=context))
+        identifier = next(
+            item["body_operation_id"]
+            for item in loaded["skill_activations"]
+            if item["skill"]["id"] == (sibling.id if damage == "invalid_sibling" else skill.id)
+        )
+        with factory.begin() as session:
+            operation = session.get(AgentOperation, int(identifier))
+            operation.result = {
+                **operation.result,
+                "instructions": "" if damage == "missing" else "PRIVATE_CORRUPTED_BODY",
+            }
+        asyncio.run(
+            graph.aupdate_state(
+                config,
+                {
+                    "messages": [
+                        RemoveMessage(id=message.id)
+                        for message in loaded["messages"]
+                        if isinstance(message, ToolMessage)
+                        or isinstance(message, AIMessage)
+                        and message.tool_calls
+                    ]
+                },
+            )
+        )
+        with pytest.raises(AgentGatewayError, match="agent_skill_context_missing"):
+            asyncio.run(
+                graph.ainvoke({"messages": [HumanMessage(content="继续")]}, config, context=context)
+            )
+    finally:
+        resources.close()
+    assert len(transport.main_requests) == 2
+    assert f"operation_id={identifier}" in caplog.text
+    assert f"scope_id={context.scope_id}" in caplog.text
+    assert "PRIVATE_" not in caplog.text
+
+
+def test_oversized_manual_admission_reports_committed_usage(harness_workspace):
+    factory, settings, model_id = harness_workspace
+    workspace = factory, settings, model_id, _Storage(factory)
+    auto = create_skill(workspace, instructions="文" * 6000, resources=[])
+    manual = create_skill(
+        workspace, name="超长方法", slug="oversized-method", instructions="文" * 8500, resources=[]
+    )
+    _, accepted = new_skill_task(workspace, manual)
+    replies = [
+        {
+            "calls": [
+                (
+                    f"load-{index}",
+                    "runtime__load_skill",
+                    {
+                        "name": skill.id,
+                        "content_version": "1",
+                        "purpose": "正文容量验证",
+                    },
+                )
+            ]
+        }
+        for index, skill in enumerate((auto, manual))
+    ]
+    graph, context, saver, _transport, resources = skill_graph(
+        harness_workspace,
+        accepted,
+        [*replies, {"text": "请先缩小方法正文"}],
+    )
+    try:
+        state = asyncio.run(
+            graph.ainvoke(
+                {"messages": []},
+                {
+                    "configurable": {"thread_id": saver.thread_id},
+                },
+                context=context,
+            )
+        )
+    finally:
+        resources.close()
+    error = next(
+        json.loads(message.content)["error"]
+        for message in state["messages"]
+        if isinstance(message, ToolMessage) and message.status == "error"
+    )
+    assert error["details"]["active_count"] == 1
+    assert error["details"]["body_tokens"] == 6000
+    assert len(error["details"]["releasable"]) == 1
+    assert [item["skill"]["id"] for item in state["skill_activations"] if item["active"]] == [
+        auto.id
+    ]
+
+
+@pytest.mark.parametrize("manual", [False, True])
+def test_parallel_duplicate_load_and_release_preserve_activation_identity(
+    harness_workspace, manual
+):
+    factory, settings, model_id = harness_workspace
+    workspace = factory, settings, model_id, _Storage(factory)
+    skill = create_skill(workspace, instructions="IDEMPOTENT_BODY", resources=[])
+    _, accepted = new_skill_task(workspace, skill if manual else None)
+    arguments = {"name": skill.id, "content_version": "1", "purpose": "重复调用验证"}
+    activation_id = None
+
+    def releases(_request):
+        return {
+            "calls": [
+                (f"release-{index}", "runtime__release_skill", {"activation_id": activation_id})
+                for index in range(2)
+            ]
+            + [("stale-load", "runtime__load_skill", arguments)]
+        }
+
+    graph, context, saver, transport, resources = skill_graph(
+        harness_workspace,
+        accepted,
+        [
+            {"calls": [(f"load-{index}", "runtime__load_skill", arguments) for index in range(2)]},
+            {"text": "已加载"},
+            releases,
+            {"text": "已核对释放"},
+        ],
+    )
+    config = {"configurable": {"thread_id": saver.thread_id}}
+    try:
+        loaded = asyncio.run(graph.ainvoke({"messages": []}, config, context=context))
+        assert len(loaded["skill_activations"]) == 1
+        activation_id = loaded["skill_activations"][0]["id"]
+        result = asyncio.run(
+            graph.ainvoke({"messages": [HumanMessage(content="核对释放")]}, config, context=context)
+        )
+    finally:
+        resources.close()
+    original = next(item for item in result["skill_activations"] if item["id"] == activation_id)
+    assert original["active"] is manual
+    assert len([item for item in result["skill_activations"] if item["active"]]) <= 1
+    with factory() as session:
+        operations = session.scalars(
+            select(AgentOperation).where(
+                AgentOperation.run_id == context.run_id,
+            )
+        ).all()
+    initial = [item for item in operations if item.tool_name == "runtime__load_skill"][:2]
+    assert len({item.result["activation_id"] for item in initial}) == 1
+    released = [item for item in operations if item.tool_name == "runtime__release_skill"]
+    if manual:
+        assert all(
+            item.status == "failed" and item.error["code"] == "conflict" for item in released
+        )
+    else:
+        assert all(item.status == "succeeded" for item in released)
+        assert sorted(item.result["already_applied"] for item in released) == [False, True]
+    assert len(transport.main_requests) == 4
+
+
+def test_skill_admission_rollback_and_retry_keep_durable_receipt_identity(harness_workspace):
+    from copy import deepcopy
+
+    from short_drama.agent.tools.runtime import invoke_runtime_tool
+    from short_drama.core.exceptions import WorkflowError
+
+    factory, settings, model_id = harness_workspace
+    workspace = factory, settings, model_id, _Storage(factory)
+    skill = create_skill(workspace, instructions="RECOVERABLE_BODY", resources=[])
+    _, accepted = new_skill_task(workspace)
+    _, context = runtime(harness_workspace, accepted)
+    with factory.begin() as session:
+        task = session.get(AgentTask, context.task_id)
+        apply_inputs_locked(
+            session,
+            session.get(AgentConversation, task.conversation_id),
+            task,
+            session.get(AgentRun, context.run_id),
+        )
+    arguments = {"name": skill.id, "content_version": "1", "purpose": "回执恢复验证"}
+    call = register(context, accepted, "runtime__load_skill", arguments)
+    tool = get_spec("runtime__load_skill").handler
+    values = tool.input_model.model_validate(arguments)
+    initial = {"scope_id": str(context.scope_id), "permitted_tool_names": [], "selected_skills": []}
+
+    def fail_after_load(*args, **kwargs):
+        tool.locked_handler(*args, **kwargs)
+        raise WorkflowError("fixture_rollback", "事务回滚验证", 409)
+
+    with pytest.raises(WorkflowError, match="事务回滚验证"):
+        invoke_runtime_tool(fail_after_load, values, context, call["id"], state=deepcopy(initial))
+    with factory() as session:
+        operation = session.scalar(
+            select(AgentOperation).where(AgentOperation.run_id == context.run_id)
+        )
+        assert operation.result is None
+    first_state, retry_state = deepcopy(initial), deepcopy(initial)
+    first = invoke_runtime_tool(tool.locked_handler, values, context, call["id"], state=first_state)
+    retry = invoke_runtime_tool(tool.locked_handler, values, context, call["id"], state=retry_state)
+    assert first == retry and first["instructions"] == "RECOVERABLE_BODY"
+    assert first_state["skill_activations"] == retry_state["skill_activations"]
+    with factory() as session:
+        operation = session.scalar(
+            select(AgentOperation).where(AgentOperation.run_id == context.run_id)
+        )
+        assert operation.scope_id == context.scope_id
+        assert first["body_operation_id"] == str(operation.id)
+        assert operation.result["activation_record"]["id"] == first["activation_id"]
+
+
 @pytest.mark.parametrize("restriction", ["mode", "required_tool", None])
 def test_explicit_skill_load_rechecks_target_and_scope_tools(harness_workspace, restriction):
     from dataclasses import replace
@@ -296,16 +756,20 @@ def test_parallel_loads_canonical_restore_and_forgetting_keep_scope_sources(harn
     assert len(bodies) == 2
     assert all(json.loads(message.content)["instructions"] for message in bodies)
     assert all(message.id.startswith("operation-result:") for message in bodies)
-    from tests.integration.standard.assistant.test_assistant_memory import memory, service
+    from tests.integration.standard.assistant.test_assistant_memory import (
+        create_sourced_memory,
+        memory,
+        service,
+    )
 
     with factory() as session:
         manager = service(session)
-        remembered = manager.create_item(
+        remembered = create_sourced_memory(
+            manager,
             memory(
                 source_conversation_id=accepted.task.conversation_id,
                 source_message_ids=[accepted.message.id],
             ),
-            "forget-loaded-skill-source",
         )
         manager.forget_item(remembered.id, {"content_version": "1"})
     forgotten = asyncio.run(restored_graph.ainvoke({"messages": []}, config, context=context))
@@ -423,15 +887,19 @@ def test_one_withdrawn_skill_in_same_canonical_turn_never_returns(harness_worksp
             AIMessage(content="再次恢复"),
         ]
     else:
-        from tests.integration.standard.assistant.test_assistant_memory import memory, service
+        from tests.integration.standard.assistant.test_assistant_memory import (
+            create_sourced_memory,
+            memory,
+            service,
+        )
 
         with factory() as session:
             manager = service(session)
-            item = manager.create_item(
+            item = create_sourced_memory(
+                manager,
                 memory(
                     source_conversation_id=conversation.id, source_message_ids=[accepted.message.id]
                 ),
-                "forget-only-first-skill",
             )
             manager.forget_item(item.id, {"content_version": "1"})
         replies = [AIMessage(content="已遗忘"), AIMessage(content="再次恢复")]

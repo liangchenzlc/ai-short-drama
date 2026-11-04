@@ -315,3 +315,34 @@ def test_actual_tool_node_uses_one_strict_input_model_with_defaults_and_aliases(
     assert isinstance(error.value.__cause__, ValidationError)
     assert error.value.__cause__.errors()[0]["type"] == "extra_forbidden"
     assert len(observed) == 1
+
+
+def test_readonly_workbench_keeps_analysis_and_account_memory():
+    from types import SimpleNamespace
+
+    from short_drama.agent.tools.registry import available_specs
+
+    task = SimpleNamespace(execution_target={"mode": "standard"})
+    names = {
+        spec.name
+        for spec in available_specs(
+            task, media_enabled=True, workbench_enabled=False, memory_enabled=True
+        )
+    }
+    assert "workbench__read_current_script" in names
+    assert "runtime__remember_memory" in names
+    assert "workbench__apply_standard_patch" not in names
+    assert "runtime__propose_script_patch" not in names
+    assert "workbench__submit_generation_batch" not in names
+
+
+def test_disabled_memory_does_not_remove_conversation_history():
+    from types import SimpleNamespace
+
+    from short_drama.agent.tools.registry import available_specs
+
+    task = SimpleNamespace(execution_target={"mode": "standard"})
+    names = {spec.name for spec in available_specs(task, media_enabled=True, memory_enabled=False)}
+    assert "runtime__read_conversation_history" in names
+    assert "runtime__read_memory" not in names
+    assert "runtime__remember_memory" not in names

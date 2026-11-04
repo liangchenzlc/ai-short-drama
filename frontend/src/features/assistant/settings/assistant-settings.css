@@ -1,15 +1,10 @@
-.assistant-runtime-settings, .assistant-mcp-tokens { padding: 20px 0; border-top: 1px solid var(--hair); min-width: 0; }
-.assistant-runtime-settings h3, .assistant-mcp-tokens h3 { margin: 0 0 16px; font-size: 16px; }
-.assistant-runtime-settings h4 { margin: 20px 0 12px; font-size: 14px; }
-.assistant-settings-instructions, .assistant-runtime-limit-fields label, .assistant-media-limit-fields label, .assistant-token-form label { display: grid; gap: 8px; min-width: 0; }
-.assistant-runtime-limit-fields, .assistant-media-limit-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
-.assistant-runtime-limit-fields .ant-input-number, .assistant-media-limit-fields .ant-input-number { width: 100%; }
-.assistant-settings-inline, .assistant-settings-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-block: 12px; }
-.assistant-settings-actions > span:first-child { margin-right: auto; }
-.assistant-default-instructions { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; padding: 12px; background: var(--surface); }
-.assistant-token-form { display: grid; gap: 16px; }
-.assistant-token-list { overflow-x: auto; }
-.assistant-token-list table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.assistant-token-list td, .assistant-token-list th { padding: 12px 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--hair); }
-.assistant-token-list small { display: block; max-width: 32ch; overflow-wrap: anywhere; color: var(--sub); }
-.assistant-token-secret { overflow-wrap: anywhere; white-space: pre-wrap; user-select: all; padding: 12px; background: var(--surface); }
+.assistant-settings-content { width: min(100%, 800px); }
+.assistant-instructions { display: grid; gap: 14px; padding-top: 8px; }
+.assistant-instructions > label { font-size: 14px; color: var(--ink); }
+.assistant-instructions textarea { min-height: 280px; resize: vertical; line-height: 1.8; padding: 16px; }
+.assistant-instructions-footer { display: flex; align-items: center; gap: 14px; color: var(--sub); font-size: 12px; }
+.assistant-instructions-footer > span:first-child { margin-right: auto; }
+.settings-conflicts { max-height: 60vh; overflow: auto; }
+.settings-conflicts section { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding-block: 14px; border-bottom: 1px solid var(--hair); }
+.settings-conflicts strong { grid-column: 1 / -1; }
+.settings-conflicts p { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

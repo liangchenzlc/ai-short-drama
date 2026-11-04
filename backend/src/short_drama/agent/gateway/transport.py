@@ -128,6 +128,12 @@ class _CapturedStream(httpx2.AsyncByteStream):
                     raise value
 
     async def aclose(self):
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            # 取消路径不能为保存完整 raw 回执而等待供应商继续输出。
+            self.bridge.ended = True
+            await self.bridge.aclose()
+            return
         # SDKs close at their terminal event. Drain the bounded body and commit raw
         # before letting that close (and hence the completed decision) succeed.
         async for _ in self:

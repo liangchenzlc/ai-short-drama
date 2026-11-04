@@ -1539,7 +1539,7 @@
         "backend/src/short_drama/api/v1/assistant/status/status.py",
         "backend/src/short_drama/api/v1/assistant/tasks/__init__.py",
         "backend/src/short_drama/api/v1/assistant/tasks/operations.py",
-        "backend/src/short_drama/api/v1/assistant/tasks/policy.py",
+        "backend/src/short_drama/api/v1/assistant/settings/preferences.py",
         "backend/src/short_drama/api/v1/assistant/undo/__init__.py",
         "backend/src/short_drama/api/v1/assistant/undo/undo.py",
         "backend/src/short_drama/api/v1/canvas/__init__.py",
@@ -2594,14 +2594,11 @@
         "frontend/src/features/ai-config/catalog/ConfigCatalogProvider.tsx",
         "frontend/src/features/ai-config/catalog/config-catalog.ts",
         "frontend/src/features/ai-config/catalog/config-events.ts",
-        "frontend/src/features/ai-config/catalog/provider-presets.ts",
-        "frontend/src/features/ai-config/editor/AiConfigSession.tsx",
-        "frontend/src/features/ai-config/editor/AssistantGenerationPolicy.tsx",
         "frontend/src/features/ai-config/editor/ConfigForm.tsx",
+        "frontend/src/features/assistant/settings/SettingsSession.tsx",
+        "frontend/src/features/assistant/settings/AssistantGeneralSettings.tsx",
         "frontend/src/features/ai-config/editor/ConfigTable.tsx",
         "frontend/src/features/ai-config/editor/ModelIdentifierField.tsx",
-        "frontend/src/features/ai-config/editor/RunningHubConfigFields.tsx",
-        "frontend/src/features/ai-config/editor/RuntimeConfigFields.tsx",
         "frontend/src/features/ai-config/editor/config-api.ts",
         "frontend/src/features/ai-config/editor/config-form-model.ts",
         "frontend/src/features/ai-config/editor/config-form.css",
@@ -2610,9 +2607,14 @@
         "frontend/src/features/ai-config/selection/CreationModelSelect.tsx",
         "frontend/src/features/ai-config/selection/config-selection.ts",
         "frontend/src/features/ai-config/testing/ModelConfigTest.tsx",
-        "frontend/src/pages/ai-config/**",
-        "frontend/src/pages/ai-config/index.tsx",
-        "frontend/src/types/ai-config/**"
+        "frontend/src/pages/settings/index.tsx",
+        "frontend/src/types/ai-config/**",
+        "frontend/src/pages/settings/**",
+        "backend/src/short_drama/ai/adapters/model_protocols.py",
+        "backend/src/short_drama/ai/adapters/image/**",
+        "backend/src/short_drama/ai/adapters/video/**",
+        "backend/src/short_drama/ai/official_models.py",
+        "backend/src/short_drama/ai/data/**"
       ],
       "depends_on": [
         "shared.core"
@@ -3071,7 +3073,7 @@
         "backend/src/short_drama/service/assistant/undo/undo_chain.py",
         "frontend/src/api/assistant/**",
         "frontend/src/api/assistant/operations/script.ts",
-        "frontend/src/features/ai-config/editor/AssistantGenerationPolicy.tsx",
+        "frontend/src/features/assistant/settings/AssistantGeneralSettings.tsx",
         "frontend/src/features/assistant/**",
         "frontend/src/features/assistant/attachments/agent-composer-context.ts",
         "frontend/src/features/assistant/composer/AssistantMentionTextarea.tsx",
@@ -3104,7 +3106,9 @@
         "frontend/src/features/assistant/skills/AssistantSkillPicker.tsx",
         "frontend/src/features/assistant/skills/assistant-skill-token.ts",
         "frontend/src/features/creation/workspace/navigation/assistant-navigation.ts",
-        "frontend/src/types/assistant/**"
+        "frontend/src/types/assistant/**",
+        "backend/scripts/migrate_account_memory.py",
+        "backend/scripts/migrate_account_memory.py"
       ],
       "depends_on": [
         "shared.core",
@@ -14445,6 +14449,68 @@
         "backend/tests/integration/conftest.py",
         "backend/tests/conftest.py"
       ]
+    },
+    {
+      "path": "backend/tests/unit/shared/model_config/test_image_protocol_registry.py",
+      "features": [
+        "shared.model_config"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/shared/model_config/test_official_media_protocols.py",
+      "features": [
+        "shared.model_config"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/assistant/test_account_memory.py",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/__init__.py",
+        "backend/tests/conftest.py"
+      ]
+    },
+    {
+      "path": "frontend/tests/assistant/memory-manager.test.mjs",
+      "features": [
+        "standard.assistant"
+      ],
+      "runner": "node",
+      "level": "fast",
+      "requires": [],
+      "support": []
+    },
+    {
+      "path": "frontend/e2e/core/mcp-settings.spec.ts",
+      "features": [
+        "standard.assistant",
+        "standard.identity"
+      ],
+      "runner": "playwright",
+      "level": "browser",
+      "requires": [],
+      "support": [
+        "frontend/e2e/support/studio-fixture.ts"
+      ]
     }
   ],
   "auxiliary": [
@@ -17593,6 +17659,126 @@
         "standard.assistant"
       ],
       "reason": "旧中文语法指令授权已退役；当前工具按实际执行scope、显式选择与业务收据授权，相关测试迁到正式图。"
+    },
+    {
+      "path": "frontend/src/pages/ai-config/index.tsx",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/pages/ai-config/index.css",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/features/ai-config/editor/AiConfigSession.tsx",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/types/ai-config/editor/AiConfigSession.ts",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/features/ai-config/editor/AssistantGenerationPolicy.tsx",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/features/ai-config/catalog/provider-presets.ts",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/types/ai-config/catalog/provider-presets.ts",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/features/ai-config/editor/RunningHubConfigFields.tsx",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/features/ai-config/editor/RuntimeConfigFields.tsx",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "backend/src/short_drama/api/v1/assistant/tasks/policy.py",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/features/assistant/settings/AssistantRuntimeSettings.tsx",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/features/assistant/settings/MediaLimitFields.tsx",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/features/assistant/composer/TaskMediaLimits.tsx",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/types/assistant/composer/TaskMediaLimits.ts",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
+    },
+    {
+      "path": "frontend/src/types/assistant/settings/media-limits.ts",
+      "features": [
+        "shared.model_config",
+        "standard.assistant"
+      ],
+      "reason": "配置模块按统一导航、options目录和账号设置迁移；删除旧配置入口及用户媒体配额。"
     }
   ]
 }

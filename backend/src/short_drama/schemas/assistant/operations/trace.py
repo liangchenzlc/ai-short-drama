@@ -1,6 +1,7 @@
 """Bounded, storage-independent execution display contracts."""
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import Field
@@ -8,6 +9,11 @@ from pydantic import Field
 from short_drama.schemas.base import Identifier, ReadModel
 
 TRACE_PREVIEW_BYTES = 16 * 1024
+
+
+class ToolTraceVisibility(StrEnum):
+    VISIBLE = "visible"
+    HIDDEN = "hidden"
 
 
 class ExecutionTarget(ReadModel):
@@ -24,6 +30,7 @@ class ExecutionDisplay(ReadModel):
     action: str
     target: ExecutionTarget
     title: str
+    summary: str = ""
 
 
 class TraceResource(ReadModel):
@@ -52,13 +59,16 @@ class TraceBlock(ExecutionDisplay):
     tool_call_id: Identifier | None = None
     subtask_id: Identifier | None = None
     model_call_id: Identifier | None = None
+    turn_id: Identifier | None = None
     operation_id: Identifier | None = None
     tool_name: str | None = None
     kind: Literal["reasoning", "tool", "skill", "subtask", "sandbox", "wait"]
     source: str
-    visibility: Literal["silent", "step", "artifact"] = "step"
+    trace_visibility: ToolTraceVisibility = ToolTraceVisibility.VISIBLE
     status: str = "running"
     started_seq: int = 0
+    updated_seq: int = 0
+    result_seq: int | None = None
     started_at: datetime
     updated_at: datetime
     finished_at: datetime | None = None

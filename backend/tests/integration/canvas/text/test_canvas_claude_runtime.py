@@ -224,6 +224,7 @@ def claude_runtime(resource_app):
 def save_claude_model(runtime, client, *, streaming=True):
     response = client.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "name": "普通Claude协议验证",
             "service_type": "text",

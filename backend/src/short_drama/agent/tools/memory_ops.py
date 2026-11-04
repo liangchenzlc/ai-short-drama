@@ -16,7 +16,6 @@ from short_drama.utils.json_digest import digest
 @dataclass(frozen=True)
 class MemoryDirective:
     action: str
-    scope_type: str | None
     content: str | None = None
     target: str | None = None
 
@@ -70,11 +69,13 @@ def parse_memory_directive(content):
     if scope and after_scope and scope != after_scope:
         return None
     scope = after_scope or scope
+    if scope in {"project", "conversation"}:
+        return None
     tail = re.sub(r"^记忆\s*", "", tail, count=1).lstrip("：:,， ")
     if not tail or re.match(r"(?:是什么|是什么意思|怎么|如何|所有|全部)", tail):
         return None
     if action == "remember":
-        return MemoryDirective(action, scope, content=tail) if len(tail) <= 12000 else None
+        return MemoryDirective(action, content=tail) if len(tail) <= 12000 else None
     body = None
     if action == "update":
         change = re.fullmatch(
@@ -95,13 +96,11 @@ def parse_memory_directive(content):
         or tail in {"所有记忆", "全部记忆", "这条", "这条记忆", "为", "改为"}
     ):
         return None
-    return MemoryDirective(action, scope, content=body, target=tail)
+    return MemoryDirective(action, content=body, target=tail)
 
 
 def _scope(session, conversation, task):
-    return checked_scope(
-        session, conversation.owner_user_id, conversation.id, task.memory_project_ids
-    )
+    return checked_scope(session, conversation.owner_user_id)
 
 
 def _candidates(session, scope, directive):
@@ -110,8 +109,6 @@ def _candidates(session, scope, directive):
     if key.isascii() and key.isdecimal() and 0 < int(key) < 2**64:
         identities.append(AgentMemoryItem.id == int(key))
     query = AgentMemoryDAO(session).rows(scope, active=False).where(or_(*identities))
-    if directive.scope_type:
-        query = query.where(AgentMemoryItem.scope_type == directive.scope_type)
     return session.scalars(query.order_by(AgentMemoryItem.id).limit(2).with_for_update()).all()
 
 
@@ -120,7 +117,6 @@ def _reference(row):
         "kind": "memory",
         "id": str(row.id),
         "name": row.title,
-        "scope_type": row.scope_type,
         "content_version": str(row.content_version),
         "state": row.state,
     }
@@ -137,11 +133,8 @@ def memory_requests_locked(session, conversation, task, rows, restricted_ids):
             "request_message_id": str(message.id),
             "request_hash": digest({"role": message.role, "content": message.content}),
             "action": directive.action,
-            "scope_type": directive.scope_type,
         }
         if directive.action != "remember":
             request["targets"] = [_reference(row) for row in _candidates(session, scope, directive)]
-        elif directive.scope_type == "project":
-            request["project_ids"] = task.memory_project_ids
         result.append(request)
     return result

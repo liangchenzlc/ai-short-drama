@@ -26,7 +26,6 @@ from short_drama.domain.identity.accounts.user import UserSession
 from short_drama.service.ai_config.management.assistant_models import AgentModelService
 from short_drama.service.ai_config.management.models import AIModelConfigService
 from short_drama.service.assistant.settings.preferences import AssistantSettingsService
-from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 from short_drama.service.creation.assets.management.assets import AssetService
 from short_drama.service.skills.catalog.skill import AgentSkillService
 from tests.integration.standard.assistant.test_global_assistant_tasks import (
@@ -1544,10 +1543,14 @@ def test_live_skill_withdrawal_removes_body_resources_and_notes(live_case, repet
     else:
         with case.factory() as session:
             task_service(session, case.settings)
+            from tests.integration.standard.assistant.test_assistant_memory import (
+                create_sourced_memory,
+            )
+
             manager = AgentMemoryService(session)
-            item = manager.create_item(
+            item = create_sourced_memory(
+                manager,
                 {
-                    "scope_type": "user",
                     "kind": "preference",
                     "memory_key": "本次来源撤回",
                     "title": "本次来源撤回",
@@ -1555,7 +1558,6 @@ def test_live_skill_withdrawal_removes_body_resources_and_notes(live_case, repet
                     "source_conversation_id": str(accepted.task.conversation_id),
                     "source_message_ids": [str(accepted.message.id)],
                 },
-                uuid4().hex,
             )
             manager.forget_item(item.id, {"content_version": str(item.content_version)})
         case.followup(accepted, "继续只核对当前允许资料；不要恢复已遗忘的来源。")
@@ -1616,20 +1618,16 @@ def test_live_parent_child_skill_activation_and_history_are_isolated(live_case, 
 
 
 @pytest.mark.parametrize("repetition", range(2))
-def test_live_settings_freeze_realtime_media_policy_and_quantity_objects(live_case, repetition):
+def test_live_settings_freeze_and_realtime_media_permission(live_case, repetition):
     case = live_case
     project_id, references, _model = media_scene(case)
     with case.factory() as session:
         task_service(session, case.settings)
         service = AssistantSettingsService(session, case.settings)
-        initial = service.get_settings().model_dump(
-            exclude={"default_instructions", "deployment_limits"}
-        )
         service.update_settings(
             {
-                **initial,
+                "settings_version": str(service.get_settings().settings_version),
                 "custom_instructions": "SETTINGS_OLD_雨夜",
-                "default_media_limits": {"images": 2, "videos": 1, "audio": 1},
             }
         )
     conversation, accepted, _ = case.create(
@@ -1647,17 +1645,10 @@ def test_live_settings_freeze_realtime_media_policy_and_quantity_objects(live_ca
         )
         session.rollback()
         service = AssistantSettingsService(session, case.settings)
-        before = service.get_settings().model_dump(
-            exclude={"default_instructions", "deployment_limits"}
-        )
         service.update_settings(
             {
-                **before,
+                "settings_version": str(service.get_settings().settings_version),
                 "custom_instructions": "SETTINGS_NEW_钟楼",
-                "model_call_limit": 100,
-                "output_token_limit": 500000,
-                "subagent_max_concurrency": 1,
-                "default_media_limits": {"images": 9},
             }
         )
     answer_question(case, questions(case, accepted)[0])
@@ -1676,44 +1667,28 @@ def test_live_settings_freeze_realtime_media_policy_and_quantity_objects(live_ca
         assert (
             session.get(AgentRun, accepted.run.id).config_snapshot["assistant_settings"] == original
         )
-        assert session.get(AgentTask, accepted.task.id).media_limits == {
-            "images": 2,
-            "videos": 1,
-            "audio": 1,
-        }
         assert session.scalar(select(func.count()).select_from(AsyncTask)) == 0
     with case.factory() as session:
         task_service(session, case.settings)
-        assert not AssistantPolicyService(session).get_generation_policy().media_generation_enabled
+        assert (
+            not AssistantSettingsService(session, case.settings)
+            .get_settings()
+            .media_generation_enabled
+        )
     _other_conversation, newer, _ = case.create("用当前指令简述一次镜头节奏，不生成媒体。")
     case.execute(newer)
     assert_success(case, newer)
-    _override_conversation, override, _ = case.create(
-        "只讨论对白节奏，不生成媒体。", media_limits={"images": 3}
-    )
-    case.execute(override)
-    assert_success(case, override)
     with case.factory() as session:
         run = session.get(AgentRun, newer.run.id)
         frozen = run.config_snapshot["assistant_settings"]
-        assert frozen["instructions"] == "SETTINGS_NEW_钟楼" and frozen["model_call_limit"] == 100
-        assert run.budget["decision_calls"] == 100 and run.budget["output_tokens"] == 500000
-        assert session.get(AgentTask, newer.task.id).media_limits == {
-            "images": 9,
-            "videos": None,
-            "audio": None,
-        }
-        assert session.get(AgentTask, override.task.id).media_limits == {
-            "images": 3,
-            "videos": None,
-            "audio": None,
-        }
+        assert frozen["instructions"] == "SETTINGS_NEW_钟楼"
+        assert frozen["model_call_limit"] == case.settings.agent_run_decision_cap
+        assert run.budget["output_tokens"] == case.settings.agent_run_output_token_cap
     trace_roundtrip(case, conversation, accepted)
     case.facts.update(
         old_run_settings_frozen=True,
         new_run_settings_refreshed=True,
         realtime_policy_blocked=True,
-        quantity_override_whole_object=True,
         media_external_requests=0,
     )
     case.passed = True

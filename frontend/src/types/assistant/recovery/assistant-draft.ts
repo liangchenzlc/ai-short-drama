@@ -4,7 +4,6 @@ import type {
   AssistantSubjectReference,
   AssistantTaskSendInput,
   TaskExecutionTarget,
-  TaskMediaLimits,
 } from '@host/types/assistant/api';
 
 export interface AssistantDraft {
@@ -16,8 +15,6 @@ export interface AssistantDraft {
   taskId?: string;
   newTask?: boolean;
   executionTarget?: TaskExecutionTarget | null;
-  memoryProjectIds?: string[];
-  mediaLimits?: TaskMediaLimits;
   settingsDirty?: boolean;
   materials?: (AssistantSubjectReference & { name: string })[];
   materialsInvalid?: boolean;

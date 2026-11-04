@@ -80,7 +80,9 @@ wait 和 finish 共用持锁取消判定与中断收尾，先重查 stop_pending
 
 `task_user_sources` 同时保留仍合格的真实问答原文：DAO 仅通过同 Task／Run／scope、已成功消费的 ask Operation 的 answer_message_id 读取 user/tool_answer，先排除 restricted 来源，按小列身份排序取最新32条再读正文。根范围与现有 TaskInput 合并后复用原12KiB投影；子范围把自己的答案与冻结 task_delegation_sources 放在同一 delegation-sources Human，避免 selector 末输入只有回答值而失去目标。Skill 整组撤回保持原规则，不借答案恢复旧问题参数、方法正文或 AI 确认；忘答后不重新注入数据库中的原文。
 
-同一 pinned Human 的 `current_skill_activations` 明确提供当前图状态，最多32条，仅含 activation_id、skill_id、content_version、body_operation_id、active，筛除其他 Task／scope、restricted 来源与 excluded 方法。原 canonical 加载回执仍原样保留当时的 activation／active，重载后的新身份及旧身份失活从当前投影读取；用途、issue、名称、描述和正文不进入该投影，也不新增存储或生命周期账本。
+同一 pinned Human 的 `current_skill_activations` 明确提供当前图状态，最多32条，含 activation_id、skill_id、content_version、body_operation_id、active，筛除其他 Task／scope、restricted 来源与 excluded 方法。mode／policy不兼容导致失活时可带安全issue，使模型有纠正机会；用途、名称、描述和正文不进入该投影。原 canonical 加载回执仍原样保留当时的 activation／active，重载后的新身份及旧身份失活从当前投影读取，不新增存储或生命周期账本。
+
+同scope同轮并行方法准入复用原Run锁与Operation.result：完整正文结果及activation_updates在一个短事务中提交，后续兄弟调用合并已提交增量再核8个／8000正文估算tokens，失败回滚不占额度。已有完整回执的同工具重试复用身份；reducer不会让旧active覆盖失活，也不把manual降为auto。超限返回当前已提交用量及可释放auto列表，未提交的试算驱逐不计入用量。正文恢复仍要求完整调用组，逐份核冻结checksum；真正缺档／非法正文沿agent_skill_context_missing停止，日志只带operation_id、scope_id及安全reason。
 
 摘要容量包含本轮 system、实际 schema、完整活动 Skill load 组和 pinned 来源。官方 SummarizationMiddleware 继续决定触发与状态更新；超大最新纯文本完整 AI／Tool 组以已有真实目标 Human 为公开 keep 边界整体送入摘要，既有无 I/O 资源投影确认仍待交付媒体时继续保留真实组。BoundedSummary 使用公开 XML 历史和摘要提示，按 helper 自己的窗口／输出／提示包络连续分片，前次摘要参与下一批，全部片段完成才替换原组。摘要保存来源／Skill／主体和 helper 调用数；一次压缩内的分批不凑多次压缩。fixed、helper、post_summary 或 SDK main／selector 拒绝只记录脱敏数字事实到 Run.error，发送前拒绝不新增已发送 Turn，实际 helper 请求仍按原父账本结算。
 

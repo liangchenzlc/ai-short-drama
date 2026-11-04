@@ -3,6 +3,7 @@ import { ApiError, errorMessage } from '@host/api/http';
 import { prepareAssistantSend } from '@host/features/assistant/composer/prepare-send';
 import { useAssistantModels } from '@host/features/assistant/composer/useAssistantModels';
 import {
+  clearCorruptAssistantRecovery,
   clearAssistantPendingAction,
   clearAssistantPendingSend,
   readAssistantDraft,
@@ -24,7 +25,7 @@ import { useAssistantRuntime } from '@host/features/assistant/runtime/useAssista
 import { ensureSkillTokens, removeSkillToken, skillToken } from '@host/features/assistant/skills/assistant-skill-token';
 import { workflowStorage } from '@host/features/identity/storage/account-storage';
 import { attemptStorage, clearAttempt, requestAttempt } from '@host/features/shared/async/request-receipt';
-import type { AssistantControlInput, AssistantMentionReference, TaskMediaLimits } from '@host/types/assistant/api';
+import type { AssistantControlInput, AssistantMentionReference } from '@host/types/assistant/api';
 import type { AgentContextController } from '@host/types/assistant/attachments/AgentContextComposer';
 import type { AssistantConversationProps } from '@host/types/assistant/conversations/AssistantConversationBody';
 import type { HistoryRequest } from '@host/types/assistant/history/AssistantDiscussionHistory';
@@ -54,14 +55,13 @@ export function useAssistantComposer({
   const [undoBusy, setUndoBusy] = useState(false);
   const [undoPending, setUndoPending] = useState(false);
   const [restored] = useState(() => readAssistantDraft(accountId, conversation.id, workflowStorage()));
-  const [restoredSend] = useState(() => readAssistantPendingSend(accountId, conversation.id, workflowStorage()));
-  const [restoredControl] = useState(() =>
+  const [restoredSend, setRestoredSend] = useState(() => readAssistantPendingSend(accountId, conversation.id, workflowStorage()));
+  const [restoredControl, setRestoredControl] = useState(() =>
     readAssistantPendingAction(accountId, conversation.id, 'control', workflowStorage()),
   );
   const [draft, setDraft] = useState(() => ensureSkillTokens(restored.text, restored.skills));
   const [skills, setSkills] = useState(restored.skills);
   const [skillsDirty, setSkillsDirty] = useState(restored.skillsDirty ?? restored.skills.length > 0);
-  const [mediaLimits, setMediaLimits] = useState<TaskMediaLimits | undefined>(restored.mediaLimits);
   const [draftError, setDraftError] = useState('');
   const { models, modelId, setModelId, modelsLoading, modelsError, setModelRevision } = useAssistantModels(
     restored.modelId,
@@ -86,7 +86,10 @@ export function useAssistantComposer({
     restoredControl.pending?.kind === 'control' ? restoredControl.pending : null,
   );
   const [busy, setBusy] = useState<'save' | 'send' | 'stop' | ''>('');
-  const [actionError, setActionError] = useState(restoredSend.error || restoredControl.error);
+  const [actionError, setActionError] = useState('');
+  const [acceptedSend, setAcceptedSend] = useState<string | null>(null);
+  const [acceptedControl, setAcceptedControl] = useState<string | null>(null);
+  const recoveryError = restoredSend.error || restoredControl.error;
   const [uncertain, setUncertain] = useState<AssistantPendingSend | null>(restoredSend.pending);
   const inputContext = useRef<AgentContextController>(null);
   const locked = useRef(false);
@@ -192,7 +195,6 @@ export function useAssistantComposer({
           skillsDirty,
           taskId,
           newTask: independent,
-          mediaLimits,
           materials: restoreMaterials.length
             ? restoreMaterials
             : materials.map((item) => ({
@@ -214,7 +216,6 @@ export function useAssistantComposer({
     skillsDirty,
     taskId,
     independent,
-    mediaLimits,
     materials,
     restoreMaterials,
     materialsError,
@@ -267,8 +268,7 @@ export function useAssistantComposer({
         modelId,
         projectId,
         executionTarget,
-        mediaLimits,
-        skillsDirty,
+            skillsDirty,
         skills,
         attemptScope,
         matches,
@@ -296,11 +296,12 @@ export function useAssistantComposer({
         if (!alive.current) return;
         runtime.accept(result);
         setUncertain(cleared ? null : pending);
+        setAcceptedSend(cleared ? null : key);
         setTaskId(result.task.id);
         setIndependent(false);
         setMaterials([]);
         setSkillsDirty(false);
-        if (!cleared) setActionError('消息已受理，但本机记录尚未清理，可以直接发送下一条。');
+        if (!cleared) setActionError('消息已受理，本机记录清理失败；清理完成后才能发送下一条。');
         inputContext.current?.sent(body.attachment_ids ?? []);
         setSkills([]);
         setComposerVersion((value) => value + 1);
@@ -349,8 +350,9 @@ export function useAssistantComposer({
         if (cleared) clearAttempt(scope, attemptStorage());
         if (alive.current) {
           setPendingControl(cleared ? null : request);
+          setAcceptedControl(cleared ? null : request.key);
           runtime.acceptControl(result);
-          if (!cleared) setActionError('操作已受理，但本机记录尚未清理，可以继续。');
+          if (!cleared) setActionError('操作已受理，本机记录清理失败；清理完成后才能继续。');
         }
       } catch (cause) {
         if (
@@ -375,6 +377,36 @@ export function useAssistantComposer({
       if (alive.current) setBusy('');
     }
   }
+  function rereadRecovery() {
+    const storage = workflowStorage();
+    const nextSend = readAssistantPendingSend(accountId, conversation.id, storage);
+    const nextControl = readAssistantPendingAction(accountId, conversation.id, 'control', storage);
+    setRestoredSend(nextSend);
+    setRestoredControl(nextControl);
+    if (!nextSend.error) setUncertain(nextSend.pending);
+    if (!nextControl.error) setPendingControl(nextControl.pending?.kind === 'control' ? nextControl.pending : null);
+    setActionError('');
+    void runtime.reload();
+    return { nextSend, nextControl };
+  }
+  function cleanupRecovery() {
+    const storage = workflowStorage();
+    // 已确认受理才允许仅清本机记录；未知受理仍只能以原键核对。
+    const sendCleared = restoredSend.error
+      ? clearCorruptAssistantRecovery(accountId, conversation.id, 'send', storage)
+      : acceptedSend ? clearAssistantPendingSend(accountId, conversation.id, acceptedSend, storage) : true;
+    const controlCleared = restoredControl.error
+      ? clearCorruptAssistantRecovery(accountId, conversation.id, 'control', storage)
+      : acceptedControl ? clearAssistantPendingAction(accountId, conversation.id, 'control', acceptedControl, storage) : true;
+    const reread = rereadRecovery();
+    if (sendCleared && acceptedSend) { setAcceptedSend(null); clearAttempt(`assistant-send:${conversation.id}`, attemptStorage()); }
+    if (controlCleared && acceptedControl) { setAcceptedControl(null); if (pendingControl) clearAttempt(`assistant-control:${pendingControl.targetId}:${pendingControl.body.kind}`, attemptStorage()); }
+    if (!sendCleared || !controlCleared) setActionError(
+      (reread.nextSend.pending && !acceptedSend) || (reread.nextControl.pending && !acceptedControl)
+        ? '已读到有效的待核对请求，请按原请求核对后继续。'
+        : '本机记录清理失败，请允许浏览器存储后重试。',
+    );
+  }
   async function interject() {
     await send();
   }
@@ -386,7 +418,12 @@ export function useAssistantComposer({
   };
   /** 素材卡片/分镜卡片与上传文件走同一条素材行：添加后进输入框顶部，发送后清空。 */
   async function addMaterials(selected: readonly AssistantMentionReference[]) {
-    if (locked.current || uncertain || pendingControl || readOnly) return false;
+    const reason = pendingControl ? '停止操作的结果还未确认，请先核对这次操作，再添加素材。'
+      : uncertain ? '上一条消息的结果还未确认，请先核对原消息，再添加素材。'
+      : readOnly || runtime.accessEnded ? '当前无法添加素材，请核对编辑与项目访问权限。'
+      : recoveryError ? '本机待核对记录无法读取，请先恢复记录，再添加素材。'
+      : locked.current || contextDisabled || contextBusy ? '当前操作尚未完成，请稍后再添加素材。' : '';
+    if (reason) { setActionError(reason); return false; }
     locked.current = true;
     setBusy('save');
     setActionError('');
@@ -462,7 +499,7 @@ export function useAssistantComposer({
       ? task.id
       : undefined;
   const stopping =
-    busy === 'stop' || runtime.tasks.some((item) => item.id === stopTaskId && item.control_state === 'stop_pending');
+    busy === 'stop' || runtime.run?.stopping === true || runtime.tasks.some((item) => item.id === stopTaskId && item.control_state === 'stop_pending');
   const blocked =
     readOnly ||
     runtime.loading ||
@@ -488,6 +525,11 @@ export function useAssistantComposer({
 
   return {
     runtime,
+    recoveryError,
+    rereadRecovery,
+    cleanupRecovery,
+    acceptedSend,
+    acceptedControl,
     pinned,
     historyRequest,
     setHistoryRequest,
@@ -507,8 +549,6 @@ export function useAssistantComposer({
     skills,
     setSkills,
     setSkillsDirty,
-    mediaLimits,
-    setMediaLimits,
     draftError,
     setDraftError,
     models,

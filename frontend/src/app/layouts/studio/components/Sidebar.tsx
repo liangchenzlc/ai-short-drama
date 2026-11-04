@@ -1,4 +1,4 @@
-import { aiConfigPath, skillsPath } from '@host/shared/navigation/paths';
+import { settingsPath, skillsPath } from '@host/shared/navigation/paths';
 import { Icon } from '@host/shared/ui/Icon';
 import type { MainPage } from '@host/types/app/layouts/studio/components/Sidebar';
 import { Link } from 'react-router-dom';
@@ -39,12 +39,12 @@ export function Sidebar({ page }: { page: MainPage }) {
           Skill 管理
         </Link>
         <Link
-          to={aiConfigPath}
-          className={page === 'ai' ? 'studio-nav active' : 'studio-nav'}
-          aria-current={page === 'ai' ? 'page' : undefined}
+          to={settingsPath}
+          className={page === 'settings' ? 'studio-nav active' : 'studio-nav'}
+          aria-current={page === 'settings' ? 'page' : undefined}
         >
           <Icon name="settings" />
-          AI 配置
+          配置
         </Link>
       </nav>
       <p className="studio-sidebar-foot">从故事出发，逐镜打磨。</p>

@@ -15,12 +15,16 @@ from sqlalchemy import select
 
 from short_drama.agent.core.access import LeaseLost, lock_run, may_decide
 from short_drama.agent.core.fence import owns_execution
+from short_drama.agent.runtime.context import merge_activations
 from short_drama.agent.task.queries import task_for_run
 from short_drama.agent.tools.scope import task_tool_scope
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import Project
 from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall
 from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask
+from short_drama.service.assistant.operations.authorization import (
+    require_assistant_capability_locked,
+)
 from short_drama.service.identity.authentication.actor import business_actor_locked
 
 
@@ -161,6 +165,11 @@ def execution_locked(session, context, tool_call_id):
         raise WorkflowError("assistant_tool_call_scope", "工具调用尚未由执行边界登记", 409)
     session.info["actor"] = business_actor_locked(session, context.owner_id, tool_call_id)
     session.info["tool_lookup"] = context.tool_lookup
+    require_assistant_capability_locked(
+        session,
+        context.owner_id,
+        context.tool_lookup(operation.tool_name).required_capability,
+    )
     task_tool_scope(session, conversation, task, operation)
     return conversation, task, run, operation
 
@@ -172,7 +181,29 @@ def invoke_runtime_tool(
         conversation, task, _run, operation = execution_locked(session, context, tool_call_id)
         if resource_prepared is not None and resource_prepared["fence"] != context.fence:
             raise LeaseLost()
-        return handler(
+        if state is not None:
+            call = session.get(AgentToolCall, operation.tool_call_id)
+            # 同轮 ToolNode 并发读同一旧状态；在 Run 锁内读取已提交的准入回执。
+            receipts = session.scalars(
+                select(AgentOperation.result)
+                .join(AgentToolCall, AgentToolCall.id == AgentOperation.tool_call_id)
+                .where(
+                    AgentOperation.run_id == context.run_id,
+                    AgentOperation.scope_id == context.scope_id,
+                    AgentToolCall.turn_id == call.turn_id,
+                    AgentOperation.status.in_(["running", "succeeded"]),
+                )
+                .with_for_update()
+            ).all()
+            for receipt in receipts:
+                state["skill_activations"] = merge_activations(
+                    state.get("skill_activations", []),
+                    (receipt or {}).get("activation_updates", []),
+                )
+            if (operation.result or {}).get("activation_updates") is not None:
+                return operation.result
+        previous = deepcopy(state.get("skill_activations", [])) if state is not None else []
+        result = handler(
             session,
             conversation,
             task,
@@ -182,3 +213,16 @@ def invoke_runtime_tool(
             resource_prepared=resource_prepared,
             **({"state": state, "tool_lookup": context.tool_lookup} if state is not None else {}),
         )
+        if state is not None:
+            prior = {item["id"]: item for item in previous}
+            result = {
+                **result,
+                "activation_updates": [
+                    item
+                    for item in state.get("skill_activations", [])
+                    if prior.get(item["id"]) != item
+                ],
+            }
+            # 正文与状态增量一起提交；失败回滚不占配额，结算前重试复用完整回执。
+            operation.result = {**(operation.result or {}), **result}
+        return result

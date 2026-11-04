@@ -8,7 +8,11 @@ from short_drama.agent.gateway.contracts import AgentGatewayError
 CONTEXT_TOKENS = 65536
 TOOL_RESULT_TOKENS = 4096
 SAFETY_TOKENS = 2048
-MEDIA_TOKENS = {"image": 2048, "video": 8192, "audio": 16000}
+MEDIA_TOKENS = {"video": 8192, "audio": 16000}
+
+
+def image_tokens(detail: str | None = None) -> int:
+    return 2048 if detail == "low" else 4096
 
 
 def input_limit(output_tokens, *, context_window=CONTEXT_TOKENS):
@@ -28,12 +32,12 @@ def _user_content(content):
                 and isinstance(value.get("image_url"), dict)
                 and str(value["image_url"].get("url", "")).startswith("data:image/")
             ):
-                reserved += MEDIA_TOKENS["image"]
+                reserved += image_tokens(value["image_url"].get("detail"))
                 value["image_url"]["url"] = "[managed binary]"
             elif kind == "input_image" and str(value.get("image_url", "")).startswith(
                 "data:image/"
             ):
-                reserved += MEDIA_TOKENS["image"]
+                reserved += image_tokens(value.get("detail"))
                 value["image_url"] = "[managed binary]"
             elif kind == "input_audio" and isinstance(value.get("input_audio"), dict):
                 reserved += MEDIA_TOKENS["audio"]
@@ -54,7 +58,7 @@ def estimate_input_tokens(body, *, references=False):
                     return MEDIA_TOKENS["audio"]
                 reference = value.get("image_ref")
                 if isinstance(reference, dict):
-                    return 2048 if reference.get("metadata", {}).get("detail") == "low" else 4096
+                    return image_tokens(reference.get("metadata", {}).get("detail"))
                 operation = value.get("operation_ref")
                 if isinstance(operation, dict):
                     return operation.get("estimated_tokens", 0)

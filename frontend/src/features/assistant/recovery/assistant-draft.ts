@@ -2,7 +2,6 @@ import type {
   AssistantSubjectReference,
   AssistantTaskSendInput,
   TaskExecutionTarget,
-  TaskMediaLimits,
 } from '@host/types/assistant/api';
 import type {
   AssistantDraft,
@@ -47,10 +46,6 @@ export function readAssistantDraft(accountId: string, conversationId: string, st
             executionTarget: record.executionTarget as TaskExecutionTarget | null,
           }
         : {}),
-      ...(Array.isArray(record.memoryProjectIds) && record.memoryProjectIds.every(identifier)
-        ? { memoryProjectIds: record.memoryProjectIds.slice(0, 16) }
-        : {}),
-      ...(validLimits(record.mediaLimits) ? { mediaLimits: record.mediaLimits as unknown as TaskMediaLimits } : {}),
       ...(typeof record.settingsDirty === 'boolean' ? { settingsDirty: record.settingsDirty } : {}),
       ...(record.materials !== undefined
         ? Array.isArray(record.materials) && record.materials.length <= 16 && record.materials.every(validDraftMaterial)
@@ -85,8 +80,6 @@ export function saveAssistantDraft(
         taskId: draft.taskId,
         newTask: draft.newTask,
         executionTarget: draft.executionTarget,
-        memoryProjectIds: draft.memoryProjectIds,
-        mediaLimits: draft.mediaLimits,
         settingsDirty: draft.settingsDirty,
         materials: draft.materials?.map(
           ({ project_id, source_kind, source_id, kind, id, revision, content_revision, checksum, name }) => ({
@@ -126,16 +119,6 @@ function validTarget(value: unknown): value is TaskExecutionTarget {
         typeof value.canvas_id === 'string' &&
         value.canvas_id.length > 0 &&
         value.canvas_id.length <= 128))
-  );
-}
-function validLimits(value: unknown): value is Record<'images' | 'videos' | 'audio', number | null> {
-  return (
-    record(value) &&
-    only(value, ['images', 'videos', 'audio']) &&
-    ['images', 'videos', 'audio'].every(
-      (key) =>
-        value[key] == null || (Number.isInteger(value[key]) && Number(value[key]) >= 0 && Number(value[key]) <= 1000),
-    )
   );
 }
 
@@ -191,8 +174,6 @@ function pendingBody(value: unknown): value is AssistantTaskSendInput {
       'task_id',
       'new_task',
       'execution_target',
-      'memory_project_ids',
-      'media_limits',
       'subject_selection',
       'attachment_selection',
       'script_reference',
@@ -205,12 +186,7 @@ function pendingBody(value: unknown): value is AssistantTaskSendInput {
     (value.task_id !== undefined && !identifier(value.task_id)) ||
     (value.new_task !== undefined && typeof value.new_task !== 'boolean') ||
     (value.new_task === true && value.task_id !== undefined) ||
-    (value.execution_target !== undefined && value.execution_target !== null && !validTarget(value.execution_target)) ||
-    (value.memory_project_ids !== undefined &&
-      (!Array.isArray(value.memory_project_ids) ||
-        value.memory_project_ids.length > 16 ||
-        !value.memory_project_ids.every(identifier))) ||
-    (value.media_limits !== undefined && !validLimits(value.media_limits))
+    (value.execution_target !== undefined && value.execution_target !== null && !validTarget(value.execution_target))
   )
     return false;
   if (value.attachment_selection !== undefined) {
@@ -389,24 +365,31 @@ function pendingAction(value: unknown): value is AssistantPendingAction {
   const body = value.body;
   if (value.kind === 'delete')
     return (
-      only(body, ['row_version', 'clear_derived_memory', 'memory_selections']) &&
-      identifier(body.row_version) &&
-      typeof body.clear_derived_memory === 'boolean' &&
-      (body.memory_selections === undefined ||
-        (Array.isArray(body.memory_selections) &&
-          body.memory_selections.length <= 200 &&
-          body.memory_selections.every(
-            (item) =>
-              record(item) &&
-              only(item, ['id', 'content_version']) &&
-              identifier(item.id) &&
-              identifier(item.content_version),
-          ) &&
-          new Set(body.memory_selections.map((item) => (item as { id: string }).id)).size ===
-            body.memory_selections.length &&
-          (body.clear_derived_memory || body.memory_selections.length === 0)))
+      only(body, ['row_version']) && identifier(body.row_version)
     );
   return value.kind === 'control' && only(body, ['kind']) && body.kind === 'stop';
+}
+
+/** 只清除已成功读取且确实损坏的记录；有效未知请求必须沿原幂等身份核对。 */
+export function clearCorruptAssistantRecovery(
+  accountId: string,
+  conversationId: string,
+  kind: 'send' | 'control',
+  storage: PendingStorage,
+): boolean {
+  try {
+    const key = kind === 'send' ? assistantPendingSendKey(accountId, conversationId)
+      : assistantPendingActionKey(accountId, conversationId, kind);
+    const raw = storage.getItem(key);
+    if (raw === null) return true;
+    let value: unknown;
+    try { value = JSON.parse(raw); } catch { value = null; }
+    if (kind === 'send' ? pendingRecord(value) : pendingAction(value)) return false;
+    storage.removeItem(key);
+    return storage.getItem(key) === null;
+  } catch {
+    return false;
+  }
 }
 export function readAssistantPendingAction(
   accountId: string,

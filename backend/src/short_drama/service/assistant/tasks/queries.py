@@ -55,6 +55,7 @@ class TaskQueryOperations(TaskServiceBase):
                 .limit(50)
             ).all()
             cursor = conversation.next_event_seq - 1
+            event_metadata = self._message_event_metadata(messages)
             trace = AssistantTraceDAO(self.session).page(conversation.id, None, cursor)
             first_delta = self.session.scalar(
                 select(func.min(AgentEvent.seq)).where(
@@ -89,7 +90,10 @@ class TaskQueryOperations(TaskServiceBase):
                 snapshot_cursor=cursor,
                 resume_cursor=first_delta - 1 if first_delta is not None else cursor,
                 messages={
-                    "items": [self._message_read(message) for message in reversed(messages)],
+                    "items": [
+                        self._message_read(message, event_metadata.get(str(message.id)))
+                        for message in reversed(messages)
+                    ],
                     "total": self.session.scalar(
                         select(func.count())
                         .select_from(AgentMessage)

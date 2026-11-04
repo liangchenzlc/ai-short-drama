@@ -1,5 +1,3 @@
-import re
-
 from pydantic import ValidationError
 
 from short_drama.ai.adapters.audio.canvas_audio import (
@@ -13,6 +11,7 @@ from short_drama.ai.adapters.image.image_operations import (
     is_image_operation,
     operation_text_messages,
 )
+from short_drama.ai.adapters.image.registry import IMAGE_ADAPTERS, get_image_adapter
 from short_drama.ai.adapters.runninghub.adapters import (
     RUNNINGHUB_ADAPTERS,
     runninghub_submission,
@@ -37,6 +36,8 @@ from short_drama.ai.adapters.tools.submission import (
     is_canvas_tool_request,
 )
 from short_drama.ai.adapters.video.input_capabilities import video_input_capabilities
+from short_drama.ai.adapters.video.kling_video import KLING_VIDEO, build_kling_submission
+from short_drama.ai.adapters.video.minimax_video import MINIMAX_VIDEO, build_minimax_submission
 from short_drama.ai.adapters.video.video_adapters import (
     VIDEO_ADAPTERS,
     build_canvas_video_submission,
@@ -47,113 +48,8 @@ from short_drama.ai.types import GenerationError
 from short_drama.schemas.canvas.generation.generation_parameters import (
     CANVAS_PARAMETERS,
     CanvasAudioParameters,
-    CanvasImageParameters,
     CanvasVideoParameters,
 )
-
-
-def _openai_image_references(model):
-    # Includes provider aliases such as gpt-image-2.5-flare. This describes the
-    # implemented Images edit protocol, not verified provider entitlement.
-    return model.startswith("gpt-image-")
-
-
-def _size(parameters, *, family, model):
-    aspect, resolution = parameters.get("aspect"), parameters.get("resolution")
-    if aspect is None and resolution is None:
-        return None
-    if resolution and re.fullmatch(r"\d{2,5}[x*]\d{2,5}", resolution):
-        width, height = map(int, re.split("[x*]", resolution))
-        if aspect:
-            try:
-                a, b = map(int, aspect.split(":"))
-                # Allow provider-recommended dimensions rounded to multiples of 16.
-                if not a or not b or abs(width / height - a / b) > 0.015:
-                    _unsupported()
-            except (ValueError, ZeroDivisionError):
-                _unsupported()
-        return f"{width}{'*' if family == 'dashscope' else 'x'}{height}"
-    if family == "openai":
-        if re.match(r"^gpt-image-2(?:[.-]|$)", model):
-            # App presets, expressed as pixels rather than provider-specific
-            # resolution labels. Keep legacy GPT Image / DALL-E rules below.
-            presets = {
-                "1K": {
-                    "1:1": "1024x1024",
-                    "16:9": "1536x864",
-                    "9:16": "864x1536",
-                    "4:3": "1152x864",
-                    "3:4": "864x1152",
-                    "3:2": "1536x1024",
-                    "2:3": "1024x1536",
-                },
-                "2K": {
-                    "1:1": "2048x2048",
-                    "16:9": "2560x1440",
-                    "9:16": "1440x2560",
-                    "4:3": "2304x1728",
-                    "3:4": "1728x2304",
-                    "3:2": "2496x1664",
-                    "2:3": "1664x2496",
-                },
-            }
-            tier = "1K" if resolution in (None, "1024") else resolution
-            size = presets.get(tier, {}).get(aspect or "1:1")
-            if not size:
-                _unsupported()
-            return size
-        if resolution not in (None, "1K", "1024"):
-            _unsupported()
-        sizes = {"1:1": "1024x1024", "3:2": "1536x1024", "2:3": "1024x1536"}
-        if model.startswith("dall-e-3"):
-            sizes = {"1:1": "1024x1024", "16:9": "1792x1024", "9:16": "1024x1792"}
-        if aspect not in (None, *sizes):
-            _unsupported()
-        return sizes[aspect or "1:1"]
-    if family == "ark":
-        if aspect is None and resolution in ("1K", "2K", "4K"):
-            return resolution
-        sizes = {
-            "2K": {
-                "1:1": "2048x2048",
-                "16:9": "2560x1440",
-                "9:16": "1440x2560",
-                "4:3": "2304x1728",
-                "3:4": "1728x2304",
-                "3:2": "2496x1664",
-                "2:3": "1664x2496",
-            },
-            "4K": {
-                "1:1": "4096x4096",
-                "16:9": "4096x2304",
-                "9:16": "2304x4096",
-                "4:3": "4096x3072",
-                "3:4": "3072x4096",
-            },
-        }
-        value = sizes.get(resolution or "2K", {}).get(aspect or "1:1")
-    else:
-        sizes = {
-            "1:1": "1024*1024",
-            "16:9": "1280*720",
-            "9:16": "720*1280",
-            "4:3": "1152*864",
-            "3:4": "864*1152",
-        }
-        if model.startswith(("wan2.5", "wan2.6")):
-            sizes = {
-                "1:1": "1280*1280",
-                "16:9": "1696*960",
-                "9:16": "960*1696",
-                "4:3": "1472*1104",
-                "3:4": "1104*1472",
-            }
-        if resolution not in (None, "1K", "1024"):
-            _unsupported()
-        value = sizes.get(aspect or "1:1")
-    if not value:
-        _unsupported()
-    return value
 
 
 def _input(request, allowed):
@@ -163,118 +59,15 @@ def _input(request, allowed):
     return value
 
 
-def _canvas_image_submission(model, prompt, refs, count, parameters, adapter):
-    """固定源声明式图片插件的请求；标准模式继续使用 _size。"""
-    from short_drama.ai.adapters.image.agnes_adapters import AGNES_IMAGE, agnes_image_body
-
-    if adapter == "openai_images.v1" and model == AGNES_IMAGE:
-        return "/images/generations", {}, agnes_image_body(prompt, refs, count, parameters)
-    body = {"model": model}
-    raw = parameters.size
-    if parameters.mask_media_id and (adapter != "openai_images.v1" or not refs):
-        _unsupported()
-    if parameters.transparent_background and adapter != "openai_images.v1":
-        _unsupported()
-    if adapter == "openai_images.v1":
-        if refs and (not _openai_image_references(model) or len(refs) > 16):
-            _unsupported()
-        if model.startswith("dall-e-3") and count != 1:
-            _unsupported()
-        sizes = {
-            "1:1": "1024x1024",
-            "3:2": "1536x1024",
-            "2:3": "1024x1536",
-            "4:3": "1360x1024",
-            "3:4": "1024x1360",
-            "16:9": "1824x1024",
-            "9:16": "1024x1824",
-            "21:9": "2352x1008",
-        }
-        body.update(prompt=prompt, n=count, output_format="png")
-        if raw != "auto":
-            body["size"] = sizes.get(raw or "1:1", raw)
-        if parameters.quality != "auto":
-            body["quality"] = {"1k": "low", "2k": "medium", "4k": "high"}.get(
-                parameters.quality, parameters.quality
-            )
-        if parameters.transparent_background:
-            body["background"] = "transparent"
-        if refs:
-            body["image"] = refs
-        if parameters.mask_media_id:
-            body["mask"] = "https://reference.invalid/mask"
-        suffix = "/images/edits" if refs else "/images/generations"
-    elif adapter == "ark_images.v1":
-        if count != 1:
-            _unsupported()
-        sizes = {
-            "auto": "2k",
-            "1:1": "2048x2048",
-            "4:3": "2304x1728",
-            "3:4": "1728x2304",
-            "16:9": "2560x1440",
-            "9:16": "1440x2560",
-            "3:2": "2496x1664",
-            "2:3": "1664x2496",
-            "21:9": "3024x1296",
-        }
-        body.update(prompt=prompt, response_format="b64_json", watermark=False)
-        if raw:
-            body["size"] = sizes.get(raw, raw)
-        if refs:
-            body["image"] = refs[0] if len(refs) == 1 else refs
-        suffix = "/images/generations"
-    elif adapter == "dashscope_images.v1":
-        native_params = {"n": count, "watermark": False}
-        if model.startswith(("qwen-image", "wan2.6", "wan2.7")):
-            sizes = {
-                "1:1": "1024*1024",
-                "3:4": "960*1280",
-                "4:3": "1280*960",
-                "2:3": "1024*1536",
-                "3:2": "1536*1024",
-                "9:16": "864*1536",
-                "16:9": "1536*864",
-            }
-            for size in (
-                "1024x1024",
-                "1024x1536",
-                "1536x1024",
-                "1024x1280",
-                "1280x1024",
-                "960x1280",
-                "1280x960",
-            ):
-                sizes[size] = size.replace("x", "*")
-            if raw in sizes:
-                native_params["size"] = sizes[raw]
-            native_params.update(prompt_extend=True, enable_thinking=False)
-            body["input"] = {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [{"image": ref} for ref in refs] + [{"text": prompt}],
-                    }
-                ]
-            }
-            suffix = "/services/aigc/image-generation/generation"
-        else:
-            body["input"] = {"prompt": prompt}
-            if raw:
-                native_params["size"] = raw
-            if refs:
-                body["input"]["ref_img" if len(refs) == 1 else "ref_images"] = (
-                    refs[0] if len(refs) == 1 else refs
-                )
-            suffix = "/services/aigc/text2image/image-synthesis"
-        body["parameters"] = native_params
-        return suffix, {"X-DashScope-Async": "enable"}, body
-    else:
-        _unsupported()
-    return suffix, {}, body
-
-
 def build_submission(snapshot, request, adapter):
+    if adapter == KLING_VIDEO:
+        return build_kling_submission(snapshot, request)
+    if adapter == "dashscope_video.v1" and snapshot["model_key"].startswith("wan3"):
+        raise GenerationError("unsupported_protocol")
+    if adapter == MINIMAX_VIDEO:
+        return build_minimax_submission(snapshot, request)
+    if adapter in IMAGE_ADAPTERS:
+        return get_image_adapter(adapter).build_submission(snapshot, request)
     if is_canvas_tool_request(request):
         return build_canvas_tool_submission(snapshot, request, adapter)
     if adapter == CLAUDE_MESSAGES:
@@ -293,9 +86,7 @@ def build_submission(snapshot, request, adapter):
         if not is_image_operation(request) or kind != "image" or "canvas_parameters" in request:
             _unsupported()
         try:
-            canvas_parameters = CanvasImageParameters.model_validate(
-                request["image_edit_parameters"]
-            )
+            canvas_parameters = CANVAS_PARAMETERS.validate_python(request["image_edit_parameters"])
         except ValidationError:
             raise GenerationError("unsupported_parameters") from None
     if request.get("canvas_parameters") is not None:
@@ -472,86 +263,6 @@ def build_submission(snapshot, request, adapter):
         if adapter == "openai_chat.v1" and is_compatible_chat(snapshot):
             body = apply_compatible_chat_options(snapshot, request, body)
             return compatible_chat_endpoint(snapshot["base_url"]), headers, body
-    elif kind == "image":
-        value = _input(request, {"prompt", "reference_media_ids", "reference_urls"})
-        prompt, refs = value.get("prompt"), value.get("reference_urls", [])
-        if not isinstance(prompt, str) or not prompt.strip() or not isinstance(refs, list):
-            _unsupported()
-        if value.get("reference_media_ids") and not refs:
-            raise GenerationError("unresolved_media_reference")
-        for ref in refs:
-            validated_url(ref, query=True)
-        count = params.get("count", 1)
-        if type(count) is not int or not 1 <= count <= 4:
-            _unsupported()
-        if isinstance(canvas_parameters, CanvasImageParameters):
-            if params.keys() - {"count"}:
-                _unsupported()
-            suffix, headers, body = _canvas_image_submission(
-                model, prompt, refs, count, canvas_parameters, adapter
-            )
-            return endpoint(snapshot["base_url"], suffix, adapter), headers, body
-        if adapter == "openai_images.v1":
-            if refs and (not _openai_image_references(model) or len(refs) > 16):
-                _unsupported()
-            if model.startswith("dall-e-3") and count != 1:
-                _unsupported()
-            body.update(prompt=prompt, n=count)
-            try:
-                size = _size(params, family="openai", model=model)
-            except GenerationError:
-                raise GenerationError("unsupported_image_size") from None
-            if size:
-                body["size"] = size
-            if refs:
-                # A pure request recipe; the gateway downloads and uploads the
-                # files only during execution, never during admission validation.
-                body["image"] = refs
-            suffix = "/images/edits" if refs else "/images/generations"
-        elif adapter == "ark_images.v1":
-            # Standard multi-image generation must return inline bytes. Provider URLs
-            # are short-lived and each URL requires an independent download; one
-            # expired/failed URL otherwise turns an otherwise valid 4-image result
-            # into partial_result during archive.
-            body.update(prompt=prompt, response_format="b64_json", stream=False)
-            if refs:
-                body["image"] = refs
-            size = _size(params, family="ark", model=model)
-            if size:
-                body["size"] = size
-            body["sequential_image_generation"] = "auto" if count > 1 else "disabled"
-            if count > 1:
-                body["sequential_image_generation_options"] = {"max_images": count}
-            suffix = "/images/generations"
-        else:
-            modern = model.startswith(("qwen-image", "wan2.6", "wan2.7"))
-            edit = model.startswith("qwen-image-edit") or model == "wan2.6-image"
-            if refs and not edit:
-                _unsupported()
-            if edit and (not refs or len(refs) > (4 if model == "wan2.6-image" else 3)):
-                _unsupported()
-            native_params = {"n": count}
-            if (
-                model == "wan2.6-image"
-                and not params.get("aspect")
-                and params.get("resolution") in ("1K", "2K")
-            ):
-                size = params["resolution"]
-            else:
-                size = _size(params, family="dashscope", model=model)
-            if size:
-                native_params["size"] = size
-            if model == "wan2.6-image":
-                native_params["enable_interleave"] = False
-            body["parameters"] = native_params
-            if modern:
-                content = [{"image": ref} for ref in refs] + [{"text": prompt}]
-                body["input"] = {"messages": [{"role": "user", "content": content}]}
-                suffix = "/services/aigc/multimodal-generation/generation"
-            else:
-                body["input"] = {"prompt": prompt}
-                headers["X-DashScope-Async"] = "enable"
-                suffix = "/services/aigc/text2image/image-synthesis"
     else:
         if isinstance(canvas_parameters, CanvasVideoParameters):
             if canvas_parameters.generate_audio is not None:

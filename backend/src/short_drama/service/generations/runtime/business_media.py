@@ -2,8 +2,12 @@
 
 from copy import deepcopy
 
+from short_drama.agent.tools.contracts import ToolCapability
 from short_drama.core.exceptions import BusinessError, Conflict
 from short_drama.dao.assistant.operations.invocation import BusinessInvocationDAO
+from short_drama.service.assistant.operations.authorization import (
+    require_receipt_capability_locked,
+)
 from short_drama.service.assistant.operations.dialogue import (
     advance_sound_binding,
     dialogue_target_matches,
@@ -14,7 +18,13 @@ from short_drama.service.assistant.operations.voice import voice_binding_state, 
 from short_drama.service.identity.authentication.actor import business_actor_locked
 
 
-def business_media_may_submit(session, task, receipt, settings):
+def business_media_may_submit(
+    session, task, receipt, settings, *, required_capability: ToolCapability = "media_generate"
+):
+    try:
+        require_receipt_capability_locked(session, receipt, required_capability)
+    except BusinessError as error:
+        return _reject(session, task.id, error.code, error.message)
     target = session.info["business_media_targets"][task.id]
     references = target["reference_results"]
     if references:
@@ -89,6 +99,7 @@ def adopt_business_media_locked(session, task, record, settings):
             if target.get("media_role") in {"character_voice", "dialogue_audio"}:
                 if task.status != "succeeded":
                     raise Conflict("音频媒体未全部保存，已保存产物保留在候选中")
+                require_receipt_capability_locked(session, receipt, "workbench_write")
                 with session.begin_nested():
                     if target["media_role"] == "character_voice":
                         changes = [_adopt_voice(session, task, record, target, settings)]

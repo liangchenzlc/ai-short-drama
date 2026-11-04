@@ -22,6 +22,7 @@ SPEC = ToolSpec(
     args_schema=TOOL.input_model,
     handler=TOOL,
     effect="read",
+    required_capability="memory_read",
     source="runtime",
     modes=frozenset(set()),
 )

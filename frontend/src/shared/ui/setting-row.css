@@ -1,0 +1,6 @@
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 22px 0; border-bottom: 1px solid var(--hair); }
+.setting-row-copy { min-width: 0; }
+.setting-row-copy > span { color: var(--ink); font-size: 14px; font-weight: 500; }
+.setting-row-copy p { margin: 6px 0 0; color: var(--sub); font-size: 13px; line-height: 1.7; max-width: 62ch; }
+.setting-row-control { flex: 0 0 auto; }
+.setting-row-nested { padding-left: 24px; }

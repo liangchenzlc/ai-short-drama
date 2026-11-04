@@ -7,7 +7,7 @@ from short_drama.ai.prompts.registry import (
     assistant_prompt,
     assistant_tool_selection_prompt,
 )
-from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
+from short_drama.core.exceptions import Conflict, NotFound
 from short_drama.core.identity import require_actor
 from short_drama.dao.assistant.settings.preferences import AssistantSettingsDAO
 from short_drama.domain.assistant.operations.preference import AgentPreference
@@ -17,6 +17,7 @@ from short_drama.schemas.assistant.settings.preferences import (
     AssistantSettingsRead,
 )
 from short_drama.schemas.base import UINT64_MAX
+from short_drama.service.assistant.memory.memory_store import invalidate_memory_runs
 from short_drama.service.base import BaseService, utcnow
 from short_drama.utils.snowflake import next_id
 
@@ -27,44 +28,38 @@ DEFAULT_INSTRUCTIONS = (
 
 def deployment_limits(settings) -> AssistantRuntimeLimits:
     return AssistantRuntimeLimits(
-        model_call_limit=getattr(settings, "agent_run_decision_cap", 240),
-        output_token_limit=getattr(settings, "agent_run_output_token_cap", 2_000_000),
+        model_call_limit=settings.agent_run_decision_cap,
+        output_token_limit=settings.agent_run_output_token_cap,
         subagent_max_concurrency=3,
     )
 
 
 def settings_defaults(settings) -> AssistantSettingsRead:
-    limits = deployment_limits(settings)
     return AssistantSettingsRead(
         custom_instructions=None,
         default_instructions=DEFAULT_INSTRUCTIONS,
-        model_call_limit=min(240, limits.model_call_limit),
-        output_token_limit=min(2_000_000, limits.output_token_limit),
-        subagent_max_concurrency=3,
-        default_media_limits={},
+        workbench_enabled=True,
+        media_generation_enabled=True,
+        long_term_memory_enabled=True,
         settings_version=0,
-        deployment_limits=limits,
     )
 
 
 def settings_locked(session, owner: int, settings) -> AssistantSettingsRead:
     result = settings_defaults(settings)
     row = AssistantSettingsDAO(session).preference(owner)
-    if row is None or row.settings_version == 0:
+    if row is None:
         return result
     values = {
         key: getattr(row, key)
         for key in (
             "custom_instructions",
-            "model_call_limit",
-            "output_token_limit",
-            "subagent_max_concurrency",
-            "default_media_limits",
+            "workbench_enabled",
+            "media_generation_enabled",
+            "long_term_memory_enabled",
             "settings_version",
         )
     }
-    for key, cap in result.deployment_limits.model_dump().items():
-        values[key] = min(values[key], cap)
     return AssistantSettingsRead.model_validate({**result.model_dump(), **values})
 
 
@@ -82,10 +77,7 @@ def freeze_run_settings_locked(session, owner: int, settings, *, tool_catalog_ve
         "tool_selector_prompt": assistant_tool_selection_prompt(),
         "prompt_versions": deepcopy(PROMPT_VERSIONS),
         "tool_catalog_version": str(tool_catalog_version),
-        **{
-            key: getattr(current, key)
-            for key in ("model_call_limit", "output_token_limit", "subagent_max_concurrency")
-        },
+        **deployment_limits(settings).model_dump(),
     }
 
 
@@ -105,16 +97,10 @@ class AssistantSettingsService(BaseService):
     def update_settings(self, payload) -> AssistantSettingsRead:
         values = AssistantSettingsPatch.model_validate(payload)
         owner = require_actor(self.session).user_id
-        limits = deployment_limits(self.settings)
-        for key, cap in limits.model_dump().items():
-            if getattr(values, key) > cap:
-                raise WorkflowError(
-                    "assistant_settings_deployment_limit",
-                    f"{key} 超出当前部署上限 {cap}",
-                    422,
-                    {"field": key, "limit": cap},
-                )
         with self._transaction():
+            # 与运行时保持 Run → preference 的锁顺序，切换后撤去下一次请求的旧记忆。
+            if "long_term_memory_enabled" in values.model_fields_set:
+                invalidate_memory_runs(self.session, owner)
             if self.preferences.lock_owner(owner) is None:
                 raise NotFound("账号不存在或已停止使用")
             row = self.preferences.preference(owner, lock=True)
@@ -125,10 +111,21 @@ class AssistantSettingsService(BaseService):
                 raise Conflict("助手设置版本已达到上限")
             if row is None:
                 row = AgentPreference(
-                    id=next_id(), owner_user_id=owner, media_generation_enabled=1, policy_version=0
+                    id=next_id(),
+                    owner_user_id=owner,
+                    media_generation_enabled=1,
+                    workbench_enabled=1,
+                    long_term_memory_enabled=1,
+                    memory_generation=0,
                 )
                 self.session.add(row)
-            for key, value in values.model_dump(exclude={"settings_version"}).items():
+            changes = values.model_dump(exclude={"settings_version"}, exclude_unset=True)
+            if (
+                "long_term_memory_enabled" in changes
+                and bool(row.long_term_memory_enabled) != changes["long_term_memory_enabled"]
+            ):
+                row.memory_generation += 1
+            for key, value in changes.items():
                 setattr(row, key, value)
             row.settings_version, row.updated_at = version + 1, utcnow()
             self.session.flush()

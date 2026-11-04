@@ -2,6 +2,7 @@
 
 import asyncio
 from importlib import import_module, util
+from uuid import uuid4
 
 import httpx2
 import pytest
@@ -62,21 +63,51 @@ def test_secret_authenticates_then_delete_revokes_without_deleting_row(db_sessio
     created = token_service(db_session).create(
         schema.McpTokenCreate(
             name="工具调用",
-            project_ids=[project.id],
-            tool_names=["workbench__apply_standard_patch"],
-        )
+            workbench_enabled=True,
+        ),
+        "secret-authenticates",
     )
     with factory() as session:
         principal = token_service(session).authenticate(created.secret, "127.0.0.1", "request-1")
     assert principal.actor.user_id == 1
     assert principal.token_id == created.id
-    assert principal.project_ids == frozenset({project.id})
+    assert token_service(db_session).current_project_ids(principal.actor.user_id) == frozenset(
+        {project.id}
+    )
     token_service(db_session).delete(created.id)
     from short_drama.core.exceptions import BusinessError
 
     with factory() as session, pytest.raises(BusinessError) as rejected:
         token_service(session).authenticate(created.secret, "127.0.0.1", "request-2")
     assert rejected.value.status_code == 401
+
+
+def test_account_token_creation_is_idempotent_without_projects(db_session, monkeypatch):
+    from datetime import timedelta
+
+    from short_drama.core.exceptions import Conflict
+    from short_drama.core.time import utcnow
+    from short_drama.schemas.identity.accounts.mcp_token import McpTokenCreate
+    from short_drama.service.identity.accounts import mcp_token as module
+
+    service = token_service(db_session)
+    initial_time = utcnow()
+    monkeypatch.setattr(module, "utcnow", lambda: initial_time)
+    values = McpTokenCreate(
+        name="无项目也可接入", workbench_enabled=False, media_generation_enabled=True
+    )
+    first = service.create(values, "one-intent")
+    monkeypatch.setattr(module, "utcnow", lambda: initial_time + timedelta(days=1))
+    again = service.create(values, "one-intent")
+    assert first.secret and again.secret is None
+    assert first.id == again.id and first.expires_at == again.expires_at
+    assert first.expires_at == initial_time + timedelta(days=90)
+    assert len(first.tool_names) == 8
+    assert service.current_project_ids(1) == frozenset()
+    with pytest.raises(Conflict):
+        service.create(McpTokenCreate(name="不同意图"), "one-intent")
+    permanent = service.create(McpTokenCreate(name="永久", expires_at=None), "permanent")
+    assert permanent.expires_at is None
 
 
 def test_mcp_generation_and_real_image_content_survive_token_revocation_without_an_assistant_run(
@@ -161,6 +192,10 @@ def test_mcp_generation_and_real_image_content_survive_token_revocation_without_
                         generation_id = int(
                             accepted.structured_content["items"][0]["generation_id"]
                         )
+                        with flow.factory() as session:
+                            version = session.get(AsyncTask, generation_id).message_version
+                        flow.executor.execute(generation_id, version)
+                        assert len(flow.provider.calls) == 1
                         token_service(flow.session).delete(submitter.id)
                         response = await http.post(
                             "http://testserver/mcp/",
@@ -229,6 +264,93 @@ def test_mcp_generation_and_real_image_content_survive_token_revocation_without_
             event.remove(engine, name, listener)
 
 
+@pytest.mark.parametrize("token_state", ["active", "revoked", "expired"])
+def test_mcp_worker_checks_its_token_before_sending_independently_of_assistant_settings(
+    flow, monkeypatch, token_state
+):
+    from datetime import timedelta
+
+    from short_drama.domain import AsyncTask
+    from short_drama.schemas.assistant.operations.media import SubmitGenerationBatch
+    from short_drama.service.assistant.operations.invocation import (
+        BusinessInvocation,
+        BusinessInvocationService,
+        InvocationScope,
+    )
+    from short_drama.service.assistant.operations.media import submit_generation_batch_locked
+    from short_drama.service.assistant.settings.preferences import AssistantSettingsService
+    from tests.integration.standard.assets.test_asset_image_generation import create_asset, drain
+
+    settings = AssistantSettingsService(flow.session, flow.settings)
+    current = settings.get_settings()
+    settings.update_settings(
+        {
+            "settings_version": str(current.settings_version),
+            "workbench_enabled": False,
+            "media_generation_enabled": False,
+        }
+    )
+    asset = create_asset(flow)
+    issued = create_token(
+        flow.session, flow.project.id, tools=["workbench__submit_generation_batch"]
+    )
+    identity = BusinessInvocation(
+        actor=flow.session.info["actor"],
+        source="mcp",
+        request_id=f"mcp-worker-{token_state}",
+        token_id=issued.id,
+        scope=InvocationScope(
+            frozenset({flow.project.id}), frozenset(issued.tool_names), "project", {}
+        ),
+    )
+    values = SubmitGenerationBatch(
+        project_id=str(flow.project.id),
+        requests=[
+            {
+                "target_kind": "asset",
+                "target_id": str(asset.id),
+                "row_version": str(asset.row_version),
+                "model_config_id": str(flow.config.id),
+                "model_version": str(flow.config.row_version),
+                "prompt": "controlled token authorization image",
+                "count": 1,
+            }
+        ],
+    )
+    with flow.factory() as session:
+        result = BusinessInvocationService(session, flow.settings).execute(
+            identity,
+            "workbench__submit_generation_batch",
+            values,
+            submit_generation_batch_locked,
+            mutating=True,
+        )
+    task_id = int(result["items"][0]["generation_id"])
+    with flow.factory() as session:
+        version = session.get(AsyncTask, task_id).message_version
+    claim = flow.executor.store.claim_execution(task_id, version)
+    assert claim is not None and not flow.provider.calls
+    task, record, lease = claim
+    if token_state == "revoked":
+        token_service(flow.session).delete(issued.id)
+    elif token_state == "expired":
+        monkeypatch.setattr(
+            "short_drama.service.assistant.operations.authorization.utcnow",
+            lambda: issued.expires_at + timedelta(seconds=1),
+        )
+    # 先拿到 Worker 租约再改变令牌，证明真正外发处也读取当前授权。
+    flow.executor._generate(task, record, version, lease)
+    if token_state == "active":
+        assert drain(flow, task_id) == "succeeded"
+        assert len(flow.provider.calls) == 1
+    else:
+        with flow.factory() as session:
+            task = session.get(AsyncTask, task_id)
+            assert task.status == "cancelled"
+            assert task.error["code"] == "mcp_authentication_required"
+        assert not flow.provider.calls
+
+
 def test_other_accounts_cannot_manage_or_authorize_foreign_tokens_or_projects(db_session):
     from short_drama.core.exceptions import BusinessError
     from short_drama.core.time import utcnow
@@ -256,23 +378,16 @@ def test_other_accounts_cannot_manage_or_authorize_foreign_tokens_or_projects(db
         session.info["actor"] = actor(2)
         service = token_service(session)
         assert service.list() == []
-        assert service.options().projects == []
+        assert service.current_project_ids(2) == frozenset()
         with pytest.raises(BusinessError) as rejected:
             service.delete(token.id)
         assert rejected.value.status_code == 404
-        with pytest.raises(BusinessError) as rejected:
-            service.create(
-                McpTokenCreate(
-                    name="越权", project_ids=[project.id], tool_names=["workbench__read_project"]
-                )
-            )
-        assert rejected.value.status_code == 403
-    with pytest.raises(BusinessError) as rejected:
-        create_token(db_session, project.id, tools=["execute"])
-    assert rejected.value.status_code == 403
+        created = service.create(McpTokenCreate(name="无作品令牌"), "empty-projects")
+        assert len(created.tool_names) == 8
+        assert "project_ids" not in created.model_dump()
 
 
-def test_expiry_account_status_ip_and_new_projects_are_checked_without_scope_expansion(
+def test_expiry_account_status_ip_and_new_projects_use_current_account_access(
     db_session, monkeypatch
 ):
     from datetime import UTC, timedelta
@@ -297,8 +412,9 @@ def test_expiry_account_status_ip_and_new_projects_are_checked_without_scope_exp
         service = token_service(session)
         for address in ("192.0.2.8", "2001:db8::9"):
             principal = service.authenticate(token.secret, address, "allowed")
-            assert principal.project_ids == frozenset({project.id})
-            assert later.id not in principal.project_ids
+            assert service.current_project_ids(principal.actor.user_id) == frozenset(
+                {project.id, later.id}
+            )
         with pytest.raises(BusinessError) as rejected:
             service.authenticate(token.secret, "198.51.100.8", "denied")
         assert rejected.value.status_code == 403
@@ -321,7 +437,21 @@ def create_token(session, project_id, *, tools, name="外部调用", **kwargs):
     from short_drama.schemas.identity.accounts.mcp_token import McpTokenCreate
 
     return token_service(session).create(
-        McpTokenCreate(name=name, project_ids=[project_id], tool_names=tools, **kwargs)
+        McpTokenCreate(
+            name=name,
+            workbench_enabled=any(
+                name in tools
+                for name in (
+                    "workbench__apply_standard_patch",
+                    "workbench__apply_canvas_patch",
+                    "workbench__set_image_group_primary",
+                    "workbench__submit_generation_batch",
+                )
+            ),
+            media_generation_enabled="workbench__submit_generation_batch" in tools,
+            **kwargs,
+        ),
+        uuid4().hex,
     )
 
 
@@ -399,7 +529,7 @@ def test_real_client_scoped_catalog_business_idempotency_read_audit_and_session_
                         async with ClientSession(read, write, read_timeout_seconds=10) as client:
                             await client.initialize()
                             listed = await client.list_tools()
-                            assert {item.name for item in listed.tools} == set(tools)
+                            assert {item.name for item in listed.tools} == set(token.tool_names)
                             write_tool = next(
                                 item
                                 for item in listed.tools
@@ -413,14 +543,16 @@ def test_real_client_scoped_catalog_business_idempotency_read_audit_and_session_
                             )
                             projects = await client.call_tool("workbench__list_projects", {})
                             assert not projects.is_error, projects
-                            assert [
+                            assert set(
                                 item["id"] for item in projects.structured_content["items"]
-                            ] == [str(project.id)]
-                            assert projects.structured_content["total"] == 1
-                            forbidden = await client.call_tool(
+                            ) == {str(project.id), str(outside.id)}
+                            assert projects.structured_content["total"] == 2
+                            another = await client.call_tool(
                                 "workbench__read_project", {"project_id": str(outside.id)}
                             )
-                            assert forbidden.is_error and "403" in forbidden.content[0].text
+                            assert not another.is_error and another.structured_content["id"] == str(
+                                outside.id
+                            )
                             denied = await client.call_tool("runtime__load_skill", {})
                             assert denied.is_error and "403" in denied.content[0].text
                             result = await client.call_tool(
@@ -561,7 +693,9 @@ def test_concurrent_protocol_requests_keep_account_token_and_tool_scope_local(
             ) as (read, write_stream):
                 async with ClientSession(read, write_stream, read_timeout_seconds=20) as client:
                     await client.initialize()
-                    assert {tool.name for tool in (await client.list_tools()).tools} == set(names)
+                    assert {tool.name for tool in (await client.list_tools()).tools} == set(
+                        token.tool_names
+                    )
                     arguments = {"project_id": str(project.id)}
                     if write:
                         arguments = {

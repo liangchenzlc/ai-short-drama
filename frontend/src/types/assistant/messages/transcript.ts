@@ -26,7 +26,7 @@ export interface AssistantTranscriptProps {
     hasMoreTasks: boolean;
     olderLoading: boolean;
     loading: boolean;
-    delta: string;
+    streamingParts: import('@host/types/assistant/runtime/agent-events').StreamingTextPart[];
     older: () => Promise<unknown>;
     olderTasks: () => Promise<unknown>;
     reconnect: () => void;

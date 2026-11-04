@@ -11,7 +11,6 @@ from short_drama.service.ai_config.management.assistant_models import AgentModel
 from short_drama.service.assistant.context.attachment import AgentAttachmentService
 from short_drama.service.assistant.operations.questions import QuestionService
 from short_drama.service.assistant.settings.preferences import AssistantSettingsService
-from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 from short_drama.service.assistant.tasks.task import AssistantTaskService
 from short_drama.service.assistant.tasks.trace import AssistantTraceService
 from short_drama.service.skills.catalog.skill import AgentSkillService
@@ -30,10 +29,6 @@ def task_service(request: Request, session: Session = Depends(get_session)):
         getattr(request.app.state, "storage", None),
         tool_lookup=get_spec,
     )
-
-
-def policy_service(session: Session = Depends(get_session)):
-    return AssistantPolicyService(session)
 
 
 def preferences_service(request: Request, session: Session = Depends(get_session)):
@@ -70,7 +65,6 @@ Traces = Annotated[AssistantTraceService, Depends(trace_service)]
 Questions = Annotated[QuestionService, Depends(question_service)]
 Tasks = Annotated[AssistantTaskService, Depends(task_service)]
 Attachments = Annotated[AgentAttachmentService, Depends(attachment_service)]
-Policies = Annotated[AssistantPolicyService, Depends(policy_service)]
 Preferences = Annotated[AssistantSettingsService, Depends(preferences_service)]
 Models = Annotated[AgentModelService, Depends(model_service)]
 Skills = Annotated[AgentSkillService, Depends(skill_service)]

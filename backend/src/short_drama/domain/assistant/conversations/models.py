@@ -153,6 +153,7 @@ class AgentMessage(Base):
     item_seq: Mapped[int | None] = _number(nullable=True)
     row_version: Mapped[int] = _number(1)
     role: Mapped[str] = mapped_column(VARCHAR(16, collation="utf8mb4_0900_bin"))
+    memory_capture_generation: Mapped[int | None] = _number(nullable=True)
     kind: Mapped[str] = mapped_column(VARCHAR(16), server_default=text("'reply'"))
     content: Mapped[str] = mapped_column(MEDIUMTEXT(), server_default=text("('')"))
     references: Mapped[list] = _json(array=True)

@@ -1,10 +1,10 @@
 """Authenticated messages, reviews and cancellation; execution belongs to workers."""
 
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 
 from short_drama.agent.core.access import LeaseLost, lock_run, may_decide
 from short_drama.agent.core.events import (
@@ -13,8 +13,18 @@ from short_drama.agent.core.events import (
     public_event_payload,
 )
 from short_drama.agent.core.fence import owns_execution
-from short_drama.agent.core.state import finish_locked, mark_scheduled, wait_locked
-from short_drama.agent.runtime.events import finish_trace_locked, run_state_locked
+from short_drama.agent.core.state import (
+    failure_message,
+    finish_locked,
+    mark_scheduled,
+    safe_error,
+    wait_locked,
+)
+from short_drama.agent.runtime.events import (
+    finish_trace_locked,
+    run_state_locked,
+    text_parts_for_turn,
+)
 from short_drama.agent.runtime.lease import ExecutionClaim
 from short_drama.agent.session.lifecycle import finalize_deletion_locked
 from short_drama.core.exceptions import NotFound, WorkflowError
@@ -35,6 +45,7 @@ from short_drama.schemas.assistant.operations.runtime import (
 )
 from short_drama.schemas.base import parse_identifier
 from short_drama.service.assistant.conversations.conversation import AgentConversationService
+from short_drama.service.assistant.execution.wait_projection import waiting_summaries
 from short_drama.service.base import Page, utcnow
 
 
@@ -43,40 +54,47 @@ def read_runs(session, rows):
     if not rows:
         return []
     dao = AgentRunDAO(session)
+    stopping = dao.stopping({row.id for row in rows})
     queued = [row for row in rows if row.status == "queued"]
     queue = dao.queue({row.conversation_id for row in queued}) if queued else []
+    waits = waiting_summaries(session, {row.id for row in rows} | {row.id for row in queue})
+    blockers = {
+        row.id: sorted(
+            (
+                item
+                for item in queue
+                if item.conversation_id == row.conversation_id
+                and item.id != row.id
+                and (item.status != "queued" or item.id < row.id)
+            ),
+            key=lambda item: (item.status == "queued", item.id),
+        )
+        for row in queued
+    }
     return [
         read_run(
             session,
             row,
-            queue_position=sum(
-                item.conversation_id == row.conversation_id
-                and item.id != row.id
-                and (item.status != "queued" or item.id < row.id)
-                for item in queue
-            )
-            if row.status == "queued"
-            else 0,
+            stopping=row.id in stopping,
+            queue_position=len(blockers.get(row.id, [])),
+            blocker=next(iter(blockers.get(row.id, [])), None),
+            waits=waits,
         )
         for row in rows
     ]
 
 
-def read_run(session, run, *, queue_position=None):
+def read_run(session, run, *, queue_position=None, stopping=None, blocker=None, waits=None):
     if queue_position is None:
-        queue_position = 0
-        if run.status == "queued":
-            queue_position = (
-                session.scalar(
-                    select(func.count(AgentRun.id)).where(
-                        AgentRun.conversation_id == run.conversation_id,
-                        AgentRun.id != run.id,
-                        AgentRun.status.in_(("running", "waiting_generation", "waiting_input"))
-                        | ((AgentRun.status == "queued") & (AgentRun.id < run.id)),
-                    )
-                )
-                or 0
-            )
+        return read_runs(session, [run])[0]
+    if stopping is None:
+        stopping = run.id in AgentRunDAO(session).stopping({run.id})
+    summary = (waits or {}).get(blocker.id if blocker else run.id)
+    reason = summary["message"] if summary else "等待前序任务" if queue_position else None
+    if blocker:
+        reason = f"等待前序任务「{blocker.goal or '创作任务'}」"
+        if summary:
+            reason += f"：{summary['message']}；可处理待答问题或停止该任务后继续。"
     return RunRead(
         id=run.id,
         task_id=getattr(run, "task_id", None),
@@ -87,7 +105,15 @@ def read_run(session, run, *, queue_position=None):
         mode=(run.checkpoint.get("authorization") or {}).get("mode", "discuss"),
         model_config_id=run.model_config_id,
         model_name=run.config_snapshot.get("name", "文本模型"),
-        error={"code": run.error.get("code", "agent_failed")} if run.error else None,
+        error={
+            **safe_error(run.error.get("code")),
+            "message": failure_message(
+                run.error.get("code"), accepted_unknown=run.error.get("accepted_unknown") is True
+            ),
+            **({"accepted_unknown": True} if run.error.get("accepted_unknown") is True else {}),
+        }
+        if run.error
+        else None,
         usage={key: (run.usage or {}).get(key, 0) for key in initial_usage()},
         budget={key: (run.budget or {}).get(key, 0) for key in budget_limits()},
         awaiting_artifact_ids=run.checkpoint.get("awaiting_artifacts", []),
@@ -95,7 +121,11 @@ def read_run(session, run, *, queue_position=None):
         updated_at=run.updated_at,
         finished_at=run.finished_at,
         queue_position=queue_position,
-        waiting_reason="等待前序任务" if queue_position else None,
+        waiting_reason=reason,
+        wait_summary=summary,
+        blocking_run_id=blocker.id if blocker else None,
+        blocking_task_id=blocker.task_id if blocker else None,
+        stopping=stopping,
     )
 
 
@@ -196,6 +226,7 @@ class AgentRunService(AgentConversationService):
                 snapshot=deepcopy(run.config_snapshot),
                 budget=deepcopy(run.budget),
                 tool_names=tuple(names),
+                lease_until=run.lease_until,
                 discussion_revision=bool(run.checkpoint.get("discussion_revision")),
                 pending_input=(
                     not run.checkpoint.get("discussion_revision")
@@ -203,7 +234,12 @@ class AgentRunService(AgentConversationService):
                 ),
             )
 
-    def renew(self, claim: ExecutionClaim) -> bool:
+    def execution_active(self, claim: ExecutionClaim) -> bool:
+        """One short non-locking control read, independent of the renewal transaction."""
+        with self.session.begin():
+            return AgentRunDAO(self.session).execution_active(claim)
+
+    def renew(self, claim: ExecutionClaim) -> datetime | bool:
         from short_drama.agent.task.queries import task_for_run
 
         with self.session.begin():
@@ -222,9 +258,17 @@ class AgentRunService(AgentConversationService):
             ):
                 return False
             run.lease_until = utcnow() + timedelta(seconds=self.settings.agent_lease_seconds)
-            return True
+            return run.lease_until
 
-    def finish(self, claim: ExecutionClaim, *, status: str, content: str = "", error=None):
+    def finish(
+        self,
+        claim: ExecutionClaim,
+        *,
+        status: str,
+        content: str = "",
+        model_call_id: str | None = None,
+        error=None,
+    ):
         from short_drama.agent.core.events import append_event
         from short_drama.agent.core.items import KIND_REPLY, allocate_item_seq
         from short_drama.agent.task.queries import task_for_run
@@ -250,8 +294,17 @@ class AgentRunService(AgentConversationService):
                 if run.checkpoint.get("discussion_revision"):
                     from short_drama.agent.task.discussion import replace_reply_locked
 
-                    replace_reply_locked(self.session, conversation, run, content)
+                    replace_reply_locked(
+                        self.session, conversation, run, content, model_call_id=model_call_id
+                    )
                 else:
+                    from short_drama.dao.assistant.execution.model_ledger import AgentModelLedgerDAO
+
+                    turn = (
+                        AgentModelLedgerDAO(self.session, run.id).call(model_call_id)
+                        if model_call_id
+                        else None
+                    )
                     message = AgentMessage(
                         id=next_id(),
                         conversation_id=conversation.id,
@@ -280,6 +333,13 @@ class AgentRunService(AgentConversationService):
                             "role": "assistant",
                             "content": content,
                             "artifacts": [],
+                            "text_parts": text_parts_for_turn(
+                                self.session,
+                                conversation,
+                                run,
+                                turn.id if turn is not None else None,
+                                content,
+                            ),
                         },
                         run_id=run.id,
                     )
@@ -361,7 +421,58 @@ class AgentRunService(AgentConversationService):
             )
         return self._storage
 
-    def _message_read(self, row):
+    def _message_event_metadata(self, rows):
+        if not rows:
+            return {}
+        message_ids = [str(row.id) for row in rows]
+        events = self.session.execute(
+            select(AgentEvent.seq, AgentEvent.run_id, AgentEvent.event_type, AgentEvent.payload)
+            .where(
+                AgentEvent.conversation_id == rows[0].conversation_id,
+                AgentEvent.event_type.in_(
+                    ["message.created", "message.updated", "task.input.received"]
+                ),
+                or_(
+                    and_(
+                        AgentEvent.event_type.in_(["message.created", "message.updated"]),
+                        AgentEvent.payload["id"].as_string().in_(message_ids),
+                    ),
+                    and_(
+                        AgentEvent.event_type == "task.input.received",
+                        AgentEvent.payload["message_id"].as_string().in_(message_ids),
+                    ),
+                ),
+            )
+            .order_by(AgentEvent.seq)
+        )
+        result = {}
+        for seq, run_id, event_type, payload in events:
+            message_id = (
+                payload.get("id")
+                if event_type != "task.input.received"
+                else payload.get("message_id")
+            )
+            if message_id:
+                result[str(message_id)] = {
+                    "event_seq": seq,
+                    "run_id": run_id,
+                    "text_parts": (
+                        payload.get("text_parts", [])
+                        if payload.get("content")
+                        == next(
+                            (
+                                message.content
+                                for message in rows
+                                if str(message.id) == str(message_id)
+                            ),
+                            None,
+                        )
+                        else []
+                    ),
+                }
+        return result
+
+    def _message_read(self, row, event_metadata=None):
         from short_drama.domain import MediaFile
 
         references = deepcopy(row.references)
@@ -374,12 +485,16 @@ class AgentRunService(AgentConversationService):
         return MessageRead(
             id=row.id,
             task_id=row.task_id,
+            run_id=(event_metadata or {}).get("run_id"),
             seq=row.seq,
             item_seq=row.item_seq,
+            event_seq=(event_metadata or {}).get("event_seq"),
+            text_parts=(event_metadata or {}).get("text_parts", []),
             row_version=row.row_version,
             role=row.role,
             kind=row.kind,
             content=row.content,
+            interrupted=any(ref.get("type") == "interrupted_response" for ref in references),
             references=references,
             artifacts=row.artifacts,
             created_at=row.created_at,
@@ -411,13 +526,17 @@ class AgentRunService(AgentConversationService):
             rows = self.session.scalars(
                 query.order_by(AgentMessage.seq.desc()).offset(offset).limit(limit)
             ).all()
+            event_metadata = self._message_event_metadata(rows)
             total = self.session.scalar(
                 select(func.count(AgentMessage.id)).where(
                     AgentMessage.conversation_id == conversation.id
                 )
             )
             return Page(
-                items=[self._message_read(row) for row in reversed(rows)],
+                items=[
+                    self._message_read(row, event_metadata.get(str(row.id)))
+                    for row in reversed(rows)
+                ],
                 total=total,
                 offset=offset,
                 limit=limit,

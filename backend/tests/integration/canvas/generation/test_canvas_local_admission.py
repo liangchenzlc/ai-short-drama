@@ -1,6 +1,7 @@
 """真实 MySQL/登录的本地任务准入；来源仅为 metadata fixture，不执行模型。"""
 
 import json
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -56,6 +57,7 @@ def test_cloud_model_freeze_operation_replay_and_unknown_submission_cannot_resum
     owner, _, _, body = local_scope
     model = owner.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "service_type": "audio",
             "name": "转写测试",

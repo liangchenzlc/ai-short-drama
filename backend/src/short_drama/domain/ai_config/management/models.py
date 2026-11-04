@@ -33,6 +33,12 @@ class AIModelConfig(Base):
     capability_cache: Mapped[dict | None] = mapped_column(JSON(), nullable=True)
     runtime_profile: Mapped[dict | None] = mapped_column(JSON(), nullable=True)
     runtime_credentials_cipher: Mapped[str | None] = mapped_column(MEDIUMTEXT(), nullable=True)
+    create_key: Mapped[str | None] = mapped_column(
+        VARCHAR(64, collation="utf8mb4_0900_bin"), nullable=True
+    )
+    create_hash: Mapped[str | None] = mapped_column(
+        VARCHAR(64, collation="utf8mb4_0900_bin"), nullable=True
+    )
 
     id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True),
@@ -118,6 +124,7 @@ class AIModelConfig(Base):
     )
 
     __table_args__ = (
+        UniqueConstraint("owner_user_id", "create_key", name="uk_ai_model_create"),
         UniqueConstraint("owner_user_id", "default_service_type", name="uk_ai_default_service"),
         Index("idx_ai_type_available", "service_type", "is_deleted", "enabled"),
         CheckConstraint(

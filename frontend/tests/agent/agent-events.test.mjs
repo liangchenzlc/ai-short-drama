@@ -4,7 +4,14 @@ import test from 'node:test';
 import ts from 'typescript';
 const source = readFileSync(new URL('../../src/features/assistant/runtime/agent-events.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const { takeSseFrames, parseAgentEvent, sseControl, addDelta, latestDelta } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const { takeSseFrames, parseAgentEvent, sseControl, addDelta, streamingParts, recoverDeltaReplay } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+
+test('resync retains displayed text until replay reaches its watermark then replaces obsolete chunks', () => {
+  const held = { '12': [{ turn: 'a', offset: 0, seq: 2, text: '已显示' }, { turn: 'obsolete', offset: 0, seq: 3, text: '旧片段' }] };
+  const replay = { '12': [{ turn: 'a', offset: 0, seq: 2, text: '已显示' }, { turn: 'a', offset: 3, seq: 4, text: '新片段' }] };
+  assert.deepEqual(recoverDeltaReplay(held, replay, 2, 4)['12'].map(item => item.text), ['已显示', '旧片段', '新片段']);
+  assert.deepEqual(recoverDeltaReplay(held, replay, 4, 4), replay);
+});
 
 test('SSE chunk boundaries retain complete multiline JSON frames and ignore heartbeat comments', () => {
   const event = { seq: 9, event_type: 'run.finished', run_id: '12', payload: {}, created_at: '2026-10-03' };
@@ -29,10 +36,10 @@ test('delta replay deduplicates turn and offset without comparing Unicode codepo
   let chunks = addDelta([], event('a', 0, '🎬'));
   chunks = addDelta(chunks, event('a', 1, '雨夜'));
   chunks = addDelta(chunks, event('a', 1, '雨夜'));
-  assert.equal(latestDelta(chunks), '🎬雨夜');
+  assert.equal(streamingParts(chunks).at(-1).text, '🎬雨夜');
   assert.equal(chunks.length, 2);
   chunks = addDelta(chunks, event('b', 0, '新回复'));
-  assert.equal(latestDelta(chunks), '新回复');
+  assert.equal(streamingParts(chunks).at(-1).text, '新回复');
 });
 
 test('trace SSE payloads retain decimal identities, byte offsets and execution scope across chunks', () => {

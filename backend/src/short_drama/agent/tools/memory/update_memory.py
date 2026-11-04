@@ -22,6 +22,7 @@ SPEC = ToolSpec(
     args_schema=TOOL.input_model,
     handler=TOOL,
     effect="write",
+    required_capability="memory_write",
     source="runtime",
     modes=frozenset(set()),
 )

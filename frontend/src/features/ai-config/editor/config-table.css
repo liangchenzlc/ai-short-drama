@@ -1,22 +1,69 @@
-.ai-config-page .config-table th:first-child {
-  width: 21%;
+/* Model management: group identity and endpoint; keep destructive actions secondary. */
+.config-table {
+  table-layout: fixed;
+  min-width: 0;
+  font-size: 13px;
 }
-.ai-config-page .config-table th:nth-child(2) {
-  width: 19%;
+.config-table th:first-child {
+  width: 23%;
 }
-.ai-config-page .config-table th:nth-child(3) {
-  width: 25%;
+.config-table th:nth-child(2) {
+  width: 33%;
 }
-.ai-config-page .config-table th:nth-child(4),
-.ai-config-page .config-table th:nth-child(5) {
-  width: 10%;
+.config-table th:nth-child(3),
+.config-table th:nth-child(4) {
+  width: 12%;
 }
-.ai-config-page .config-table th:last-child {
-  width: 15%;
+.config-table th:last-child {
+  width: 20%;
 }
-.ai-config-page .config-table td[data-label='服务地址'] .config-secondary {
-  margin-top: 0;
+.config-table th,
+.config-table td {
+  padding: 18px 16px;
+  overflow-wrap: anywhere;
 }
-.ai-config-page .config-table td[data-label='操作'] {
-  padding-inline: 12px;
+.config-table tbody tr:hover {
+  background: var(--pale);
 }
+.config-identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.config-identity strong {
+  font-size: 14px;
+}
+.config-secondary {
+  display: block;
+  color: var(--sub);
+  font-size: 12px;
+  margin-top: 6px;
+}
+.config-table .config-url {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.config-actions {
+  gap: 6px;
+}
+.config-actions .ant-btn {
+  min-height: 36px;
+  padding-inline: 10px;
+}
+.config-feedback[role='status'] {
+  color: var(--success);
+  background: var(--pale);
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+.config-table th:first-child { width: 24%; }
+.config-table th:nth-child(2) { width: 22%; }
+.config-table th:nth-child(3) { width: 27%; }
+.config-table th:nth-child(4) { width: 10%; }
+.config-table th:last-child { width: 17%; }
+.config-table td[data-label='服务地址'] .config-url { margin-top: 0; }
+.config-actions { display: flex; align-items: center; }
+.config-actions .ant-btn { width: 32px; min-width: 32px; padding: 6px; }

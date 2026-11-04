@@ -1,6 +1,8 @@
 """Source-aware initial context and incremental inputs for the framework graph."""
 
+import hashlib
 import json
+import logging
 from copy import deepcopy
 
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
@@ -14,7 +16,11 @@ from short_drama.agent.context.working_set import projection as working_notes
 from short_drama.agent.core.access import LeaseLost, lock_run, may_decide
 from short_drama.agent.core.fence import owns_execution
 from short_drama.agent.gateway.contracts import AgentGatewayError
-from short_drama.agent.memory.context import history_projection_locked
+from short_drama.agent.memory.context import (
+    history_projection_locked,
+    memory_capacity_error,
+    summary_projection_locked,
+)
 from short_drama.agent.memory.sources import restricted_messages
 from short_drama.agent.resources.catalog import catalog_locked as resource_catalog
 from short_drama.agent.skill.contracts import MAX_ACTIVATIONS
@@ -28,8 +34,14 @@ from short_drama.dao.assistant.execution.scope import AgentExecutionScopeDAO
 from short_drama.dao.assistant.execution.transcript import AgentTranscriptDAO
 from short_drama.domain.assistant.conversations.models import AgentMessage
 from short_drama.domain.assistant.tasks.task import AgentTaskInput
-from short_drama.service.assistant.memory.memory_store import checked_scope, memory_catalog_locked
+from short_drama.service.assistant.memory.memory_store import (
+    checked_scope,
+    memory_capture_generation,
+    memory_catalog_locked,
+)
 from short_drama.service.assistant.tasks.policy import generation_policy_locked
+
+logger = logging.getLogger(__name__)
 
 
 def scope_context(context, state, namespace):
@@ -82,13 +94,19 @@ def scope_context(context, state, namespace):
         update = _eligible_sources(state, restricted, scope.id, scope_keys)
         update["memory_epoch"] = epoch
         update["scope_id"] = str(scope.id)
-        if not root:
-            policy = generation_policy_locked(session, context.owner_id)
-            update["permitted_tool_names"] = sorted(
-                item["name"]
-                for item in tool_catalog(task_view, media_enabled=policy.media_generation_enabled)
-                if item["name"] in context.permitted_tool_names
+        policy = generation_policy_locked(session, context.owner_id)
+        update["permitted_tool_names"] = sorted(
+            item["name"]
+            for item in tool_catalog(
+                task_view,
+                media_enabled=policy.media_generation_enabled,
+                workbench_enabled=policy.workbench_enabled,
+                memory_enabled=policy.long_term_memory_enabled,
             )
+            if item["name"] in context.permitted_tool_names
+        )
+        _eligible_skill_tools(task_view, state, update)
+        if not root:
             _restore_skill_bodies(session, context, state, update, restricted)
             _restore_working_notes(
                 session, task_view, run, scope.id, state, update, restricted, scope_keys
@@ -160,12 +178,6 @@ def scope_context(context, state, namespace):
                 activation["active"] = False
                 activation["issue"] = "用户已移除此方法"
         update = _revoke_messages(state, update)
-        policy = generation_policy_locked(session, context.owner_id)
-        update["permitted_tool_names"] = sorted(
-            item["name"]
-            for item in tool_catalog(task_view, media_enabled=policy.media_generation_enabled)
-            if item["name"] in context.permitted_tool_names
-        )
         if not state.get("context_initialized"):
             _initial_messages(session, conversation, task_view, run, state, update, inputs)
             update["context_initialized"] = True
@@ -269,6 +281,7 @@ def _current_skill_activations(task_id, scope_id, state, restricted):
             "content_version": item["skill"]["content_version"],
             "body_operation_id": item["body_operation_id"],
             "active": item["active"],
+            "issue": item.get("issue"),
         }
         for item in records[-MAX_ACTIVATIONS:]
     ]
@@ -276,21 +289,23 @@ def _current_skill_activations(task_id, scope_id, state, restricted):
 
 def _initial_messages(session, conversation, task, run, state, update, inputs):
     keys = subject_memory_keys(task.context_snapshot)
-    scope = checked_scope(
-        session, conversation.owner_user_id, conversation.id, task.memory_project_ids
-    )
+    scope = checked_scope(session, conversation.owner_user_id)
     trigger = session.get(AgentMessage, run.trigger_message_id)
+    summary, facts = summary_projection_locked(session, conversation, task, keys)
+    if summary is not None and summary.to_seq >= trigger.seq:
+        # 历史重答只可使用触发消息之前的来源，不能带入后续会话摘要。
+        summary, facts = None, []
     page = history_projection_locked(
         session,
         conversation,
         task,
-        1,
+        summary.to_seq + 1 if summary else 1,
         trigger.seq - 1,
         limit=500,
         allowed_subject_keys=keys,
     )
     if page["next_seq"] is not None:
-        raise Conflict("历史来源超过单次装配上限，请先完成会话记忆维护")
+        raise AgentGatewayError(memory_capacity_error(session, conversation))
     input_ids = {str(message.id): f"task-input:{item.id}" for item, message in inputs}
     history = [
         (HumanMessage if item["role"] == "user" else AIMessage)(
@@ -301,13 +316,41 @@ def _initial_messages(session, conversation, task, run, state, update, inputs):
         for item in page["items"]
         if not item["source_restricted"]
     ]
+    if summary is not None:
+        history.insert(
+            0,
+            HumanMessage(
+                content=json.dumps(
+                    {
+                        "conversation_summary": {
+                            "id": str(summary.id),
+                            "covers_until_seq": summary.to_seq,
+                            "facts": facts,
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                id=f"conversation-summary:{summary.id}",
+                additional_kwargs={
+                    "task_context_pinned": True,
+                    "source_summary_ids": [str(summary.id)],
+                    "source_message_ids": sorted(
+                        {value for fact in facts for value in fact["source_message_ids"]}
+                    ),
+                    "subject_keys": sorted(
+                        {key for fact in facts for key in fact.get("subject_keys", [])}
+                    ),
+                },
+            ),
+        )
     metadata = {
         "task_id": str(task.id),
         "execution_target": task.execution_target,
         "subjects": task.context_snapshot,
-        "media_limits": task.media_limits,
         "resources": resource_catalog(session, conversation, task),
-        "memory_catalog": memory_catalog_locked(session, scope),
+        "memory_catalog": memory_catalog_locked(session, scope)
+        if memory_capture_generation(session, conversation.owner_user_id) is not None
+        else None,
         "skill_catalog": catalog_locked(
             session,
             conversation.owner_user_id,
@@ -376,18 +419,55 @@ def _revoke_messages(state, update):
     return update
 
 
+def _eligible_skill_tools(task, state, update):
+    mode = (task.execution_target or {}).get("mode")
+    permitted = set(update["permitted_tool_names"])
+    for item in update["skill_activations"]:
+        if not item.get("active"):
+            continue
+        skill = item["skill"]
+        missing = set(skill.get("required_tools", [])) - permitted
+        if mode and mode not in skill.get("modes", []):
+            item["active"], item["issue"] = False, "方法不适用于当前任务模式，请重新选择方法"
+        elif missing:
+            item["active"], item["issue"] = (
+                False,
+                ("当前政策或范围不再允许方法所需工具：" + "、".join(sorted(missing))),
+            )
+    _revoke_messages(state, update)
+
+
+def _require_skill_body(context, item, result):
+    body = result.get("instructions")
+    expected = item["reference"]["metadata"]["body_checksum"]
+    if (
+        not isinstance(body, str)
+        or not body
+        or hashlib.sha256(body.encode()).hexdigest() != expected
+    ):
+        logger.error(
+            "Skill context unavailable operation_id=%s scope_id=%s reason=%s",
+            item["body_operation_id"],
+            context.scope_id,
+            "missing" if not body else "invalid_body",
+        )
+        raise AgentGatewayError("agent_skill_context_missing")
+
+
 def _restore_skill_bodies(session, context, state, update, restricted):
     removed = {item.id for item in update["messages"] if isinstance(item, RemoveMessage)}
     messages = [
         item for item in [*state["messages"], *update["messages"]] if item.id not in removed
     ]
+    active = [item for item in update["skill_activations"] if item.get("active")]
+    by_operation = {item["body_operation_id"]: item for item in active}
     present = set()
     for message in messages:
         if isinstance(message, ToolMessage) and message.name == "runtime__load_skill":
             result = json.loads(message.content)
-            if result.get("instructions"):
+            if result.get("instructions") and result.get("body_operation_id") in by_operation:
+                _require_skill_body(context, by_operation[result["body_operation_id"]], result)
                 present.add(result.get("body_operation_id"))
-    active = [item for item in update["skill_activations"] if item.get("active")]
     for item in active:
         identifier = item["body_operation_id"]
         if identifier in present:
@@ -398,11 +478,15 @@ def _restore_skill_bodies(session, context, state, update, restricted):
             context.scope_id,
             int(identifier),
         )
-        if not group or not any(
-            str(operation.id) == identifier and (operation.result or {}).get("instructions")
-            for _call, operation in group
-        ):
-            raise AgentGatewayError("agent_skill_context_missing")
+        archived = next(
+            (
+                operation.result or {}
+                for _call, operation in group
+                if str(operation.id) == identifier
+            ),
+            {},
+        )
+        _require_skill_body(context, item, archived)
         update["messages"].append(
             AIMessage(
                 content="",
@@ -426,6 +510,8 @@ def _restore_skill_bodies(session, context, state, update, restricted):
                 or record["id"] == result.get("activation_id")
             ]
             eligible = [record for record in records if record.get("active")]
+            if eligible and result.get("instructions"):
+                _require_skill_body(context, eligible[0], result)
             original = result.get("activation_record")
             origins = eligible or records or ([original] if original else [])
             metadata = {

@@ -7,6 +7,28 @@ from short_drama.core.config import Settings
 from short_drama.main import create_app
 
 
+def test_token_settings_accept_capabilities_without_project_or_tool_ids():
+    from pydantic import ValidationError
+
+    from short_drama.schemas.identity.accounts.mcp_token import McpTokenCreate
+
+    values = McpTokenCreate.model_validate({"name": "工具", "workbench_enabled": True})
+    assert values.workbench_enabled and not values.media_generation_enabled
+    assert values.expires_at is None and "expires_at" not in values.model_fields_set
+    for field in ("project_ids", "tool_names"):
+        with pytest.raises(ValidationError):
+            McpTokenCreate.model_validate({"name": "工具", field: ["1"]})
+
+
+def test_token_settings_reject_non_boolean_capabilities():
+    from pydantic import ValidationError
+
+    from short_drama.schemas.identity.accounts.mcp_token import McpTokenCreate
+
+    with pytest.raises(ValidationError):
+        McpTokenCreate.model_validate({"name": "工具", "workbench_enabled": "yes"})
+
+
 @pytest.mark.parametrize(
     "headers",
     [

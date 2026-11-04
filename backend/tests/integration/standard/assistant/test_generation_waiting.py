@@ -18,10 +18,90 @@ from tests.integration.standard.assistant.test_global_assistant_tasks import (
     new_task,
     task_service,
 )
-from tests.support.assistant_runtime import RuntimeTransport, calls, tool_result
+from tests.support.assistant_runtime import RuntimeTransport, WorkerLost, calls, tool_result
 
 pytestmark = pytest.mark.integration
 task_workspace = harness_workspace
+
+
+def seed_older_unanswered_waits(factory, run_id, count=100, *, leased=False):
+    from copy import deepcopy
+    from datetime import timedelta
+
+    from short_drama.core.time import utcnow
+    from short_drama.domain.assistant.execution.models import AgentTurn
+    from short_drama.domain.assistant.execution.scope import AgentExecutionScope
+    from short_drama.utils.snowflake import next_id
+
+    def clone(session, row, **updates):
+        values = {
+            column.name: deepcopy(getattr(row, column.name))
+            for column in row.__table__.columns
+            if column.computed is None
+        }
+        values.update(id=next_id(), **updates)
+        result = type(row)(**values)
+        session.add(result)
+        session.flush()
+        return result
+
+    with factory.begin() as session:
+        run = session.get(AgentRun, run_id)
+        operation = session.scalar(
+            select(AgentOperation).where(
+                AgentOperation.run_id == run_id, AgentOperation.wait_state.is_not(None)
+            )
+        )
+        scope = session.get(AgentExecutionScope, operation.scope_id)
+        call = session.get(AgentToolCall, operation.tool_call_id)
+        turn = session.get(AgentTurn, call.turn_id)
+        from short_drama.domain.assistant.conversations.models import AgentMessage
+
+        conversation = session.get(AgentConversation, run.conversation_id)
+        task = session.get(AgentTask, run.task_id)
+        message = session.get(AgentMessage, run.trigger_message_id)
+        for _ in range(count):
+            older_conversation = clone(session, conversation, create_key=uuid4().hex.ljust(64, "0"))
+            older_task = clone(session, task, conversation_id=older_conversation.id)
+            older_message = clone(
+                session, message, conversation_id=older_conversation.id, task_id=older_task.id
+            )
+            older = clone(
+                session,
+                run,
+                status="waiting_input",
+                conversation_id=older_conversation.id,
+                task_id=older_task.id,
+                trigger_message_id=older_message.id,
+                updated_at=run.created_at,
+                lease_token=uuid4().hex if leased else None,
+                lease_until=utcnow() + timedelta(minutes=10) if leased else None,
+            )
+            child_scope = clone(session, scope, run_id=older.id)
+            child_turn = clone(session, turn, run_id=older.id, scope_id=child_scope.id)
+            child_call = clone(
+                session,
+                call,
+                run_id=older.id,
+                scope_id=child_scope.id,
+                turn_id=child_turn.id,
+                idempotency_key=uuid4().hex.ljust(64, "0"),
+            )
+            clone(
+                session,
+                operation,
+                run_id=older.id,
+                scope_id=child_scope.id,
+                task_id=older_task.id,
+                tool_call_id=child_call.id,
+                tool_name="runtime__ask_user",
+                wait_state={
+                    "kind": "user_input",
+                    "ready": leased,
+                    "consumed": False,
+                    "interrupt_id": "already-ready-but-leased" if leased else None,
+                },
+            )
 
 
 def test_wait_rejects_guessed_generation_identity_as_tool_error(task_workspace):
@@ -43,14 +123,10 @@ def test_wait_rejects_guessed_generation_identity_as_tool_error(task_workspace):
 
 def media_task(flow):
     factory, settings, model = _workspace(flow.session)
-    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
     from tests.integration.standard.assistant.test_global_assistant_tasks import task_actor
 
     with factory() as session:
         session.info["actor"] = task_actor()
-        AssistantPolicyService(session).update_generation_policy(
-            {"policy_version": "0", "media_generation_enabled": True}
-        )
         service = task_service(session, settings)
         conversation = service.create_global_conversation({}, uuid4().hex)
         accepted = service.send_task_message(
@@ -59,7 +135,6 @@ def media_task(flow):
                 "content": "创建角色并生成图片，随后等待结果",
                 "model_config_id": model,
                 "execution_target": {"mode": "standard", "project_id": str(flow.project.id)},
-                "media_limits": {"images": 2},
             },
             uuid4().hex,
         )
@@ -181,7 +256,7 @@ def test_delete_generation_wait_preserves_admitted_native_task_through_purge(flo
 
 
 @pytest.mark.parametrize(
-    "boundary", ["already_done", "registered", "bound", "released", "checkpoint"]
+    "boundary", ["already_done", "registered", "bound", "released", "leased", "checkpoint"]
 )
 def test_native_submit_returns_immediately_and_wait_survives_completion_windows(
     flow, monkeypatch, boundary
@@ -247,7 +322,7 @@ def test_native_submit_returns_immediately_and_wait_survives_completion_windows(
     async def bind(self, snapshot, claim):
         if boundary == "checkpoint" and not crashes:
             crashes.append(True)
-            raise RuntimeError("lost after checkpoint before snapshot binding")
+            raise WorkerLost("lost after checkpoint before snapshot binding")
         await original_bind(self, snapshot, claim)
         if boundary == "bound" and not completed:
             completed.append(True)
@@ -281,7 +356,7 @@ def test_native_submit_returns_immediately_and_wait_survives_completion_windows(
         ]
     )
     if boundary == "checkpoint":
-        with pytest.raises(RuntimeError, match="durable recovery"):
+        with pytest.raises(WorkerLost):
             runtime_for(factory, settings, transport).execute(accepted.run.id, 1)
     else:
         runtime_for(factory, settings, transport).execute(accepted.run.id, 1)
@@ -298,9 +373,11 @@ def test_native_submit_returns_immediately_and_wait_survives_completion_windows(
         )
         assert len(session.scalars(select(AsyncTask)).all()) == 1
     if boundary != "already_done":
-        if boundary in {"released", "checkpoint"}:
+        if boundary in {"released", "leased", "checkpoint"}:
             assert drain(flow, identities[0]) == "succeeded"
-            assert collect_media_results(factory, settings) == int(boundary == "released")
+            if boundary in {"released", "leased"}:
+                seed_older_unanswered_waits(factory, accepted.run.id, leased=boundary == "leased")
+            assert collect_media_results(factory, settings) == int(boundary != "checkpoint")
             assert collect_media_results(factory, settings) == 0
         if boundary == "checkpoint":
             expire(workspace, accepted)
@@ -411,6 +488,13 @@ def test_mixed_question_and_multiple_generation_dependencies_resume_only_ready_c
         )
         assert question.wait_state["interrupt_id"] != generation.wait_state["interrupt_id"]
         assert session.get(AgentRun, accepted.run.id).status == "waiting_input"
+        from short_drama.service.assistant.execution.run import read_run
+
+        wait_summary = read_run(session, session.get(AgentRun, accepted.run.id)).wait_summary
+        assert wait_summary.pending_questions == 1
+        assert wait_summary.media_batches == 1 and wait_summary.generation_tasks == 2
+        assert wait_summary.elapsed_seconds >= 0 and wait_summary.since is not None
+        assert "待答" in wait_summary.message and "生成" in wait_summary.message
     assert len(identities) == 2
     assert drain(flow, identities[0]) == "succeeded"
     assert collect_media_results(factory, settings) == 0

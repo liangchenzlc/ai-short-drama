@@ -1,6 +1,7 @@
 from short_drama.ai.adapters.audio.canvas_audio import (
     ASYNC_AUDIO,
 )
+from short_drama.ai.adapters.image.registry import IMAGE_ADAPTERS
 from short_drama.ai.adapters.runninghub.adapters import (
     RUNNINGHUB_ADAPTERS,
 )
@@ -26,12 +27,12 @@ ADAPTER_TYPES = {
     "openai_responses.v1": "text",
     CLAUDE_MESSAGES: "text",
     GEMINI_GENERATE_CONTENT: "text",
-    "openai_images.v1": "image",
-    "ark_images.v1": "image",
+    **dict.fromkeys(IMAGE_ADAPTERS, "image"),
     "ark_video.v1": "video",
-    "dashscope_images.v1": "image",
     "dashscope_video.v1": "video",
     "modelhub_video.v1": "video",
+    "minimax_video.v2": "video",
+    "kling_video.v4": "video",
 }
 
 

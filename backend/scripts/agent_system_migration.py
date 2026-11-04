@@ -133,22 +133,6 @@ def memory_steps():
     finally:
         constraint._create_rule = rule
     steps.append(("foreign_key:agent_conversations.fk_agent_conversations_summary", statement))
-    check = next(
-        c
-        for c in Base.metadata.tables["agent_memory_items"].constraints
-        if c.name == "ck_agent_memory_scope"
-    )
-    rule = check._create_rule
-    try:
-        addition = str(AddConstraint(check).compile(dialect=dialect())).split(" ADD ", 1)[1]
-    finally:
-        check._create_rule = rule
-    steps.append(
-        (
-            "check:agent_memory_items.ck_agent_memory_scope",
-            "ALTER TABLE agent_memory_items DROP CHECK ck_agent_memory_scope, ADD " + addition,
-        )
-    )
     return steps
 
 

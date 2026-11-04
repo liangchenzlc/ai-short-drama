@@ -2,8 +2,9 @@ import { assistantApi } from '@host/api/assistant/conversations/requests';
 import { ApiError, errorMessage, http } from '@host/api/http';
 import {
   addDelta,
-  latestDelta,
+  recoverDeltaReplay,
   parseAgentEvent,
+  streamingParts,
   sseControl,
   takeSseFrames,
 } from '@host/features/assistant/runtime/agent-events';
@@ -12,11 +13,11 @@ import {
   applyTaskEvent,
   emptyTaskProjection,
   mergeAssistantMessages as mergeMessages,
-  mergeOperations,
+  mergeTaskEntities,
   mergeTaskSnapshot,
+  operationPageStart,
   selectedTask,
 } from '@host/features/assistant/runtime/assistant-task-state';
-import { mergeTraceBlocks } from '@host/features/assistant/runtime/assistant-trace';
 import type {
   AssistantControlAccepted,
   AssistantTaskAccepted,
@@ -25,9 +26,24 @@ import type {
   AssistantTaskSnapshot,
 } from '@host/types/assistant/api';
 import type { AgentEvent, AgentMessage, AgentRun } from '@host/types/assistant/engine';
-import type { DeltaChunk } from '@host/types/assistant/runtime/agent-events';
-import type { RunTracePagination } from '@host/types/assistant/runtime/assistant-task-state';
+import type { DeltaChunk, DeltaRecovery } from '@host/types/assistant/runtime/agent-events';
+import type { OperationPagination, RunTracePagination } from '@host/types/assistant/runtime/assistant-task-state';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+function messageTextParts(value: unknown): NonNullable<AgentMessage['text_parts']> {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (part): part is NonNullable<AgentMessage['text_parts']>[number] =>
+      !!part &&
+      typeof part === 'object' &&
+      !Array.isArray(part) &&
+      typeof (part as Record<string, unknown>).turn_id === 'string' &&
+      Number.isSafeInteger((part as Record<string, unknown>).event_seq) &&
+      Number((part as Record<string, unknown>).event_seq) > 0 &&
+      typeof (part as Record<string, unknown>).content === 'string',
+  );
+}
+
 export function useAssistantRuntime(conversationId: string) {
   const [projection, setProjection] = useState(() => emptyTaskProjection(conversationId));
   const traceBlocks = useMemo(() => Object.values(projection.traceBlocks), [projection.traceBlocks]);
@@ -40,13 +56,38 @@ export function useAssistantRuntime(conversationId: string) {
   const [pendingQuestions, setPendingQuestions] = useState<AssistantPendingQuestion[]>([]);
   const [hasMoreTrace, setHasMoreTrace] = useState(false);
   const tracePages = useRef<Record<string, RunTracePagination>>({});
+  const operationPages = useRef<Record<string, OperationPagination>>({});
   const taskBeforeId = useRef<string | null>(null);
   const [run, setRun] = useState<AgentRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [olderLoading, setOlderLoading] = useState(false);
   const [error, setError] = useState('');
   const [connection, setConnection] = useState<'connecting' | 'live' | 'reconnecting' | 'error'>('connecting');
-  const [deltas, setDeltas] = useState<Record<string, DeltaChunk[]>>({});
+  const [deltas, updateDeltas] = useState<Record<string, DeltaChunk[]>>({});
+  const deltaState = useRef(deltas);
+  const deltaRecovery = useRef<DeltaRecovery | null>(null);
+  const setDeltas = (next: Record<string, DeltaChunk[]> | ((old: Record<string, DeltaChunk[]>) => Record<string, DeltaChunk[]>)) => {
+    deltaState.current = typeof next === 'function' ? next(deltaState.current) : next;
+    updateDeltas(deltaState.current);
+  };
+  function retirePersistedDeltas(items: AgentMessage[]) {
+    const prune = (state: Record<string, DeltaChunk[]>) => {
+      const next = { ...state };
+      for (const message of items) {
+        if (message.role !== 'assistant' || !message.run_id || !message.text_parts?.length) continue;
+        const turns = new Set(message.text_parts.map((part) => part.turn_id));
+        next[message.run_id] = (next[message.run_id] ?? []).filter((chunk) => !turns.has(chunk.turn));
+      }
+      return next;
+    };
+    setDeltas(prune);
+    if (deltaRecovery.current) {
+      deltaRecovery.current.held = prune(deltaRecovery.current.held);
+      deltaRecovery.current.replay = prune(deltaRecovery.current.replay);
+    }
+  }
+  const [transportError, setTransportError] = useState('');
+  const currentDeltas = useMemo(() => run ? streamingParts(deltas[run.id] ?? []) : [], [run?.id, deltas]);
   const [streamRevision, setStreamRevision] = useState(0);
   const [streamReady, setStreamReady] = useState(false);
   const [accessEnded, setAccessEnded] = useState(false);
@@ -107,6 +148,8 @@ export function useAssistantRuntime(conversationId: string) {
       setHasMoreTrace(false);
       setHasMoreTasks(false);
       tracePages.current = {};
+      operationPages.current = {};
+      deltaRecovery.current = null;
       taskBeforeId.current = null;
       setDeltas({});
       setLoading(false);
@@ -115,6 +158,7 @@ export function useAssistantRuntime(conversationId: string) {
       setInputs([]);
       setConnection('error');
       setError(message);
+      setTransportError('');
     },
     [conversationId],
   );
@@ -125,6 +169,31 @@ export function useAssistantRuntime(conversationId: string) {
     }
     setHasMoreTrace(Object.values(tracePages.current).some(page => page.has_more));
   }, []);
+  async function fillOperationPages(snapshot: AssistantTaskSnapshot, signal?: AbortSignal, valid = () => true) {
+      if (snapshot.has_more_operations) {
+        for (const task of snapshot.tasks) {
+          const missing = operationPageStart(snapshot, task.id, operationPages.current[task.id]);
+          if (!missing) continue;
+          let after = missing.afterId;
+          let more = true;
+          while (more && !signal?.aborted && valid() && !accessEndedRef.current) {
+            const page = await assistantApi.operations(task.id, after, signal);
+            if (!alive.current || signal?.aborted || !valid()) return;
+            setProjection((old) => mergeTaskEntities(old, {
+              snapshot_cursor: page.snapshot_cursor, operations: page.items, trace_blocks: [],
+            }));
+            more = page.has_more;
+            after = page.next_after_id ?? page.items.at(-1)?.id ?? after;
+            operationPages.current[task.id] = { afterId: after ?? missing.afterId, complete: !more };
+          }
+        }
+      } else {
+        for (const task of snapshot.tasks) operationPages.current[task.id] = {
+          afterId: snapshot.operations.filter((item) => item.task_id === task.id).at(-1)?.id,
+          complete: true,
+        };
+      }
+  }
   const reload = useCallback(async () => {
     if (accessEndedRef.current) return;
     const request = ++refreshRequest.current;
@@ -144,6 +213,7 @@ export function useAssistantRuntime(conversationId: string) {
         throw new Error('对话状态不完整，请重新读取。');
       if (snapshot.snapshot_cursor < snapshotCursor.current) return;
       snapshotCursor.current = snapshot.snapshot_cursor;
+      retirePersistedDeltas(snapshot.messages.items);
       if (initial) {
         cursor.current =
           Number.isSafeInteger(snapshot.resume_cursor) &&
@@ -152,6 +222,12 @@ export function useAssistantRuntime(conversationId: string) {
             ? snapshot.resume_cursor
             : 0;
         initialized.current = true;
+        const recovery = deltaRecovery.current;
+        if (recovery) {
+          recovery.watermark = Math.max(recovery.watermark, snapshot.snapshot_cursor);
+          setDeltas(recoverDeltaReplay(recovery.held, recovery.replay, cursor.current, recovery.watermark));
+          if (cursor.current >= recovery.watermark) deltaRecovery.current = null;
+        }
         setStreamReady(true);
       }
       setProjection((old) => mergeTaskSnapshot(old, snapshot));
@@ -172,23 +248,8 @@ export function useAssistantRuntime(conversationId: string) {
       setRun(activeRun ?? queued[0] ?? snapshot.runs.at(-1) ?? null);
       setError('');
       setQueuedRuns(queued);
-      if (!activeRun) setDeltas({});
-      if (snapshot.has_more_operations) {
-        for (const task of snapshot.tasks) {
-          let after = snapshot.operations.filter((item) => item.task_id === task.id).at(-1)?.id;
-          let more = true;
-          while (more && !controller.signal.aborted) {
-            const page = await assistantApi.operations(task.id, after, controller.signal);
-            if (!alive.current || controller.signal.aborted || request !== refreshRequest.current) return;
-            setProjection((old) => ({
-              ...old,
-              operations: mergeOperations(old.operations, page.items),
-            }));
-            more = page.has_more;
-            after = page.next_after_id ?? undefined;
-          }
-        }
-      }
+      if (!activeRun && !deltaRecovery.current) setDeltas({});
+      await fillOperationPages(snapshot, controller.signal, () => request === refreshRequest.current);
       return snapshot;
     } catch (cause) {
       if (!alive.current || controller.signal.aborted) return;
@@ -287,10 +348,12 @@ export function useAssistantRuntime(conversationId: string) {
       controller.abort();
       clearTimeout(refreshTimer);
       clearTimeout(reconnectTimer);
+      const held = deltaState.current;
+      deltaRecovery.current = { held, replay: {}, watermark: Math.max(cursor.current, ...Object.values(held).flatMap((chunks) => chunks.map((chunk) => chunk.seq))) };
+      operationPages.current = {};
       initialized.current = false;
       cursor.current = 0;
       setStreamReady(false);
-      setDeltas({});
       setConnection('reconnecting');
       setStreamRevision((value) => value + 1);
       void reload();
@@ -307,29 +370,64 @@ export function useAssistantRuntime(conversationId: string) {
       }
       cursor.current = event.seq;
       setProjection((old) => applyTaskEvent(old, event));
-      if (event.event_type === 'trace.block' || event.event_type === 'trace.delta') return;
+      if (event.event_type === 'trace.block' || event.event_type === 'trace.delta') {
+        finishDeltaRecovery();
+        return;
+      }
       if (event.event_type === 'assistant.delta' && event.run_id) {
-        setDeltas((old) => ({
-          ...old,
-          [event.run_id!]: addDelta(old[event.run_id!] ?? [], event),
-        }));
+        const recovery = deltaRecovery.current;
+        if (recovery) {
+          recovery.replay[event.run_id] = addDelta(recovery.replay[event.run_id] ?? [], event);
+          setDeltas(recoverDeltaReplay(recovery.held, recovery.replay, cursor.current, recovery.watermark));
+        } else setDeltas((old) => ({ ...old, [event.run_id!]: addDelta(old[event.run_id!] ?? [], event) }));
       } else {
+        const completedTextParts = messageTextParts(event.payload.text_parts);
+        if (
+          ['message.created', 'message.updated'].includes(event.event_type) &&
+          event.payload.role === 'assistant' &&
+          event.run_id &&
+          typeof event.payload.id === 'string' &&
+          Number.isSafeInteger(event.payload.seq) &&
+          typeof event.payload.content === 'string'
+        ) {
+          const payload = event.payload;
+          setMessages((old) =>
+            mergeMessages(old, [
+              {
+                id: payload.id as string,
+                run_id: event.run_id,
+                seq: payload.seq as number,
+                item_seq: typeof payload.item_seq === 'number' ? payload.item_seq : null,
+                event_seq: event.seq,
+                text_parts: completedTextParts,
+                row_version: typeof payload.row_version === 'string' ? payload.row_version : undefined,
+                kind: ['reply', 'narration', 'notice', 'tool_answer'].includes(String(payload.kind))
+                  ? (payload.kind as AgentMessage['kind'])
+                  : 'reply',
+                role: 'assistant',
+                content: payload.content as string,
+                interrupted: payload.interrupted === true,
+                references: Array.isArray(payload.references) ? payload.references : [],
+                artifacts: Array.isArray(payload.artifacts) ? payload.artifacts : [],
+                created_at: event.created_at,
+              },
+            ]),
+          );
+        }
         if (event.event_type === 'artifact.script.applied' && typeof event.payload.project_id === 'string')
           notifyAssistantBusinessChange(event.payload.project_id, ['script']);
         if (event.event_type.startsWith('artifact')) window.dispatchEvent(new Event('agent-artifacts-updated'));
-        if (event.event_type === 'run.finished' && event.run_id)
-          setDeltas((old) => {
-            const next = { ...old };
-            delete next[event.run_id!];
-            return next;
-          });
-        if (event.event_type === 'message.created' && event.payload.role === 'assistant' && event.run_id)
-          setDeltas((old) => {
-            const next = { ...old };
-            delete next[event.run_id!];
-            return next;
-          });
+        if (['message.created', 'message.updated'].includes(event.event_type) && event.payload.role === 'assistant' && event.run_id && completedTextParts.length > 0)
+          retirePersistedDeltas([{ role: 'assistant', run_id: event.run_id, text_parts: completedTextParts } as AgentMessage]);
         scheduleRefresh();
+      }
+      finishDeltaRecovery();
+    }
+    function finishDeltaRecovery() {
+      const recovery = deltaRecovery.current;
+      if (recovery && cursor.current >= recovery.watermark) {
+        setDeltas(recovery.replay);
+        deltaRecovery.current = null;
       }
     }
     async function connect(attempt = 0) {
@@ -359,9 +457,10 @@ export function useAssistantRuntime(conversationId: string) {
             endAccess('对话连接不可用，请核对登录与项目权限。');
             return;
           }
-          throw new Error('stream_unavailable');
+          throw new Error(`stream_http_${response.status}`);
         }
         setConnection('live');
+        setTransportError('');
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -386,8 +485,14 @@ export function useAssistantRuntime(conversationId: string) {
           }
           if (chunk.done) break;
         }
-      } catch {
-        /* The persistent cursor resumes after transport failures. */
+        if (!controller.signal.aborted) setTransportError('对话连接已断开，正在按已读位置重新连接。');
+      } catch (cause) {
+        if (!controller.signal.aborted && !accessEndedRef.current) {
+          const status = cause instanceof Error ? /^stream_http_(\d{3})$/.exec(cause.message)?.[1] : undefined;
+          setTransportError(status ? `对话连接暂不可用（HTTP ${status}），正在重试。`
+            : cause instanceof Error && cause.message === 'stream_retry' ? '服务端暂时无法推送，正在按已读位置重试。'
+            : '对话连接发生网络异常，正在按已读位置重试。');
+        }
       }
       if (controller.signal.aborted || accessEndedRef.current) return;
       setConnection('reconnecting');
@@ -410,6 +515,8 @@ export function useAssistantRuntime(conversationId: string) {
       const snapshot = await assistantApi.taskState(conversationId, undefined, beforeTaskId);
       if (alive.current && !accessEndedRef.current && history === tracePages.current) {
         setProjection((old) => mergeTaskSnapshot(old, snapshot, { historical: true }));
+        await fillOperationPages(snapshot, undefined, () => history === tracePages.current && !accessEndedRef.current);
+        if (history !== tracePages.current || accessEndedRef.current) return;
         setRuns(old => [...new Map([...old, ...snapshot.runs].map(item => [item.id, item])).values()]);
         rememberTraceHistory(snapshot);
         taskBeforeId.current = oldestTaskId(snapshot.tasks);
@@ -434,8 +541,9 @@ export function useAssistantRuntime(conversationId: string) {
       const pages = await Promise.all(pending.map(([id, page]) => assistantApi.tracePage(conversationId, id, page.next_before_seq ?? undefined)));
       // resync 已换过页边界时，旧请求不得推进新一轮历史游标。
       if (!alive.current || accessEndedRef.current || history !== tracePages.current) return;
-      const items = pages.flatMap(page => page.items);
-      setProjection(old => mergeTraceBlocks(old, items));
+      setProjection(old => pages.reduce((state, page) => mergeTaskEntities(state, {
+        snapshot_cursor: page.snapshot_cursor, operations: [], trace_blocks: page.items,
+      }), old));
       pages.forEach((page, index) => { tracePages.current[pending[index][0]] = { has_more: page.has_more, next_before_seq: page.next_before_seq }; });
       setHasMoreTrace(Object.values(tracePages.current).some(page => page.has_more));
     } catch (cause) {
@@ -459,7 +567,7 @@ export function useAssistantRuntime(conversationId: string) {
     queuedRuns,
     loading,
     olderLoading,
-    error,
+    error: error || (run && !['succeeded', 'failed', 'cancelled'].includes(run.status) ? transportError : ''),
     connection,
     reload,
     older,
@@ -482,14 +590,19 @@ export function useAssistantRuntime(conversationId: string) {
     },
     accessEnded,
     reconnect: () => {
+      streamController.current?.abort();
+      const held = deltaState.current;
+      deltaRecovery.current = { held, replay: {}, watermark: Math.max(cursor.current, ...Object.values(held).flatMap((chunks) => chunks.map((chunk) => chunk.seq))) };
+      operationPages.current = {};
       accessEndedRef.current = false;
       setAccessEnded(false);
       initialized.current = false;
+      cursor.current = 0;
       setStreamReady(false);
       setStreamRevision((value) => value + 1);
       void reload();
     },
-    delta: run ? latestDelta(deltas[run.id] ?? []) : '',
+    streamingParts: currentDeltas,
   };
 }
 

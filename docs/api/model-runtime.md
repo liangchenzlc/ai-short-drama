@@ -1,5 +1,80 @@
 # 宿主统一模型配置与画布兼容
 
+## 2026-11-04 当前配置合同
+
+配置入口为 `/settings/models/text` 和 `/settings/models/media/{image|video|audio}`，
+仍嵌在项目、资产库、Skill 共用的工作台布局中。原 `/ai_config` 转向新入口。
+本节记录配置模块本轮生效的接口；后文保留先前运行协议与验收记录，冲突处以本节为准。
+
+| 接口 | 当前用途 |
+| --- | --- |
+| `GET /api/v1/ai-model-configs/options?service_type=text|image|video|audio` | 返回 `interfaces`、`providers`、`models` 三组公开目录；无凭据、无生成请求 |
+| `GET /api/v1/ai-model-configs?service_type=...&create_key=...` | 按本人、类型和可选创建键查询；创建结果未知时据原键核对 |
+| `POST /api/v1/ai-model-configs` | 以必填 `Idempotency-Key` 创建；首次 201、同键同内容重放 200、同键不同内容 409 |
+| `PATCH /api/v1/ai-model-configs/{id}` | 按 `row_version` 更新；省略的隐藏运行参数保持原值 |
+| `POST /api/v1/ai-model-configs/discover-models` | 用户主动获取模型；不保存配置、不调用推理 |
+| `POST /api/v1/canvas-runtime/model-tests` | 复用原异步任务，以已保存模型身份发起真实测试任务 |
+
+创建键为 1–64 位字母、数字、`_:-`，按本人隔离。读取返回 `create_key`，
+不返回请求摘要、密钥明文或加密信封；原键对应配置已删除时不能借重放重新创建。
+`name` 可省略或留空，服务端采用 `model_key`；模型名称仍可单独编辑。
+
+普通配置使用 `interface_type`，服务端由唯一目录生成 `runtime_profile.api_format/protocol`。
+更新接口类型仅替换这两个字段，不覆盖已有能力、默认参数等隐藏设置。
+原运行配置的其他字段继续服务既有执行路径，普通表单不要求填写高级 JSON。
+
+| 类型 | 普通表单可选接口 |
+| --- | --- |
+| 文本 | `auto`、`chat-completion`、`openai-response`、`claude-messages` |
+| 图片 | `auto`、`openai-image`、`volcengine-ark-image`、`qwen-image`、`gemini-image`、`grok-image` |
+| 视频 | `auto`、`volcengine-ark-video`、`minimax-video`、`kling-video`、`dashscope-wan-video`、`newapi`、`newapi-channel-2`、`modelhub-video` |
+| 音频 | `auto`、`openai-audio`、`async-audio`、`dashscope-cosyvoice` |
+
+`auto` 在界面中称“自动识别”；保存时不发送模型推理。图片自动识别只接受注册的官方域名，
+自定义地址必须显式选择协议，不再把所有未知图片地址当作 OpenAI Images。
+`dashscope-qwen-image` 与 `qwen-image` 指向同一图片策略；既有可用协议保留。
+仅退役 `runninghub-workflow-image`：配置入口、校验和执行注册均已移除。
+RunningHub 视频、音频及原声明式视频执行保留，普通表单本轮不新增工作流编辑。
+
+模型发现请求：
+
+```json
+{
+  "base_url": "https://api.minimax.io",
+  "service_type": "video",
+  "interface_type": "minimax-video",
+  "config_id": "123"
+}
+```
+
+`apikey` 省略时可由 `config_id` 引用本人的同地址已保存密钥；显式 `null` 表示不用密钥，
+非空值表示使用当前输入。改变地址后不能引用旧密钥。
+响应为 `{items:[{id}],truncated,source,status}`：`source=provider|builtin`，
+`status=available|unavailable`。MiniMax、可灵官方主机使用已核实的内置型号目录；
+其他供应商按所选接口读取模型目录。Google 自定义网关也使用显式 Gemini 路径与鉴权。
+模型目录接口均为 404/405 时返回空列表和 `unavailable`，允许继续手填；
+鉴权、超时和其他供应商错误不伪装成成功。模型目录存在不代表账号具有生成权限。
+
+已保存模型测试正文为 `{"config_id":"123","clientOperationId":"original-test-key"}`，
+`Idempotency-Key` 与 `clientOperationId` 相同。首次 202、重放 200；
+原有 `GET /api/v1/canvas-runtime/model-tests/{id}` 和取消接口继续读取、停止同一任务。
+类型、协议、凭据和默认测试提示词由服务端从保存配置派生，测试影子隐藏，
+不修改原模型版本或派生缓存，也不因测试结果未知自动再生成。
+
+图片五族使用共用策略注册表，MiniMax H3 和可灵 4 使用各自官方异步视频适配器。
+默认画布能力从已选协议和已核实型号派生；显式保存的能力配置仍优先。
+MiniMax/可灵参考图由现有 Worker 加载已授权媒体，分别内联 Data URI/Base64，
+不把私有存储 URL 交给供应商，不将图片像素写入公开运行参数。
+MiniMax 当前支持文生视频、首尾帧和最多九张参考图；可灵当前支持文生视频、首尾帧。
+未开放 MiniMax 参考视频/音频或可灵 Omni。Wan3 完整契约未核实，拒绝按旧 Wan 格式调用；
+原 Wan 模型继续可用。Midjourney 按本轮范围暂缓。
+
+官方来源、准确型号、覆盖边界和验证口径见
+[官方媒体接口契约](../design/2026-11-03-官方媒体接口契约.md)。
+本轮使用本地 HTTP、隔离 MySQL 和真实服务代码验证；未调用收费媒体供应商。
+
+## 既有运行协议与历史验收
+
 > 2026-10-28：画布模型目录只使用当前宿主模型身份，不再返回 `selection_aliases` 或恢复旧渠道标识。个人偏好不保存全局 `systemPrompt`；单次操作传入提示词的能力保留。下文涉及旧选择别名的描述为历史记录。
 
 管理入口为 `/ai_config`，标准模式与无限画布使用同一套本人 `AIModelConfig`。创建、更新、删除、默认设置继续使用 `/api/v1/ai-model-configs`，编辑和删除沿用 `row_version`，冲突保留草稿。

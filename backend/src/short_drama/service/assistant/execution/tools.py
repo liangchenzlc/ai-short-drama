@@ -17,13 +17,14 @@ from short_drama.agent.core.events import append_event, initial_usage
 from short_drama.agent.core.fence import owns_execution
 from short_drama.agent.core.items import allocate_item_seq
 from short_drama.agent.runtime.context import model_compaction
-from short_drama.agent.runtime.events import operation_block_locked
+from short_drama.agent.runtime.events import operation_block_locked, text_parts_for_turn
 from short_drama.agent.runtime.trace_content import display_safe
 from short_drama.agent.task.queries import task_for_run
 from short_drama.agent.task.sources import READ_TOOLS, WRITE_TOOLS, result_source_ids
 from short_drama.agent.task.state import apply_inputs_locked, task_event
 from short_drama.agent.tools.contracts import TOOL_VERSION
-from short_drama.agent.tools.presentation import label, visibility
+from short_drama.agent.tools.presentation import label
+from short_drama.agent.tools.trace_visibility import tool_trace_visibility
 from short_drama.core.exceptions import WorkflowError
 from short_drama.core.time import utcnow
 from short_drama.dao.assistant.execution.model_ledger import AgentModelLedgerDAO
@@ -33,36 +34,6 @@ from short_drama.domain.assistant.execution.scope import AgentExecutionScope
 from short_drama.domain.assistant.tasks.task import AgentOperation
 from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
-
-
-def enforce_media_limit_locked(session, task, operation, values):
-    from short_drama.dao.assistant.tasks.task import AgentTaskDAO
-    from short_drama.schemas.assistant.operations.media import MEDIA_USAGE_KEYS
-
-    if operation.business_invocation_id is not None:
-        return
-    submitted = dict.fromkeys(MEDIA_USAGE_KEYS.values(), 0)
-    seen = set()
-    for receipt_id, result, arguments in AgentTaskDAO(session).media_admission_receipts(
-        task.id, operation.id
-    ):
-        if receipt_id in seen:
-            continue
-        seen.add(receipt_id)
-        for request, accepted in zip(arguments["requests"], result["items"], strict=True):
-            kind = request.get("media_kind") or {
-                "shot_video": "video",
-                "character_voice": "audio",
-                "dialogue_audio": "audio",
-            }.get(request["target_kind"], "image")
-            submitted[MEDIA_USAGE_KEYS[kind]] += accepted["count"]
-    for request in values.requests:
-        submitted[MEDIA_USAGE_KEYS[request.media_kind]] += request.count
-    if any(
-        task.media_limits[kind] is not None and count > task.media_limits[kind]
-        for kind, count in submitted.items()
-    ):
-        raise WorkflowError("assistant_media_limit", "本任务媒体生成数量已达到上限", 409)
 
 
 class AgentToolExecutionService:
@@ -186,6 +157,9 @@ class AgentToolExecutionService:
                         "kind": "narration",
                         "role": "assistant",
                         "content": narration.content,
+                        "text_parts": text_parts_for_turn(
+                            session, conversation, run, turn.id, narration.content
+                        ),
                     },
                     run_id=run.id,
                 )
@@ -307,9 +281,10 @@ class AgentToolExecutionService:
                 call_id=str(stored.id),
                 operation_id=str(operation.id),
                 tool_name=stored.tool_name,
+                turn_id=str(stored.turn_id),
                 scope_id=str(operation.scope_id),
                 item_seq=operation.item_seq,
-                visibility=visibility(stored.tool_name),
+                trace_visibility=tool_trace_visibility(stored.tool_name),
                 label=label(stored.tool_name),
                 phase=operation.phase,
                 trace_version=str(operation.row_version),
@@ -464,9 +439,10 @@ class AgentToolExecutionService:
                 call_id=str(stored.id),
                 operation_id=str(operation.id),
                 tool_name=stored.tool_name,
+                turn_id=str(stored.turn_id),
                 scope_id=str(operation.scope_id),
                 item_seq=operation.item_seq,
-                visibility=visibility(stored.tool_name),
+                trace_visibility=tool_trace_visibility(stored.tool_name),
                 label=label(stored.tool_name),
                 phase="terminal",
                 outcome=operation.status,

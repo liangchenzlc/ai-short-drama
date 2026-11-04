@@ -8,6 +8,7 @@ SPEC = ToolSpec(
     args_schema=SubmitGenerationBatch,
     handler=submit_generation_batch_locked,
     effect="submit",
+    required_capability="media_generate",
     expose_mcp=True,
     modes=frozenset(set()),
 )

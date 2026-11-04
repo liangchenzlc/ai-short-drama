@@ -49,6 +49,39 @@ class ObjectStore:
         return self.upload(io.BytesIO(data), length=len(data), content_type=content_type)
 
 
+@pytest.mark.parametrize("protocol", ["chat", "responses"])
+@pytest.mark.parametrize(
+    "detail,allowance", [("low", 2048), ("high", 4096), ("auto", 4096), (None, 4096)]
+)
+def test_managed_and_inline_images_use_the_same_detail_allowance(protocol, detail, allowance):
+    from copy import deepcopy
+
+    from short_drama.agent.context.budget import estimate_input_tokens
+
+    options = {"detail": detail} if detail is not None else {}
+    part = (
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA", **options}}
+        if protocol == "chat"
+        else {"type": "input_image", "image_url": "data:image/png;base64,AAAA", **options}
+    )
+    body = {"messages" if protocol == "chat" else "input": [{"role": "user", "content": [part]}]}
+    normalized = deepcopy(body)
+    binary = normalized[next(iter(normalized))][0]["content"][0]
+    if protocol == "chat":
+        binary["image_url"]["url"] = "[managed binary]"
+    else:
+        binary["image_url"] = "[managed binary]"
+    text_cost = (
+        len(json.dumps(normalized, ensure_ascii=False, separators=(",", ":")).encode()) + 2
+    ) // 3
+    assert estimate_input_tokens(body) - text_cost == allowance
+    reference = {"image_ref": {"metadata": options}}
+    assert (
+        estimate_input_tokens(reference, references=True) - estimate_input_tokens(reference)
+        == allowance
+    )
+
+
 @pytest.mark.parametrize("protocol", ["chat", "responses", "claude"])
 @pytest.mark.parametrize("detail,allowance", [("low", 2048), ("high", 4096)])
 @pytest.mark.parametrize("position", ["current", "stale", "withdrawn"])

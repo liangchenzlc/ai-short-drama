@@ -262,6 +262,7 @@ def test_original_canvas_real_agnes_generation_and_fresh_recovery(
         }
     response = owner.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "name": "Agnes真实验收-" + kind,
             "service_type": kind,

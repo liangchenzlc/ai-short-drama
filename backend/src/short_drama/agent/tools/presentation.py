@@ -1,50 +1,6 @@
-"""What the user is allowed to see for each assistant tool.
-
-The frontend must not keep its own tool-name allowlist: it drifts from the executor
-and leaks internal steps. Visibility and the user-facing label are decided here and
-travel with every step event and snapshot.
-
-``silent``   collapsed internal reads; still available in execution trace.
-``step``     one line in a collapsed group, no arguments or payloads.
-``artifact`` a produced work item; always rendered on its own.
-"""
+"""Safe, user-facing labels and summaries for assistant tool activities."""
 
 from short_drama.agent.runtime.trace_content import display_safe, utf8_preview
-
-SILENT = "silent"
-STEP = "step"
-ARTIFACT = "artifact"
-VISIBILITIES = frozenset({SILENT, STEP, ARTIFACT})
-
-_VISIBILITY = {
-    "workbench__read_current_script": STEP,
-    "runtime__propose_script_patch": ARTIFACT,
-    "runtime__search_skills": SILENT,
-    "runtime__load_skill": STEP,
-    "runtime__read_skill_resource": STEP,
-    "runtime__read_operation_receipt": SILENT,
-    "runtime__get_generation_policy": SILENT,
-    "search_memories": SILENT,
-    "read_memories": SILENT,
-    "runtime__memory_catalog": SILENT,
-    "runtime__search_memory": SILENT,
-    "runtime__read_memory": SILENT,
-    "runtime__read_conversation_history": SILENT,
-    "runtime__remember_memory": SILENT,
-    "runtime__update_memory": SILENT,
-    "runtime__forget_memory": SILENT,
-    "runtime__restore_memory": SILENT,
-    "runtime__describe_creation_target": STEP,
-    "runtime__read_selected_subjects": STEP,
-    "runtime__read_task_results": STEP,
-    "workbench__read_image_group": STEP,
-    "workbench__read_image_content": STEP,
-    "workbench__get_generation_status": STEP,
-    "workbench__apply_standard_patch": ARTIFACT,
-    "workbench__apply_canvas_patch": ARTIFACT,
-    "workbench__submit_generation_batch": ARTIFACT,
-    "workbench__set_image_group_primary": ARTIFACT,
-}
 
 _LABELS = {
     "workbench__read_current_script": "读取当前剧本",
@@ -64,19 +20,36 @@ _LABELS = {
 }
 
 _FALLBACK_LABEL = "执行创作操作"
-
-
-def visibility(tool_name: str) -> str:
-    """Unknown tools stay visible as a generic step rather than disappearing."""
-    return _VISIBILITY.get(tool_name, STEP)
+_MEDIA_UNITS = {"image": "张图片", "video": "段视频", "audio": "段音频"}
 
 
 def label(tool_name: str) -> str:
     return _LABELS.get(tool_name, _FALLBACK_LABEL)
 
 
-def is_silent(tool_name: str) -> bool:
-    return visibility(tool_name) == SILENT
+def _generation_summary(operation):
+    totals = {}
+    for request in operation.arguments.get("requests", []):
+        if not isinstance(request, dict) or request.get("media_kind") not in _MEDIA_UNITS:
+            continue
+        count = request.get("count", 1)
+        if type(count) is int and count > 0:
+            kind = request["media_kind"]
+            totals[kind] = totals.get(kind, 0) + count
+    return "、".join(f"{count}{_MEDIA_UNITS[kind]}" for kind, count in totals.items())
+
+
+def _image_purpose(operation):
+    purpose = operation.arguments.get("purpose")
+    if not isinstance(purpose, str) or not purpose.strip():
+        return ""
+    return f"用途：{utf8_preview(display_safe(purpose.strip()), 240)}"
+
+
+_SUMMARY = {
+    "workbench__submit_generation_batch": _generation_summary,
+    "workbench__read_image_content": _image_purpose,
+}
 
 
 def _default_target(*, spec, session, task, **_facts):
@@ -278,27 +251,37 @@ def _workspace_transfer(*, spec, operation, **_facts):
 
 
 _PRESENTATIONS = {
-    "runtime__load_skill": _load_skill,
-    "runtime__read_skill_resource": _skill_resource,
-    "runtime__release_skill": _skill_resource,
-    "runtime__materialize_skill_resource": _skill_resource,
-    "runtime__search_skills": _search_skill,
-    "task": _subtask,
+    "runtime__load_skill": (_load_skill, "skill"),
+    "runtime__read_skill_resource": (_skill_resource, "skill"),
+    "runtime__release_skill": (_skill_resource, "skill"),
+    "runtime__materialize_skill_resource": (_skill_resource, "skill"),
+    "runtime__search_skills": (_search_skill, "skill"),
+    "task": (_subtask, "subtask"),
+    "runtime__ask_user": (_default_target, "wait"),
+    "runtime__wait_generation": (_default_target, "wait"),
     **dict.fromkeys(
-        ("execute", "ls", "read_file", "write_file", "edit_file", "glob", "grep"), _workspace
+        ("execute", "ls", "read_file", "write_file", "edit_file", "glob", "grep"),
+        (_workspace, "sandbox"),
     ),
-    "runtime__import_resources": _workspace_transfer,
-    "runtime__export_artifacts": _workspace_transfer,
+    "runtime__import_resources": (_workspace_transfer, "tool"),
+    "runtime__export_artifacts": (_workspace_transfer, "tool"),
 }
+
+
+def tool_trace_kind(tool_name: str) -> str:
+    return _PRESENTATIONS.get(tool_name, (_default_target, "tool"))[1]
 
 
 def project_display(*, spec, session, task, run, operation, state):
     """Resolve titles from admitted execution facts, never a model-provided title."""
     from short_drama.schemas.assistant.operations.trace import ExecutionDisplay
 
-    action, target, bindings = _PRESENTATIONS.get(spec.name, _default_target)(
+    projector, _kind = _PRESENTATIONS.get(spec.name, (_default_target, "tool"))
+    action, target, bindings = projector(
         spec=spec, session=session, task=task, run=run, operation=operation, state=state
     )
+    summary_function = _SUMMARY.get(spec.name)
+    summary = summary_function(operation) if summary_function else ""
     detail = f"《{target.display_name}》"
     if target.version:
         detail += f" · v{target.version}"
@@ -306,6 +289,11 @@ def project_display(*, spec, session, task, run, operation, state):
         detail += f" / {target.path}"
     return ExecutionDisplay.model_validate(
         display_safe(
-            {"action": action, "target": target.model_dump(mode="json"), "title": action + detail}
+            {
+                "action": action,
+                "target": target.model_dump(mode="json"),
+                "title": action + detail,
+                "summary": summary,
+            }
         )
     ), bindings

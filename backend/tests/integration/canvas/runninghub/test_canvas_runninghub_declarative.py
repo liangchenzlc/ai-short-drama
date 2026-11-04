@@ -189,6 +189,7 @@ def declarative_seed(runtime, *, defaults=None, capability=None):
     )
     response = client.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "name": "声明式 RunningHub 受控模型",
             "model_key": "workflow-model",

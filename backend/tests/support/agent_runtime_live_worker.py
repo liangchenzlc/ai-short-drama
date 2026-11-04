@@ -29,6 +29,7 @@ from tests.support.agent_runtime_live import (
     acceptance_api,
     validate_live_target,
 )
+from tests.support.assistant_runtime import WorkerLost
 
 
 def install_boundary(stack, factory, settings, accepted_run_id, fault, facts):
@@ -90,9 +91,7 @@ def install_boundary(stack, factory, settings, accepted_run_id, fault, facts):
             child = service.context.scope_id != service.context.root_scope_id
             if fault != "model_identity" and child == (fault == "child_model_committed"):
                 if once(fault):
-                    raise RuntimeError(
-                        "acceptance worker lost after model receipt before checkpoint"
-                    )
+                    raise WorkerLost("acceptance worker lost after model receipt before checkpoint")
 
         stack.enter_context(patch.object(ExecutionMiddleware, "awrap_model_call", observe))
         stack.enter_context(patch.object(AgentToolExecutionService, "model_result", result))
@@ -121,7 +120,7 @@ def install_boundary(stack, factory, settings, accepted_run_id, fault, facts):
                 if fault == "stop_tool":
                     stop()
                 else:
-                    raise RuntimeError("acceptance worker lost after committed business tool")
+                    raise WorkerLost("acceptance worker lost after committed business tool")
             return result
 
         stack.enter_context(patch.object(AgentToolExecutionService, "finish_tool", finish))
@@ -133,7 +132,7 @@ def install_boundary(stack, factory, settings, accepted_run_id, fault, facts):
         def register(service, *args, **kwargs):
             result = original(service, *args, **kwargs)
             if once(fault):
-                raise RuntimeError("acceptance worker lost before interrupt binding")
+                raise WorkerLost("acceptance worker lost before interrupt binding")
             return result
 
         stack.enter_context(patch.object(RuntimeQuestions, "register", register))
@@ -164,7 +163,7 @@ def install_boundary(stack, factory, settings, accepted_run_id, fault, facts):
         stack.enter_context(patch.object(CommandBackend, "_event", event))
     elif fault == "close_policy_before_generation":
         from short_drama.service.assistant.execution.tools import AgentToolExecutionService
-        from short_drama.service.assistant.tasks.policy import AssistantPolicyService
+        from short_drama.service.assistant.settings.preferences import AssistantSettingsService
 
         original = AgentToolExecutionService.start_tool
 
@@ -173,14 +172,14 @@ def install_boundary(stack, factory, settings, accepted_run_id, fault, facts):
             if call["name"] == "workbench__submit_generation_batch" and once(fault):
                 with factory() as session:
                     task_service(session, settings)
-                    policy = AssistantPolicyService(session)
-                    saved = policy.update_generation_policy(
+                    preferences = AssistantSettingsService(session, settings)
+                    saved = preferences.update_settings(
                         {
-                            "policy_version": str(policy.get_generation_policy().policy_version),
+                            "settings_version": str(preferences.get_settings().settings_version),
                             "media_generation_enabled": False,
                         }
                     )
-                    facts["closed_policy_version"] = str(saved.policy_version)
+                    facts["closed_settings_version"] = str(saved.settings_version)
             return result
 
         stack.enter_context(patch.object(AgentToolExecutionService, "start_tool", start))
@@ -315,7 +314,7 @@ def deliver(payload):
                         if objects
                         else None,
                     ).execute(payload["run_id"], payload["message_version"])
-                except RuntimeError:
+                except WorkerLost:
                     if facts.get("boundary") not in {
                         "business_committed",
                         "interrupt_registered",

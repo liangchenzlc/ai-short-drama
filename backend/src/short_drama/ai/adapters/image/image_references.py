@@ -40,6 +40,8 @@ def is_stored_image_edit_request(snapshot: dict, request: dict) -> bool:
 
 def uses_canvas_inline_images(snapshot: dict, request: dict, adapter: str) -> bool:
     """Ark/Qwen 与已明确保存的 Agnes 图片内联；Wanx 仍要求公网 URL。"""
+    if adapter == "gemini_images.v1":
+        return bool((request.get("input") or {}).get("reference_urls"))
     return is_stored_image_edit_request(snapshot, request) and (
         adapter == "ark_images.v1"
         or (adapter == "openai_images.v1" and snapshot.get("model_key") == AGNES_IMAGE)
@@ -134,7 +136,13 @@ def inline_saved_image_references(
         remaining -= len(data)
     if time.monotonic() >= deadline:
         raise GenerationError("timeout")
-    if adapter == "ark_images.v1":
+    if adapter == "gemini_images.v1":
+        parts = body["contents"][0]["parts"]
+        parts[:] = [part for part in parts if "fileData" not in part]
+        for value in values:
+            header, data = value.split(",", 1)
+            parts.append({"inlineData": {"mimeType": header[5:].split(";", 1)[0], "data": data}})
+    elif adapter == "ark_images.v1":
         body["image"] = values[0] if len(values) == 1 else values
     elif adapter == "openai_images.v1" and body.get("model") == AGNES_IMAGE:
         body["extra_body"]["image"] = values

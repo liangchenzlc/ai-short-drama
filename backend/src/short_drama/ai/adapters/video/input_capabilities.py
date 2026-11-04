@@ -1,8 +1,14 @@
+from short_drama.ai.adapters.video.kling_video import KLING_VIDEO, kling_capabilities
+from short_drama.ai.adapters.video.minimax_video import MINIMAX_VIDEO, minimax_capabilities
 from short_drama.ai.gateway.endpoints import endpoint as endpoint
 
 
 def video_input_capabilities(snapshot, adapter):
     model = snapshot.get("model_key", "")
+    if adapter == KLING_VIDEO:
+        return kling_capabilities(model)
+    if adapter == MINIMAX_VIDEO:
+        return minimax_capabilities(model)
     if adapter == "modelhub_video.v1":
         if model == "minimax-h3":
             return {

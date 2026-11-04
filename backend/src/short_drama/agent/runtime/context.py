@@ -27,7 +27,21 @@ CHILD_EXCLUDED_TOOLS = frozenset(
 
 def merge_activations(current: list[dict], updates: list[dict]) -> list[dict]:
     records = {item["id"]: item for item in current}
-    records.update((item["id"], item) for item in updates)
+    for item in updates:
+        previous = records.get(item["id"])
+        if previous is not None:
+            # 同轮返回顺序不代表事务顺序；同一激活释放后不能被旧快照复活。
+            item = {
+                **item,
+                "active": previous["active"] and item["active"],
+                **({"source": "manual"} if previous.get("source") == "manual" else {}),
+                **(
+                    {"issue": previous["issue"]}
+                    if not previous["active"] and previous.get("issue")
+                    else {}
+                ),
+            }
+        records[item["id"]] = item
     return list(records.values())
 
 

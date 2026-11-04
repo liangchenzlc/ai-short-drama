@@ -4,8 +4,10 @@ import json
 
 from sqlalchemy import func, or_, select
 
-from short_drama.core.exceptions import NotFound, WorkflowError
+from short_drama.core.exceptions import BusinessError, NotFound, WorkflowError
+from short_drama.dao.assistant.operations.invocation import BusinessInvocationDAO
 from short_drama.dao.base import BaseDAO
+from short_drama.dao.generations.runtime.lifecycle import latest_record
 from short_drama.dao.media.image_groups.groups import ImageGroupDAO
 from short_drama.db.access.identity import set_scope
 from short_drama.db.scope.resource_scope import require_project, scope_of
@@ -23,6 +25,7 @@ from short_drama.domain import (
 )
 from short_drama.schemas.base import UINT64_MAX, parse_identifier
 from short_drama.schemas.media.image_groups.groups import ImagePrimarySet
+from short_drama.service.assistant.operations.authorization import require_receipt_capability_locked
 from short_drama.service.base import BaseService, utcnow
 from short_drama.service.creation.assets.images.image_context import (
     asset_image_content,
@@ -184,6 +187,8 @@ class ImageGroupService(BaseService):
         if item.media_id is None:
             raise WorkflowError("image_not_ready", "图片尚未保存完成", 409)
         media = self._validate_media(item.media_id, "image")
+        if not manual and not self._auto_adoption_allowed(group):
+            return False
         current_hash = self.context(kind, row)
         if not manual and group.source_context.get("target_version") is not None:
             project = self.session.get(Project, row.project_id)
@@ -287,6 +292,26 @@ class ImageGroupService(BaseService):
                     else {}
                 ),
             }
+        return True
+
+    def _auto_adoption_allowed(self, group):
+        if group.task_id is None:
+            return True
+        record = latest_record(self.session, group.task_id)
+        receipt_id = record.config_snapshot.get("business_invocation_id")
+        if receipt_id is None:
+            return True
+        dao = BusinessInvocationDAO(self.session)
+        dao.account(group.created_by, lock=True)
+        receipt = dao.media_receipt(int(receipt_id), group.created_by)
+        if receipt is None:
+            group.notice = "原生媒体受理已不可采用，结果已保存，未更新主图。"
+            return False
+        try:
+            require_receipt_capability_locked(self.session, receipt, "workbench_write")
+        except BusinessError as error:
+            group.notice = f"{error.message}，结果已保存，未更新主图。"
+            return False
         return True
 
     def attach(self, task, record, media_id, index):

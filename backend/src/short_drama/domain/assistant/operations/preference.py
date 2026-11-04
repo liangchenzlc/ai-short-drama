@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import CheckConstraint, UniqueConstraint, text
-from sqlalchemy.dialects.mysql import BIGINT, DATETIME, INTEGER, JSON, MEDIUMTEXT, TINYINT
+from sqlalchemy.dialects.mysql import BIGINT, DATETIME, MEDIUMTEXT, TINYINT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from short_drama.domain.assistant.columns import _fk
@@ -19,24 +19,18 @@ class AgentPreference(Base):
     media_generation_enabled: Mapped[int] = mapped_column(
         TINYINT(unsigned=True), nullable=False, server_default=text("1")
     )
-    policy_version: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), nullable=False, server_default=text("1")
+    workbench_enabled: Mapped[int] = mapped_column(
+        TINYINT(unsigned=True), nullable=False, server_default=text("1")
+    )
+    long_term_memory_enabled: Mapped[int] = mapped_column(
+        TINYINT(unsigned=True), nullable=False, server_default=text("1")
+    )
+    memory_generation: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), nullable=False, server_default=text("0")
     )
     custom_instructions: Mapped[str | None] = mapped_column(MEDIUMTEXT, nullable=True)
     settings_version: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), nullable=False, server_default=text("0")
-    )
-    model_call_limit: Mapped[int] = mapped_column(
-        INTEGER(unsigned=True), nullable=False, server_default=text("240")
-    )
-    output_token_limit: Mapped[int] = mapped_column(
-        INTEGER(unsigned=True), nullable=False, server_default=text("2000000")
-    )
-    subagent_max_concurrency: Mapped[int] = mapped_column(
-        TINYINT(unsigned=True), nullable=False, server_default=text("3")
-    )
-    default_media_limits: Mapped[dict] = mapped_column(
-        JSON, nullable=False, server_default=text("(JSON_OBJECT())")
     )
     updated_at: Mapped[datetime] = mapped_column(
         DATETIME(fsp=6), nullable=False, server_default=text("CURRENT_TIMESTAMP(6)")
@@ -48,13 +42,9 @@ class AgentPreference(Base):
         CheckConstraint(
             "media_generation_enabled IN (0, 1)", name="ck_agent_preferences_media_enabled"
         ),
-        CheckConstraint("policy_version >= 0", name="ck_agent_preferences_version"),
-        CheckConstraint("model_call_limit BETWEEN 20 AND 2000", name="ck_agent_preferences_calls"),
         CheckConstraint(
-            "output_token_limit BETWEEN 100000 AND 20000000", name="ck_agent_preferences_tokens"
-        ),
-        CheckConstraint(
-            "subagent_max_concurrency BETWEEN 1 AND 3", name="ck_agent_preferences_concurrency"
+            "workbench_enabled IN (0, 1) AND long_term_memory_enabled IN (0, 1)",
+            name="ck_agent_preferences_switches",
         ),
         OPTIONS,
     )

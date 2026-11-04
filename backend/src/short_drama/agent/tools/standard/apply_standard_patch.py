@@ -12,6 +12,7 @@ SPEC = ToolSpec(
     args_schema=ApplyStandardPatch,
     handler=apply_standard_patch_locked,
     effect="write",
+    required_capability="workbench_write",
     expose_mcp=True,
     modes=frozenset({"standard"}),
 )

@@ -82,11 +82,20 @@ export interface AgentModelPage {
   preferred_id: string | null;
 }
 export type AgentMessageMode = 'auto' | 'discuss' | 'generate';
+export interface AgentMessageTextPart {
+  turn_id: string;
+  event_seq: number;
+  content: string;
+}
 export interface AgentMessage {
   task_id?: string | null;
+  run_id?: string | null;
   id: string;
   seq: number;
   item_seq?: number | null;
+  event_seq?: number | null;
+  text_parts?: AgentMessageTextPart[];
+  interrupted?: boolean;
   kind?: 'reply' | 'narration' | 'notice' | 'tool_answer';
   role: string;
   content: string;
@@ -111,7 +120,7 @@ export interface AgentRun {
   mode: 'auto' | 'discuss' | 'single' | 'workflow';
   model_config_id: string;
   model_name: string;
-  error: { code: string; message?: string } | null;
+  error: { code: string; message?: string; accepted_unknown?: boolean } | null;
   usage: Record<string, unknown>;
   budget: Record<string, unknown>;
   awaiting_artifact_ids: string[];
@@ -120,6 +129,17 @@ export interface AgentRun {
   finished_at: string | null;
   queue_position: number;
   waiting_reason: string | null;
+  stopping?: boolean;
+  wait_summary?: {
+    pending_questions: number;
+    media_batches: number;
+    generation_tasks: number;
+    since: string;
+    elapsed_seconds: number;
+    message: string;
+  } | null;
+  blocking_run_id?: string | null;
+  blocking_task_id?: string | null;
 }
 export interface ConversationRuntimeState {
   conversation_id: string;

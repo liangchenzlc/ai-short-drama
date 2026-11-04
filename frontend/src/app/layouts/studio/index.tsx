@@ -1,7 +1,7 @@
 import { Sidebar } from '@host/app/layouts/studio/components/Sidebar';
 import { AccountControls } from '@host/features/identity/account/AccountControls';
 import { useAuth } from '@host/features/identity/session/AuthSession';
-import { accountPath, aiConfigPath, skillsPath } from '@host/shared/navigation/paths';
+import { accountPath, settingsPath, skillsPath } from '@host/shared/navigation/paths';
 import { RouteBoundary } from '@host/shared/ui/RouteBoundary';
 import type { MainPage } from '@host/types/app/layouts/studio/components/Sidebar';
 import { Skeleton } from 'antd';
@@ -19,8 +19,8 @@ export function StudioLayout() {
     ? 'media-library'
     : pathname === skillsPath
       ? 'skills'
-      : pathname === aiConfigPath
-        ? 'ai'
+      : pathname.startsWith(settingsPath)
+        ? 'settings'
         : pathname === accountPath
           ? 'account'
           : 'projects';
@@ -28,7 +28,7 @@ export function StudioLayout() {
     projects: '项目管理',
     'media-library': '资产库',
     skills: 'Skill 管理',
-    ai: 'AI 配置',
+    settings: '配置',
     account: '账号中心',
   };
   const detail = !!(creation || project || canvas);

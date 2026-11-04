@@ -72,7 +72,7 @@ def normalize_video_request(
 def _video_input(request: CanvasRuntimeTaskCreate, references: list[str], adapter: str) -> dict:
     inputs = {"prompt": request.prompt, "reference_media_ids": []}
     if request.operation == "reference_to_video":
-        if adapter != "modelhub_video.v1":
+        if adapter not in {"modelhub_video.v1", "minimax_video.v2"}:
             unsupported("reference_to_video")
         if not references:
             unsupported("reference_to_video referenceImages")
@@ -82,7 +82,13 @@ def _video_input(request: CanvasRuntimeTaskCreate, references: list[str], adapte
         if references:
             unsupported("text_to_video referenceImages")
         return inputs
-    if not references or adapter not in {"ark_video.v1", "dashscope_video.v1", "modelhub_video.v1"}:
+    if not references or adapter not in {
+        "ark_video.v1",
+        "dashscope_video.v1",
+        "modelhub_video.v1",
+        "minimax_video.v2",
+        "kling_video.v4",
+    }:
         unsupported("image_to_video referenceImages")
     metadata = request.input.metadata.model_dump(mode="json", by_alias=True)
     start, end = metadata.get("videoStartFrameNodeId"), metadata.get("videoEndFrameNodeId")

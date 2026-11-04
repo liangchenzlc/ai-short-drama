@@ -21,6 +21,61 @@ from tests.unit.standard.agent.test_assistant_model_protocols import (
 )
 
 
+def test_sse_drains_full_pages_then_backs_off_idle_and_ends_on_revoked_access(monkeypatch):
+    from contextlib import contextmanager
+
+    from short_drama.api.v1.assistant.conversations import events
+    from short_drama.core.exceptions import WorkflowError
+
+    cursors, waits, sessions = [], [], []
+
+    @contextmanager
+    def factory():
+        session = SimpleNamespace(info={})
+        sessions.append(session)
+        yield session
+
+    def read(service, conversation_id, cursor, *, verify_session):
+        assert conversation_id == "1" and verify_session is True
+        assert service.session.info["actor"] == "actor"
+        cursors.append(cursor)
+        if len(cursors) <= 3:
+            end = min(cursor + 100, 250)
+            return [
+                SimpleNamespace(seq=seq, model_dump_json=lambda: "{}")
+                for seq in range(cursor + 1, end + 1)
+            ]
+        if len(cursors) <= 8:
+            return []
+        raise WorkflowError("forbidden", "已撤销", 403)
+
+    async def sleep(delay):
+        waits.append(delay)
+
+    async def connected():
+        return False
+
+    monkeypatch.setattr(events.AgentRunService, "events", read)
+    monkeypatch.setattr(events.asyncio, "sleep", sleep)
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(session_factory=factory, settings=None)),
+        state=SimpleNamespace(actor="actor"),
+        is_disconnected=connected,
+    )
+
+    async def consume():
+        response = await events.conversation_events("1", request, 0, None)
+        return [frame async for frame in response.body_iterator]
+
+    frames = asyncio.run(consume())
+    assert len(frames) == 251 and "access-ended" in frames[-1]
+    assert cursors == [0, 100, 200, 250, 250, 250, 250, 250, 250]
+    assert len({id(session) for session in sessions}) == len(cursors)
+    assert waits[0] == pytest.approx(0.2) and all(0.2 <= delay <= 1 for delay in waits)
+    assert waits[-1] == 1 and waits == sorted(waits)
+    assert len(waits) == 6
+
+
 @pytest.mark.parametrize("streaming", [False, True])
 def test_live_diagnostics_bound_and_redact_archived_selector_and_main_receipts(streaming):
     from tests.support.agent_runtime_live import model_diagnostic

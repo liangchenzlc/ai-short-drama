@@ -483,7 +483,7 @@ function CreationPageBody({
                   onConversationChange={(id) =>
                     updateParameters((previous) => selectAssistantConversation(previous.toString(), id))
                   }
-                  onOpenModelSettings={() => navigate('/ai_config')}
+                  onOpenModelSettings={() => navigate('/settings/models/text')}
                   contextPreview={{
                     key: `${session.projectId}:${step}:${subject?.id ?? ''}`,
                     label: `${project.name}${subject ? ` · ${subject.label}` : ''}`,

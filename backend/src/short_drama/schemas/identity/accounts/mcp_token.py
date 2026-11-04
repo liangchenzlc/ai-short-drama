@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from ipaddress import ip_address, ip_network
 from typing import Annotated
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, Field, StrictBool, field_serializer, field_validator
 
 from short_drama.core.time import utcnow
 from short_drama.schemas.base import Identifier, InputModel, ReadModel
@@ -12,8 +12,8 @@ from short_drama.schemas.base import Identifier, InputModel, ReadModel
 
 class McpTokenCreate(InputModel):
     name: Annotated[str, Field(min_length=1, max_length=80)]
-    project_ids: Annotated[list[Identifier], Field(min_length=1)]
-    tool_names: Annotated[list[str], Field(min_length=1)]
+    workbench_enabled: StrictBool = False
+    media_generation_enabled: StrictBool = False
     expires_at: datetime | None = None
     allowed_ips: list[str] = Field(default_factory=list)
 
@@ -49,24 +49,20 @@ class McpTokenRead(ReadModel):
     id: Identifier
     name: str
     token_hint: str
-    project_ids: list[Identifier]
+    create_key: str
     tool_names: list[str]
     expires_at: datetime | None
     allowed_ips: list[str]
     created_at: datetime
+    deleted_at: datetime | None
 
-    @field_serializer("expires_at", "created_at", when_used="json")
+    @field_serializer("expires_at", "created_at", "deleted_at", when_used="json")
     def utc_time(self, value: datetime | None) -> str | None:
         return value.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z") if value else None
 
 
 class McpTokenCreated(McpTokenRead):
-    secret: str
-
-
-class McpProjectOption(ReadModel):
-    id: Identifier
-    name: str
+    secret: str | None
 
 
 class McpToolOption(ReadModel):
@@ -77,8 +73,10 @@ class McpToolOption(ReadModel):
 
 
 class McpTokenOptions(ReadModel):
-    projects: list[McpProjectOption]
+    connection_url: str
+    transport: str = "streamable-http"
     tools: list[McpToolOption]
+    capability_groups: dict[str, list[str]]
 
 
 class McpWriteRequest[T: BaseModel](InputModel):

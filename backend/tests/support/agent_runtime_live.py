@@ -41,7 +41,6 @@ from short_drama.domain.assistant.tasks.task import AgentOperation
 from short_drama.service.ai_config.management.assistant_models import AgentModelService
 from short_drama.service.ai_config.management.models import AIModelConfigService
 from short_drama.service.assistant.settings.preferences import AssistantSettingsService
-from short_drama.service.assistant.tasks.policy import AssistantPolicyService
 from short_drama.service.projects.management.project import ProjectService
 from short_drama.service.skills.catalog.skill import AgentSkillService
 from short_drama.storage.minio import MinioStorage
@@ -214,10 +213,10 @@ class LiveCase:
                     )
                     .id
                 )
-            policy = AssistantPolicyService(session)
-            policy.update_generation_policy(
+            preferences = AssistantSettingsService(session, self.settings)
+            preferences.update_settings(
                 {
-                    "policy_version": str(policy.get_generation_policy().policy_version),
+                    "settings_version": str(preferences.get_settings().settings_version),
                     "media_generation_enabled": media,
                 }
             )
@@ -615,10 +614,6 @@ def live_case(task_workspace, monkeypatch, request):
         AssistantSettingsService(session, settings).update_settings(
             {
                 "custom_instructions": None,
-                "model_call_limit": 800,
-                "output_token_limit": 2_000_000,
-                "subagent_max_concurrency": 3,
-                "default_media_limits": {},
                 "settings_version": "0",
             }
         )

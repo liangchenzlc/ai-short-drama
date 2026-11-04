@@ -11,11 +11,14 @@ from uuid import uuid4
 from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy import and_, or_, select
 
+from short_drama.agent.context.budget import provider_budget
+from short_drama.agent.context.capabilities import context_profile
 from short_drama.agent.core.access import LeaseLost, model_unchanged
 from short_drama.agent.gateway.contracts import AgentGatewayError, ModelCallbacks
 from short_drama.agent.gateway.langchain import build_chat_model
 from short_drama.agent.memory.context import schedule_maintenance_locked, settle_maintenance_locked
-from short_drama.agent.memory.sources import message_sources, source_hash
+from short_drama.agent.memory.recovery import INVALID_RESULTS
+from short_drama.agent.memory.sources import extraction_sources, message_sources, source_hash
 from short_drama.core.exceptions import BusinessError
 from short_drama.domain.assistant.conversations.models import AgentConversation
 from short_drama.domain.assistant.execution.models import AgentRun
@@ -23,6 +26,7 @@ from short_drama.domain.assistant.memory.memory import AgentMemoryJob
 from short_drama.domain.identity.accounts.user import User
 from short_drama.schemas.assistant.memory.memory import MemoryMaintenanceResult
 from short_drama.service.ai_config.management.assistant_models import model_credentials
+from short_drama.service.assistant.memory.memory_store import extraction_generation_matches
 from short_drama.service.base import utcnow
 
 OPEN = ("pending", "running")
@@ -80,8 +84,9 @@ def maintenance_input(job):
             "未有 completed_operation_ids 的提议不能记为 completed。"
             "保留每条已应用、未被限制的用户来源及每条旧摘要事实；"
             "在 facts 总预算内合并兼容事实，不重复旧文本或枚举所有历史消息 ID。"
-            "extract 任务只抽取用户明确表达的稳定偏好、纠正或创作设定，"
+            "extract 任务只抽取用户明确表达的跨作品长期偏好与纠正，"
             "每个候选引用真实 user 消息；不从助手提议推断用户事实。"
+            "作品剧情、角色事实、临时任务和当前对话目标不属于长期记忆，不能写入。"
             "memory_restricted 或 input_applied=false 的内容不能产生任何事实。"
             "explicit_memory_processed=true 的消息已经通过显式工具处理，不再抽取重复记忆。"
             "不要复制长作品正文、凭据或临时执行参数。没有合适条目时返回空数组。"
@@ -90,11 +95,25 @@ def maintenance_input(job):
         "user_prompt": json.dumps(
             {
                 "kind": job.kind,
-                "messages": job.source_snapshot["messages"],
+                "messages": extraction_sources(
+                    job.source_snapshot["messages"], job.source_snapshot["memory_generation"]
+                )
+                if job.kind == "extract"
+                else job.source_snapshot["messages"],
                 "prior_facts": [
                     {"fact_index": index, "kind": fact["kind"], "text": fact["text"]}
                     for index, fact in enumerate(job.source_snapshot.get("prior_facts", []))
                 ],
+                **(
+                    {
+                        "validation_feedback": (
+                            "上次完整结果未通过结构或来源覆盖校验。必须完整引用每条合格用户来源及"
+                            "每条旧摘要事实；可以合并事实，但不能省略引用，不得恢复被限制来源。"
+                        )
+                    }
+                    if (job.error or {}).get("code") in INVALID_RESULTS
+                    else {}
+                ),
             },
             ensure_ascii=False,
         ),
@@ -138,6 +157,9 @@ class AgentMemoryStore:
     def _admitted(self, session, conversation, job):
         if not self.settings.agent_enabled or conversation.status != "active":
             finish_job(job, "cancelled", "conversation_unavailable")
+            return False
+        if not extraction_generation_matches(session, job):
+            finish_job(job, "abandoned", "assistant_memory_generation_changed")
             return False
         owner = session.get(User, job.owner_user_id)
         run = session.get(AgentRun, job.run_id) if job.run_id else None
@@ -192,8 +214,7 @@ class AgentMemoryStore:
                     or job.next_run_at > now
                 ):
                     continue
-                if conversation.status != "active":
-                    finish_job(job, "cancelled", "conversation_unavailable")
+                if not self._admitted(session, conversation, job):
                     continue
                 job.message_status = "publishing"
                 job.publish_token = uuid4().hex
@@ -244,11 +265,11 @@ class AgentMemoryStore:
                 or job.next_run_at > utcnow()
             ):
                 return None
-            if not self._admitted(session, conversation, job):
-                return None
             if job.provider_state in {"sending", "unknown"}:
                 finish_job(job, "failed", "agent_acceptance_unknown")
                 job.provider_state = "unknown"
+                return None
+            if not self._admitted(session, conversation, job):
                 return None
             job.status, job.message_status = "running", "idle"
             job.publish_token = job.publish_until = None
@@ -273,6 +294,11 @@ class AgentMemoryStore:
                 session, conversation, job
             )
             if admitted:
+                provider_budget(
+                    request["body"],
+                    claim.inputs["max_output_tokens"],
+                    context_window=context_profile(claim.snapshot)["context_window_tokens"],
+                )
                 job.provider_state = "sending"
                 job.attempts += 1
                 job.raw_result = {"request": deepcopy(request)}
@@ -337,19 +363,25 @@ class AgentMemoryStore:
                 and job.provider_state in {"sending", "received"}
                 and (
                     error.code == "agent_provider_rate_limited"
-                    or job.kind == "extract"
-                    and job.provider_state == "received"
-                    and error.code
-                    in {
-                        "invalid_agent_memory_result",
-                        "invalid_agent_response",
-                        "invalid_agent_tool_calls",
-                        "agent_response_truncated",
-                    }
+                    or job.provider_state == "received"
+                    and (job.raw_result or {}).get("raw") is not None
+                    and error.code in INVALID_RESULTS
                 )
             )
             if retryable and job.attempts < 3:
-                # Only explicit rejections or durable, invalid extraction outputs may retry.
+                # 只重试明确拒绝或已落盘的无效完整结果；每次实际发送仍计入同一 Job。
+                if (job.raw_result or {}).get("raw") is not None:
+                    job.source_snapshot = {
+                        **job.source_snapshot,
+                        "attempt_receipts": [
+                            *job.source_snapshot.get("attempt_receipts", []),
+                            {
+                                "attempt": job.attempts,
+                                "error": {"code": error.code},
+                                "receipt": deepcopy(job.raw_result),
+                            },
+                        ],
+                    }
                 job.provider_state, job.raw_result = "not_started", None
                 schedule_job(job, delay=15 * job.attempts)
                 return

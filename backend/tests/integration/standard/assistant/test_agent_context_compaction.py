@@ -510,8 +510,6 @@ def test_working_notes_survive_summaries_only_while_source_and_scope_are_eligibl
                     session,
                     1,
                     MemoryCreate(
-                        scope_type="conversation",
-                        conversation_id=conversation.id,
                         kind="decision",
                         memory_key="working-note-source",
                         title="撤回来源",

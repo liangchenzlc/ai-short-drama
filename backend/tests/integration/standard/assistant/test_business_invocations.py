@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from importlib import import_module, util
 from threading import Barrier
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
@@ -28,13 +29,20 @@ def invocation_api():
 
 
 def business_identity(
-    api, actor, project_id, request_id="create-asset", token_id=None, policy="project", allowed=None
+    api,
+    factory,
+    actor,
+    project_id,
+    request_id="create-asset",
+    token_id=None,
+    policy="project",
+    allowed=None,
 ):
     return api.BusinessInvocation(
         actor=actor,
         source="mcp",
         request_id=request_id,
-        token_id=token_id,
+        token_id=token_id if token_id is not None else issued_mcp_token(factory, actor),
         scope=api.InvocationScope(
             project_ids=frozenset({project_id}),
             tool_names=frozenset(
@@ -46,7 +54,7 @@ def business_identity(
     )
 
 
-def issued_mcp_token(factory, actor, project_id):
+def issued_mcp_token(factory, actor):
     from short_drama.agent.tools.registry import TOOL_SPECS
     from short_drama.schemas.identity.accounts.mcp_token import McpTokenCreate
     from short_drama.service.identity.accounts.mcp_token import McpTokenService
@@ -58,9 +66,10 @@ def issued_mcp_token(factory, actor, project_id):
             .create(
                 McpTokenCreate(
                     name="业务幂等令牌",
-                    project_ids=[project_id],
-                    tool_names=[spec.name for spec in TOOL_SPECS if spec.expose_mcp],
-                )
+                    workbench_enabled=True,
+                    media_generation_enabled=True,
+                ),
+                uuid4().hex,
             )
             .id
         )
@@ -71,8 +80,8 @@ def test_same_account_receipt_replays_across_tokens_and_changed_arguments_confli
     actor = db_session.info["actor"]
     project = ProjectService(db_session).create_project({"name": "Business receipt"})
     factory = sessionmaker(db_session.get_bind(), expire_on_commit=False, autoflush=False)
-    first_token = issued_mcp_token(factory, actor, project.id)
-    second_token = issued_mcp_token(factory, actor, project.id)
+    first_token = issued_mcp_token(factory, actor)
+    second_token = issued_mcp_token(factory, actor)
     schema = import_module("short_drama.schemas.assistant.operations.standard")
     handler = import_module(
         "short_drama.service.assistant.operations.standard"
@@ -91,7 +100,7 @@ def test_same_account_receipt_replays_across_tokens_and_changed_arguments_confli
     )
     with factory() as session:
         result = api.BusinessInvocationService(session).execute(
-            business_identity(api, actor, project.id, token_id=first_token),
+            business_identity(api, factory, actor, project.id, token_id=first_token),
             "workbench__apply_standard_patch",
             payload,
             handler,
@@ -99,7 +108,7 @@ def test_same_account_receipt_replays_across_tokens_and_changed_arguments_confli
         )
     with factory() as session:
         replay = api.BusinessInvocationService(session).execute(
-            business_identity(api, actor, project.id, token_id=second_token),
+            business_identity(api, factory, actor, project.id, token_id=second_token),
             "workbench__apply_standard_patch",
             payload,
             handler,
@@ -121,7 +130,7 @@ def test_same_account_receipt_replays_across_tokens_and_changed_arguments_confli
     )
     with factory() as session, pytest.raises(BusinessError) as raised:
         api.BusinessInvocationService(session).execute(
-            business_identity(api, actor, project.id, token_id=first_token),
+            business_identity(api, factory, actor, project.id, token_id=first_token),
             "workbench__apply_standard_patch",
             changed,
             handler,
@@ -159,7 +168,7 @@ def test_scope_rejects_unselected_subjects_and_other_projects(db_session):
         )
         with factory() as session, pytest.raises(WorkflowError) as raised:
             api.BusinessInvocationService(session).execute(
-                business_identity(api, actor, first.id, policy="selected"),
+                business_identity(api, factory, actor, first.id, policy="selected"),
                 "workbench__apply_standard_patch",
                 payload,
                 handler,
@@ -195,14 +204,14 @@ def test_concurrent_tokens_share_one_real_write_and_failed_patch_rolls_back(db_s
         barrier.wait(timeout=10)
         with factory() as session:
             return api.BusinessInvocationService(session).execute(
-                business_identity(api, actor, project.id, token_id=token),
+                business_identity(api, factory, actor, project.id, token_id=token),
                 "workbench__apply_standard_patch",
                 values,
                 apply_standard_patch_locked,
                 mutating=True,
             )
 
-    tokens = [issued_mcp_token(factory, actor, project.id) for _ in range(2)]
+    tokens = [issued_mcp_token(factory, actor) for _ in range(2)]
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(invoke, tokens))
     assert results[0] == results[1]
@@ -228,7 +237,7 @@ def test_concurrent_tokens_share_one_real_write_and_failed_patch_rolls_back(db_s
     )
     with factory() as session, pytest.raises(BusinessError):
         api.BusinessInvocationService(session).execute(
-            business_identity(api, actor, project.id, request_id="rollback"),
+            business_identity(api, factory, actor, project.id, request_id="rollback"),
             "workbench__apply_standard_patch",
             invalid,
             apply_standard_patch_locked,
@@ -283,7 +292,9 @@ def test_different_accounts_concurrent_first_receipts_do_not_lock_empty_index_ga
         owner, project = pair
         with factory() as session:
             return api.BusinessInvocationService(session).execute(
-                business_identity(api, actor(owner), project.id, request_id="same-request"),
+                business_identity(
+                    api, factory, actor(owner), project.id, request_id="same-request"
+                ),
                 "workbench__apply_standard_patch",
                 ApplyStandardPatch(
                     project_id=project.id,
@@ -326,7 +337,9 @@ def test_locked_invocation_replay_uses_current_receipt_after_an_earlier_consiste
             ]
         },
     )
-    identity = business_identity(api, identity_actor, project.id, request_id="current-read-replay")
+    identity = business_identity(
+        api, factory, identity_actor, project.id, request_id="current-read-replay"
+    )
     with factory.begin() as second:
         # 正式 invoke_business_tool 在锁账号前已通过 execution_locked 读取 Task/Run。
         assert second.scalar(select(func.count()).select_from(BusinessToolInvocation)) == 0
@@ -362,7 +375,7 @@ def test_read_scope_filters_project_rows_and_counts_and_refreshes_account_state(
     ProjectService(db_session).create_project({"name": "Other read"})
     factory = sessionmaker(db_session.get_bind(), expire_on_commit=False, autoflush=False)
     values = ReadCurrentScript(project_id=project.id, script_id=None, content_version=1)
-    identity = business_identity(api, actor, project.id)
+    identity = business_identity(api, factory, actor, project.id)
 
     def list_projects(session, identity, values, receipt_id, settings):
         return {
@@ -427,7 +440,7 @@ def test_existing_unselected_and_foreign_account_objects_are_rejected(db_session
     )
     with factory() as session:
         result = api.BusinessInvocationService(session).execute(
-            business_identity(api, actor, project.id),
+            business_identity(api, factory, actor, project.id),
             "workbench__apply_standard_patch",
             create,
             apply_standard_patch_locked,
@@ -448,7 +461,9 @@ def test_existing_unselected_and_foreign_account_objects_are_rejected(db_session
     )
     with factory() as session, pytest.raises(BusinessError):
         api.BusinessInvocationService(session).execute(
-            business_identity(api, actor, project.id, request_id="unselected", policy="selected"),
+            business_identity(
+                api, factory, actor, project.id, request_id="unselected", policy="selected"
+            ),
             "workbench__apply_standard_patch",
             update,
             apply_standard_patch_locked,
@@ -476,7 +491,7 @@ def test_existing_unselected_and_foreign_account_objects_are_rejected(db_session
     )
     with factory() as session, pytest.raises(BusinessError):
         api.BusinessInvocationService(session).execute(
-            replace(business_identity(api, actor, project.id), actor=foreign),
+            replace(business_identity(api, factory, actor, project.id), actor=foreign),
             "workbench__apply_standard_patch",
             create,
             apply_standard_patch_locked,
@@ -540,6 +555,7 @@ def test_selected_image_slot_reads_real_bytes_and_adopts_only_its_frozen_slot(fl
         actor=actor,
         source="mcp",
         request_id="adopt-slot",
+        token_id=issued_mcp_token(flow.factory, actor),
         scope=api.InvocationScope(
             frozenset({flow.project.id}),
             frozenset(spec.name for spec in TOOL_SPECS if spec.expose_mcp),
@@ -642,7 +658,7 @@ def test_business_media_admission_creates_native_tasks_and_status_without_assist
     actor = flow.session.info["actor"]
     asset = create_asset(flow)
     identity = replace(
-        business_identity(api, actor, flow.project.id),
+        business_identity(api, flow.factory, actor, flow.project.id),
         scope=api.InvocationScope(
             frozenset({flow.project.id}),
             frozenset(spec.name for spec in TOOL_SPECS if spec.expose_mcp),
@@ -679,7 +695,7 @@ def test_business_media_admission_creates_native_tasks_and_status_without_assist
             replace(
                 identity,
                 source="mcp",
-                token_id=issued_mcp_token(flow.factory, actor, flow.project.id),
+                token_id=issued_mcp_token(flow.factory, actor),
             ),
             "workbench__submit_generation_batch",
             values,
@@ -733,7 +749,7 @@ def test_project_media_without_references_does_not_scan_all_subject_image_catalo
     monkeypatch.setattr(image, "freeze_image_catalog", observed)
     api = invocation_api()
     identity = replace(
-        business_identity(api, flow.session.info["actor"], flow.project.id),
+        business_identity(api, flow.factory, flow.session.info["actor"], flow.project.id),
         scope=api.InvocationScope(
             frozenset({flow.project.id}),
             frozenset({"workbench__submit_generation_batch"}),
@@ -1187,7 +1203,7 @@ def test_selected_script_reference_limits_real_saved_text_and_locked_scope_is_re
         "start": 2,
         "end": 8,
     }
-    invocation = business_identity(api, actor, project.id, policy="selected")
+    invocation = business_identity(api, factory, actor, project.id, policy="selected")
     invocation = replace(invocation, scope=replace(invocation.scope, script_reference=reference))
     with factory.begin() as session:
         session.info["actor"], session.info["invocation_scope"] = actor, "caller-scope"

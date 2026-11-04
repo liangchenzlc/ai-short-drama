@@ -172,12 +172,9 @@ def submit_generation_batch_locked(session, identity, values, receipt_id, settin
         prepare_voice_design_locked,
         voice_binding_state,
     )
-    from short_drama.service.assistant.tasks.policy import generation_policy_locked
     from short_drama.service.canvas.generation.generation import CanvasGenerationService
 
     settings = settings or Settings()
-    if not generation_policy_locked(session, identity.actor.user_id).media_generation_enabled:
-        raise WorkflowError("assistant_media_disabled", "媒体生成已关闭", 403)
     owner = identity.actor.user_id
     references = set()
     if identity.scope.subject_policy == "project":

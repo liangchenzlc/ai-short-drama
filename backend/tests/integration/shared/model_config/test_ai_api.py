@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import os
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -14,6 +15,59 @@ from short_drama.main import create_app
 from tests.support.integration.identity import session_factory
 
 pytestmark = pytest.mark.integration
+
+
+def test_model_create_replay_and_interface_patch_preserve_hidden_runtime_values(
+    mysql_engine, db_session
+):
+    async def run():
+        app = create_app(Settings(_env_file=None))
+        factory = session_factory(mysql_engine)
+        app.state.session_factory = factory
+
+        def test_session():
+            with factory() as session:
+                yield session
+
+        app.dependency_overrides[get_session] = test_session
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://testserver"
+        ) as client:
+            root = "/api/v1/ai-model-configs"
+            body = {
+                "service_type": "text",
+                "provider": "fixture",
+                "model_key": "model-test",
+                "base_url": "https://model.example/v1",
+                "runtime_profile": {
+                    "protocol": "deepseek-chat",
+                    "default_options": {"temperature": 0.2},
+                },
+            }
+            headers = {"Idempotency-Key": uuid4().hex}
+            created = await client.post(root, json=body, headers=headers)
+            assert created.status_code == 201, created.text
+            item = created.json()
+            assert item["name"] == "model-test" and item["interface_type"] == "chat-completion"
+            assert item["runtime_profile"]["protocol"] == "deepseek-chat"
+            replay = await client.post(root, json=body, headers=headers)
+            assert replay.status_code == 200 and replay.json() == item
+            conflict = await client.post(
+                root, json={**body, "model_key": "different"}, headers=headers
+            )
+            assert conflict.status_code == 409
+            listed = await client.get(root, params={"create_key": headers["Idempotency-Key"]})
+            assert [row["id"] for row in listed.json()["items"]] == [item["id"]]
+            patched = await client.patch(
+                f"{root}/{item['id']}",
+                json={"row_version": item["row_version"], "interface_type": "openai-response"},
+            )
+            assert patched.status_code == 200, patched.text
+            profile = patched.json()["runtime_profile"]
+            assert profile["protocol"] == "openai-response" and profile["api_format"] == "openai"
+            assert profile["default_options"] == {"temperature": 0.2}
+
+    asyncio.run(run())
 
 
 def test_http_ai_crud_persists_all_types_and_hides_key(mysql_engine, db_session):
@@ -38,6 +92,7 @@ def test_http_ai_crud_persists_all_types_and_hides_key(mysql_engine, db_session)
             for kind in ("text", "image", "video"):
                 response = await client.post(
                     root,
+                    headers={"Idempotency-Key": uuid4().hex},
                     json={
                         "service_type": kind,
                         "name": kind + " config",
@@ -134,6 +189,7 @@ def test_http_default_switch_keeps_categories_independent(mysql_engine, db_sessi
                 item = (
                     await client.post(
                         root,
+                        headers={"Idempotency-Key": uuid4().hex},
                         json={
                             "name": kind,
                             "service_type": kind,

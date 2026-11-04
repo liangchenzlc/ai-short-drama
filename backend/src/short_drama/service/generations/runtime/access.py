@@ -2,8 +2,13 @@
 
 from sqlalchemy import select
 
+from short_drama.agent.tools.contracts import ToolCapability
+from short_drama.core.exceptions import BusinessError
 from short_drama.domain import Project
 from short_drama.domain.identity.accounts.user import User
+from short_drama.service.assistant.operations.authorization import (
+    require_assistant_capability_locked,
+)
 
 
 def lock_resource_project(session, model, identifier):
@@ -96,7 +101,14 @@ def lock_resource_project(session, model, identifier):
             session.info.setdefault("agent_task_parents", {})[identifier] = rows
 
 
-def may_submit(session, task, *, agent_enabled=None, settings=None):
+def may_submit(
+    session,
+    task,
+    *,
+    agent_enabled=None,
+    settings=None,
+    required_capability: ToolCapability = "media_generate",
+):
     media_parents = session.info.get("assistant_media_parents", {})
     media_owner = None
     if getattr(task, "id", None) in media_parents:
@@ -224,17 +236,20 @@ def may_submit(session, task, *, agent_enabled=None, settings=None):
             for ref in receipt.result_refs
         ):
             return False
-        if not business_media_may_submit(session, task, receipt, settings):
+        if not business_media_may_submit(
+            session, task, receipt, settings, required_capability=required_capability
+        ):
             return False
-        media_owner = user.id
+        # 原生业务任务在 business_media_may_submit 按可信来源复核权限。
+        media_owner = None
     if media_owner is not None:
-        from short_drama.service.assistant.tasks.policy import policy_state_locked
-
         # 任务查询已建立 RR 快照；新发送必须在账号锁后读取当前政策。
-        if not policy_state_locked(session, media_owner, lock=True)[0]:
+        try:
+            require_assistant_capability_locked(session, media_owner, required_capability)
+        except BusinessError as error:
             session.info.setdefault("assistant_submission_errors", {})[task.id] = {
-                "code": "assistant_media_disabled",
-                "message": "助手媒体生成已关闭，任务尚未外发",
+                "code": error.code,
+                "message": error.message,
             }
             return False
     if task.project_id:

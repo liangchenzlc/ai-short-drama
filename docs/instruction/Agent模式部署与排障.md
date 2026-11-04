@@ -1,3 +1,5 @@
+> **2026-11-04 当前配置入口：** 已在开发库备份并执行[配置与账号记忆迁移](../database/migrations/2026-11-03-settings-module/README.md)，完整结构仍为121表。API、scheduler、Agent 与媒体 Worker 须使用同版代码。用户额度／媒体数量和 policy_version 已删除，技术预算沿部署配置冻结到 Run；下方旧增量执行状态保留为历史。
+
 # Agent 模式部署与排障
 
 账号业务 MCP 使用 [运行时增量005](../database/migrations/2026-10-29-assistant-runtime/README.md)，增加令牌和 nullable 审计来源，当前完整结构121表；已有库先完成001→005，再按006离线切换后发布同版API、Worker与前端。此链已在119表基线的专用随机测试库演练，应用库未执行。API 即使 `AUTH_ENABLED=false` 或 `AGENT_ENABLED=false` 仍检查 MCP schema 并强制每请求 Bearer。
@@ -50,9 +52,9 @@ Agent 与原生生成共用 MySQL、RabbitMQ、Celery 和 MinIO。当前入口�
 
 声音文本增量创建／修改同样要求 `AUDIO_PRODUCTION_ENABLED=true` 和已保存的成片草稿。API 在真实输入中仅冻结声音／画面版本，Agent 使用该指令目录；升级前缺少冻结版本的创建指令需重新明确发送，不能由模型自报当前版本补齐。适配层保留整份现有文档，在原生保存事务内只合并获准台词字段，不序列化未选正文或媒体地址给模型。可按真实回执继续读取、编辑或明确要求生成本任务新建台词配音；API、Agent、scheduler 与前端须同版，无新增 DDL。
 
-AI 配置 → 创作助手提供本人媒体总开关，缺少设置默认开启，保存过的关闭不因升级重置。`get_generation_policy` 只读实时策略，不能由 Agent 打开开关；模型发送前版本变化会重新准备决策且不计调用。媒体在受理、Worker 领取和供应商提交前复核实时开关／本人权限，已外发继续结算。开启时 `available_media` 返回本人已配置的 image/video/audio，执行端另按目标模式限定：标准当前开放图片、普通／原生有声分镜视频、角色音色和旧声音文档台词配音，画布开放三类媒体。003 的 `agent_preferences` 与 004 的 `agent_media_requests` 必须随 API、scheduler、Agent 和对应 image/video/audio Worker 同版部署，不能只升级设置页面。画布复用原生任务、素材交付及绑定，必须保留 scheduler 完整结算；只启动 API 或 Agent Worker 不会完成媒体回填。
+配置 → AI 创作助手 → 通用设置提供工作台与媒体父子权限，内部只读 get_generation_policy 不可修改设置。统一 settings_version 变化会重装尚未发送的输入；目录、真实工具、受理与最终外发复核权限，已外发继续结算。MCP 独立使用令牌权限。长期记忆开关推进 memory_generation，停止 Agent 读写及提炼，重新开启不补抽旧对话。API、scheduler、Agent 和相关 image/video/audio Worker 须同版升级；画布继续复用原生任务与 scheduler 结算。
 
-部署本轮项目助手时同步更新 API、Agent Worker、宿主及画布前端：会话创建和列表携带项目，任务自动绑定所属项目的保存目标与设定，画布新任务另指定当前画布，补充保持原目标。任务设置、上下文和记忆管理入口已移除，引用、附件选择及发送前的版本核对保留。输入字段复用既有 JSON，会话 CHECK 另需下文项目增量；混用旧 Worker 不能保证项目归属和原目标冻结。
+部署本轮项目助手时同步更新 API、Agent Worker、宿主及画布前端：会话创建和列表携带项目，任务自动绑定所属项目的保存目标与设定，画布新任务另指定当前画布，补充保持原目标。发送区的任务设置与记忆范围入口已移除，账号记忆改在配置页管理，引用、附件选择及发送前的版本核对保留。输入字段复用既有 JSON，会话 CHECK 另需下文项目增量；混用旧 Worker 不能保证项目归属和原目标冻结。
 
 批次撤销需要 007／008、API、scheduler、相关 Worker 和前端同版升级。008 允许角色音色成对空绑定，首次采用撤销后保留递增版本行；旧绑定文件及生成历史继续保留。007 阶段已真实创建 `agent_batch_undos`，当时结构为 117 表／二十五张 Agent 表；加图检查点与交付要求表后为 119 表／二十八张 Agent 表，readiness `ready`、gaps=[]。原工具回执不可改写，模型和前端另读撤销回执；同会话活动执行及作品原生任务结束后才允许明确逆向。详见[007 说明](../database/migrations/2026-10-21-agent-system/README.md#批次撤销回执2026-10-22-接续)。
 

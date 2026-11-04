@@ -38,19 +38,10 @@ from short_drama.service.assistant.memory.memory_store import (
     create_memory_locked as create_memory_locked,
 )
 from short_drama.service.assistant.memory.memory_store import (
-    deletion_memory_query as deletion_memory_query,
-)
-from short_drama.service.assistant.memory.memory_store import (
-    deletion_memory_read as deletion_memory_read,
-)
-from short_drama.service.assistant.memory.memory_store import (
     forget_memory_locked as forget_memory_locked,
 )
 from short_drama.service.assistant.memory.memory_store import (
     invalidate_memory_runs as invalidate_memory_runs,
-)
-from short_drama.service.assistant.memory.memory_store import (
-    invalidate_source_summaries as invalidate_source_summaries,
 )
 from short_drama.service.assistant.memory.memory_store import (
     lock_owner_conversations as lock_owner_conversations,
@@ -78,7 +69,6 @@ from short_drama.service.assistant.memory.memory_store import source_rows as sou
 from short_drama.service.assistant.memory.memory_store import source_values as source_values
 from short_drama.service.base import BaseService, Page, utcnow
 from short_drama.utils.json_digest import digest
-from short_drama.utils.snowflake import next_id
 
 
 class AgentMemoryService(BaseService):
@@ -90,8 +80,6 @@ class AgentMemoryService(BaseService):
     def list_items(
         self,
         *,
-        conversation_id=None,
-        project_id=None,
         query=None,
         offset=0,
         limit=30,
@@ -99,12 +87,7 @@ class AgentMemoryService(BaseService):
     ):
         self.dao.validate_pagination(offset, limit)
         with self._transaction(read_only=True):
-            scope = checked_scope(
-                self.session,
-                self._owner(),
-                parse_identifier(conversation_id) if conversation_id else None,
-                (parse_identifier(project_id),) if project_id else (),
-            )
+            scope = checked_scope(self.session, self._owner())
             dao = AgentMemoryDAO(self.session)
             statement = dao.rows(scope, active=not include_forgotten)
             if query:
@@ -112,7 +95,7 @@ class AgentMemoryService(BaseService):
                     AgentMemoryItem.search_text.contains(query.strip(), autoescape=True)
                 )
             rows = self.session.scalars(
-                statement.order_by(AgentMemoryItem.pinned.desc(), AgentMemoryItem.id)
+                statement.order_by(AgentMemoryItem.updated_at.desc(), AgentMemoryItem.id.desc())
                 .offset(offset)
                 .limit(limit)
             ).all()
@@ -179,6 +162,7 @@ class AgentMemoryService(BaseService):
 
     def retry_job(self, identifier, payload, idempotency_key):
         from short_drama.agent.core.access import model_unchanged
+        from short_drama.agent.memory.recovery import retry_child_locked
         from short_drama.agent.memory.sources import message_sources, source_hash
 
         values = self._payload(MemoryJobRetry, payload)
@@ -236,33 +220,9 @@ class AgentMemoryService(BaseService):
             run = self.session.get(AgentRun, job.run_id) if job.run_id else None
             if run is None or not model_unchanged(self.session, run):
                 raise Conflict("原模型配置已变化，请通过新的任务使用当前模型")
-            fields = ["messages", "prior_facts", "model"]
-            snapshot = {field: deepcopy(job.source_snapshot[field]) for field in fields}
-            snapshot.update(manual_retry_of=str(job.id), retry_request_hash=request_hash)
-            child = AgentMemoryJob(
-                id=next_id(),
-                owner_user_id=owner,
-                conversation_id=job.conversation_id,
-                run_id=job.run_id,
-                kind=job.kind,
-                request_key=retry_key,
-                from_seq=job.from_seq,
-                to_seq=job.to_seq,
-                base_summary_id=job.base_summary_id,
-                base_generation=job.base_generation,
-                source_hash=job.source_hash,
-                source_snapshot=snapshot,
-                status="pending",
-                provider_state="not_started",
-                usage={},
-                attempts=0,
-                message_version=1,
-                message_status="queued",
-                next_run_at=utcnow(),
-                created_at=utcnow(),
+            child = retry_child_locked(
+                self.session, job, run, retry_key, {"retry_request_hash": request_hash}
             )
-            self.session.add(child)
-            job.source_snapshot = {**job.source_snapshot, "retry_job_id": str(child.id)}
             self.session.flush()
             return memory_job_read(child)
 
@@ -379,11 +339,7 @@ class AgentMemoryService(BaseService):
                 if source_hash(current) != job.source_hash:
                     raise Conflict("候选来源已纠正或遗忘，请保留当前记忆")
                 incoming = MemoryCreate.model_validate(candidate["candidate"])
-                if (row.scope_type, row.kind, row.memory_key) != (
-                    incoming.scope_type,
-                    incoming.kind,
-                    incoming.memory_key,
-                ):
+                if (row.kind, row.memory_key) != (incoming.kind, incoming.memory_key):
                     raise Conflict("候选身份与当前事实不一致")
                 sources = source_values(AgentMemoryDAO(self.session).sources(row))
                 additions = source_rows(
@@ -392,12 +348,8 @@ class AgentMemoryService(BaseService):
                     job.conversation_id,
                     [int(value) for value in candidate["source_message_ids"]],
                 )
-                identities = {(item["conversation_id"], item["seq"]) for item in sources}
-                sources.extend(
-                    item
-                    for item in additions
-                    if (item["conversation_id"], item["seq"]) not in identities
-                )
+                identities = {item["hash"] for item in sources}
+                sources.extend(item for item in additions if item["hash"] not in identities)
                 row.content, row.title, row.aliases, row.tags = (
                     incoming.content,
                     incoming.title,
@@ -409,13 +361,7 @@ class AgentMemoryService(BaseService):
                 row.origin, row.search_text = "explicit", search_text(row)
                 append_revision(self.session, row, "edit", sources)
                 self.session.flush()
-                invalidate_memory_runs(
-                    self.session,
-                    row,
-                    invalidate_source_summaries(
-                        self.session, AgentMemoryDAO(self.session).sources(row)
-                    ),
-                )
+                invalidate_memory_runs(self.session, row.owner_user_id)
             candidate.update(
                 status="resolved",
                 choice=values["choice"],
@@ -441,14 +387,9 @@ class AgentMemoryService(BaseService):
             if prior:
                 if prior.create_hash != request_hash:
                     raise Conflict("此请求身份已用于其他记忆")
-                if prior.conversation_id is not None:
-                    checked_scope(self.session, owner, prior.conversation_id)
                 return memory_read(self.session, prior)
-            sources = source_rows(
-                self.session, owner, values.source_conversation_id, values.source_message_ids
-            )
             row = create_memory_locked(
-                self.session, owner, values, key=key, request_hash=request_hash, sources=sources
+                self.session, owner, values, key=key, request_hash=request_hash
             )
             self.session.flush()
             return memory_read(self.session, row)
@@ -487,9 +428,7 @@ class AgentMemoryService(BaseService):
             row.search_text = search_text(row)
             append_revision(self.session, row, "edit", source_values(sources))
             if "content" in values:
-                invalidate_memory_runs(
-                    self.session, row, invalidate_source_summaries(self.session, sources)
-                )
+                invalidate_memory_runs(self.session, row.owner_user_id)
             self.session.flush()
             return memory_read(self.session, row)
 
@@ -521,7 +460,7 @@ class AgentMemoryService(BaseService):
                 rule.active = 0
                 rule.restored_at = utcnow()
             append_revision(self.session, row, "restore", source_values(sources))
-            invalidate_memory_runs(self.session, row)
+            invalidate_memory_runs(self.session, row.owner_user_id)
             self.session.flush()
             return memory_read(self.session, row)
 

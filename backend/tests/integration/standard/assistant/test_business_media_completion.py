@@ -23,6 +23,8 @@ from tests.integration.standard.assistant.test_global_assistant_tasks import (
     drain_assistant_media,
     media_tool_run,
     media_worker,
+    shot_video_flow,
+    shot_video_provider,
     task_service,
     voice_design_flow,
     voice_design_provider,
@@ -230,6 +232,94 @@ def test_voice_native_archive_adopts_without_agent_loop_and_protects_human_chang
             assert session.get(AIGenerationRecord, binding.record_id).response_data["voice"][
                 "voice_id"
             ]
+
+
+@pytest.mark.parametrize(
+    "kind,closed,adopted",
+    [
+        ("sound", "workbench", False),
+        ("voice", "workbench", False),
+        ("canvas", "workbench", False),
+        ("video", "workbench", False),
+        ("video", "media_generation", True),
+    ],
+)
+def test_sent_media_adoption_uses_current_workbench_permission(
+    task_workspace, tmp_path, kind, closed, adopted
+):
+    from short_drama.domain import CanvasResult, CanvasTaskBinding, MediaAsset, ShotVideo
+    from short_drama.service.assistant.settings.preferences import AssistantSettingsService
+
+    if kind == "sound":
+        flow = dialogue_audio_flow(task_workspace)
+        provider = dialogue_audio_provider(tmp_path)
+    elif kind == "voice":
+        flow = voice_design_flow(task_workspace)
+        provider = voice_design_provider(tmp_path)
+    elif kind == "video":
+        flow = shot_video_flow(task_workspace)
+        provider = shot_video_provider(tmp_path)
+    else:
+        flow = canvas_media_flow(task_workspace)
+        provider = None
+    receipt = submitted(flow)
+    provider, worker = media_worker(flow, provider)
+    task_id = int(receipt["items"][0]["generation_id"])
+    with flow.factory() as session:
+        version = session.get(AsyncTask, task_id).message_version
+    worker.execute(task_id, version)
+    assert len(provider.calls) == 1
+    with flow.factory() as session:
+        task_service(session, flow.settings)
+        service = AssistantSettingsService(session, flow.settings)
+        current = service.get_settings()
+        service.update_settings(
+            {"settings_version": str(current.settings_version), f"{closed}_enabled": False}
+        )
+        if kind == "canvas":
+            node = session.scalar(
+                select(CanvasNode).where(CanvasNode.node_key == flow.reference["id"])
+            )
+            before_node = deepcopy(node.content_json), node.row_version
+    drain_assistant_media(flow, worker)
+    with flow.factory() as session:
+        native = session.get(AsyncTask, task_id)
+        assert native.status == "succeeded", native.error
+        record = session.scalar(
+            select(AIGenerationRecord).where(AIGenerationRecord.task_id == task_id)
+        )
+        output = session.scalar(select(MediaAsset).where(MediaAsset.record_id == record.id))
+        assert output.media_id and record.response_data["business_adoption"]["adopted"] is adopted
+        operation = session.get(AgentOperation, flow.operation_id)
+        assert operation.result == receipt and bool(operation.changes) is adopted
+        if kind == "sound":
+            document = session.get(ProjectSound, flow.assembly_id).document
+            assert document["audio_clips"] == [] and document["dialogue"][0]["media_id"] is None
+        elif kind == "voice":
+            assert (
+                session.get(
+                    CharacterVoice, (int(flow.reference["project_id"]), int(flow.reference["id"]))
+                )
+                is None
+            )
+        elif kind == "video":
+            video = session.scalar(
+                select(ShotVideo).where(ShotVideo.shot_id == int(flow.reference["id"]))
+            )
+            assert (video is not None) is adopted
+            if video:
+                assert video.media_id == output.media_id
+        else:
+            result = session.scalar(
+                select(CanvasResult)
+                .join(CanvasTaskBinding, CanvasTaskBinding.id == CanvasResult.task_binding_id)
+                .where(CanvasTaskBinding.async_task_id == task_id)
+            )
+            assert result.media_id == output.media_id and result.attachment_status == "detached"
+            node = session.scalar(
+                select(CanvasNode).where(CanvasNode.node_key == flow.reference["id"])
+            )
+            assert (node.content_json, node.row_version) == before_node
 
 
 def test_generated_reference_origin_is_rechecked_before_next_native_paid_send(task_workspace):

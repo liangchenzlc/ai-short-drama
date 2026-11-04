@@ -65,7 +65,7 @@ def _builtin_runninghub(scope: str, capability: str) -> list[dict]:
             "sourcePath": "web/src/lib/plugins/builtin/workflows.ts",
             "sourceSha256": "a6ee423edd73a8f134af95d9bf8ee37f376af5a94bb8b633158a055a79758400",
         }
-        for kind, label in (("image", "图片"), ("video", "视频"), ("audio", "音频"))
+        for kind, label in (("video", "视频"), ("audio", "音频"))
         if not capability or capability == kind
     ]
 

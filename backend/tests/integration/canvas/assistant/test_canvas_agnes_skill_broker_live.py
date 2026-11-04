@@ -129,6 +129,7 @@ def test_original_skill_real_agnes_through_formal_generation_worker(
     secret = live_key()
     created = owner.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "name": "Agnes私人Skill正式验收",
             "service_type": "text",

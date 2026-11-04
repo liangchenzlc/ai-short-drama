@@ -251,6 +251,7 @@ def private_media(identity_app, user_id, storage=None):
 def image_config(client, secret="per-account-key"):
     response = client.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "service_type": "image",
             "name": "Personal model",

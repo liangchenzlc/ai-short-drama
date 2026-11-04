@@ -1,15 +1,17 @@
 """L1/L2 projections, L4 compare-and-swap activation and reliable maintenance intents."""
 
 import json
-import re
 from copy import deepcopy
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 
 from short_drama.agent.gateway.contracts import AgentGatewayError
+from short_drama.agent.memory.recovery import extraction_waterline as extraction_waterline
+from short_drama.agent.memory.recovery import recover_failed_locked
 from short_drama.agent.memory.sources import HARD_CONTEXT_BYTES as HARD_CONTEXT_BYTES
 from short_drama.agent.memory.sources import MAX_SOURCE_BYTES as MAX_SOURCE_BYTES
 from short_drama.agent.memory.sources import SOFT_HISTORY_BYTES as SOFT_HISTORY_BYTES
+from short_drama.agent.memory.sources import extraction_sources
 from short_drama.agent.memory.sources import message_sources as message_sources
 from short_drama.agent.memory.sources import message_subject_keys as message_subject_keys
 from short_drama.agent.memory.sources import restricted_messages as restricted_messages
@@ -26,6 +28,8 @@ from short_drama.schemas.assistant.memory.memory import MemoryCreate, MemoryMain
 from short_drama.service.assistant.memory.memory_store import (
     checked_scope,
     create_memory_locked,
+    extraction_generation_matches,
+    memory_capture_generation,
     memory_catalog_locked,
 )
 from short_drama.service.base import utcnow
@@ -37,6 +41,11 @@ def enqueue_job_locked(session, conversation, run, kind, messages):
     if not messages:
         return None
     fingerprint = source_hash(messages)
+    generation = (
+        memory_capture_generation(session, conversation.owner_user_id, lock=True)
+        if kind == "extract"
+        else None
+    )
     key = digest(
         {
             "conversation": str(conversation.id),
@@ -44,7 +53,7 @@ def enqueue_job_locked(session, conversation, run, kind, messages):
             "from": messages[0]["seq"],
             "to": messages[-1]["seq"],
             "base": str(conversation.active_summary_id) if kind == "summary" else None,
-            "generation": conversation.summary_generation if kind == "summary" else None,
+            "generation": conversation.summary_generation if kind == "summary" else generation,
             "source": fingerprint,
         }
     )
@@ -78,6 +87,7 @@ def enqueue_job_locked(session, conversation, run, kind, messages):
             "messages": messages,
             "prior_facts": deepcopy(prior.content.get("facts", [])) if prior else [],
             "model": deepcopy(run.config_snapshot),
+            "memory_generation": generation if kind == "extract" else None,
         },
         status="pending",
         provider_state="not_started",
@@ -89,6 +99,8 @@ def enqueue_job_locked(session, conversation, run, kind, messages):
         created_at=now,
     )
     session.add(job)
+    if kind == "extract" and not extraction_sources(messages, generation):
+        job.status, job.message_status, job.finished_at = "succeeded", "idle", now
     return job
 
 
@@ -97,7 +109,7 @@ def bounded_prefix(messages):
     total = 0
     for row in messages:
         size = len(json.dumps(row, ensure_ascii=False).encode("utf-8"))
-        if total + size > MAX_SOURCE_BYTES:
+        if result and total + size > MAX_SOURCE_BYTES:
             break
         result.append(row)
         total += size
@@ -108,37 +120,32 @@ def enqueue_bounded_locked(session, conversation, run, kind, messages):
     if not messages:
         return None
     prefix = bounded_prefix(messages)
-    job = enqueue_job_locked(session, conversation, run, kind, prefix or messages[:1])
-    if not prefix:
-        job.status = "failed"
-        job.error = {"code": "agent_memory_source_too_large"}
-        job.message_status = "idle"
-        job.finished_at = utcnow()
-    return job
-
-
-def extraction_waterline(session, conversation_id):
-    ranges = session.execute(
-        select(AgentMemoryJob.from_seq, AgentMemoryJob.to_seq)
-        .where(
-            AgentMemoryJob.conversation_id == conversation_id,
-            AgentMemoryJob.kind == "extract",
-            AgentMemoryJob.status.in_(("succeeded", "abandoned")),
-        )
-        .order_by(AgentMemoryJob.from_seq, AgentMemoryJob.to_seq)
-    ).all()
-    covered = 0
-    for start, end in ranges:
-        if start > covered + 1:
-            break
-        covered = max(covered, end)
-    return covered
+    return enqueue_job_locked(session, conversation, run, kind, prefix)
 
 
 def schedule_maintenance_locked(session, conversation, run):
     if run.task_id is None or conversation.scope_version != 3 or conversation.status != "active":
         return
     session.flush()
+    generation = memory_capture_generation(session, conversation.owner_user_id, lock=True)
+    obsolete = session.scalars(
+        select(AgentMemoryJob)
+        .where(
+            AgentMemoryJob.owner_user_id == conversation.owner_user_id,
+            AgentMemoryJob.conversation_id == conversation.id,
+            AgentMemoryJob.kind == "extract",
+            AgentMemoryJob.status.in_(("pending", "running", "failed")),
+        )
+        .with_for_update()
+    ).all()
+    for job in obsolete:
+        if generation is None or job.source_snapshot.get("memory_generation") != generation:
+            # 开关代次不可复用；旧范围计为跳过，重新开启也不会补抽。
+            job.status, job.message_status, job.finished_at = "abandoned", "idle", utcnow()
+            job.lease_token = job.lease_until = None
+            job.publish_token = job.publish_until = None
+    session.flush()
+    recover_failed_locked(session, conversation, run)
     latest = conversation.next_message_seq - 1
     active_seq = session.scalar(
         select(func.min(AgentMessage.seq))
@@ -169,8 +176,16 @@ def schedule_maintenance_locked(session, conversation, run):
         .where(
             AgentMemoryJob.conversation_id == conversation.id,
             AgentMemoryJob.kind == "summary",
-            AgentMemoryJob.status.in_(("pending", "running")),
-            AgentMemoryJob.base_generation == conversation.summary_generation,
+            or_(
+                and_(
+                    AgentMemoryJob.status.in_(("pending", "running")),
+                    AgentMemoryJob.base_generation == conversation.summary_generation,
+                ),
+                and_(
+                    AgentMemoryJob.status == "failed",
+                    AgentMemoryJob.provider_state.in_(("sending", "unknown")),
+                ),
+            ),
         )
         .limit(1)
     )
@@ -267,6 +282,9 @@ def settle_maintenance_locked(session, conversation, job, payload, usage):
     if conversation.status != "active":
         job.status = "cancelled"
         return False
+    if not extraction_generation_matches(session, job):
+        job.status = "abandoned"
+        return False
     current = message_sources(session, conversation.id, job.from_seq, job.to_seq)
     if (
         source_hash(current) != job.source_hash
@@ -312,7 +330,10 @@ def settle_maintenance_locked(session, conversation, job, payload, usage):
         conversation.summary_covers_until_seq = job.to_seq
         conversation.summary_generation += 1
     else:
-        messages = {row["id"]: row for row in current}
+        messages = {
+            row["id"]: row
+            for row in extraction_sources(current, job.source_snapshot["memory_generation"])
+        }
         clarifications = []
         for candidate in values.memories:
             identifiers = [str(identifier) for identifier in candidate.source_message_ids]
@@ -327,33 +348,8 @@ def settle_maintenance_locked(session, conversation, job, payload, usage):
             sources = [messages[identifier] for identifier in identifiers]
             if any(row.get("explicit_memory_processed") for row in sources):
                 continue
-            # 信任模型返回的 scope_type；若模型声明全局但来源无明确指示词则降级
-            _GLOBAL_INTENT_RE = re.compile(
-                r"以后|始终|一贯|长期|所有(作品|对话)|一直|每次|往后|下次|统一|永远|全部"
-            )
-            requested_scope = candidate.model_dump(exclude={"source_message_ids"}).get(
-                "scope_type", "conversation"
-            )
-            if requested_scope == "user" and not any(
-                _GLOBAL_INTENT_RE.search(source["content"]) for source in sources
-            ):
-                import logging as _logging
-
-                _logging.getLogger(__name__).warning(
-                    "auto_memory_scope_downgraded: no global intent found, "
-                    "downgrading to conversation"
-                )
-                requested_scope = "conversation"
             candidate_values = MemoryCreate.model_validate(
-                {
-                    **candidate.model_dump(exclude={"source_message_ids"}),
-                    "scope_type": requested_scope,
-                    **(
-                        {}
-                        if requested_scope == "user"
-                        else {"conversation_id": str(conversation.id)}
-                    ),
-                }
+                candidate.model_dump(exclude={"source_message_ids"})
             )
             create_memory_locked(
                 session,
@@ -363,11 +359,8 @@ def settle_maintenance_locked(session, conversation, job, payload, usage):
                 clarifications=clarifications,
                 sources=[
                     {
-                        "conversation_id": conversation.id,
                         "message_id": int(row["id"]),
-                        "seq": row["seq"],
                         "hash": row["hash"],
-                        "subject_keys": [],
                     }
                     for row in sources
                 ],
@@ -389,7 +382,8 @@ def history_projection_locked(
     items = []
     for row in rows:
         if (
-            not row["input_applied"]
+            row["interrupted"]
+            or not row["input_applied"]
             or row["task_id"] != str(task.id)
             and row["task_status"] in {"queued", "running", "waiting_media", "waiting_input"}
         ):
@@ -415,37 +409,25 @@ def history_projection_locked(
 def assemble_memory_locked(
     session, conversation, task, run, *, represented_message_ids=(), allowed_subject_keys=None
 ):
-    scope = checked_scope(
-        session, conversation.owner_user_id, conversation.id, task.memory_project_ids
-    )
+    scope = checked_scope(session, conversation.owner_user_id)
     schedule_maintenance_locked(session, conversation, run)
-    summary = (
-        session.get(AgentConversationSummary, conversation.active_summary_id)
-        if conversation.active_summary_id
-        else None
-    )
-    keys = selected_keys(task) if allowed_subject_keys is None else allowed_subject_keys
-    facts = [
-        fact
-        for fact in (
-            summary.content.get("facts", []) if summary and summary.status == "active" else []
-        )
-        if set(fact.get("subject_keys", [])).issubset(keys)
-    ]
+    summary, facts = summary_projection_locked(session, conversation, task, allowed_subject_keys)
     history = history_projection_locked(
         session,
         conversation,
         task,
-        conversation.summary_covers_until_seq + 1,
+        summary.to_seq + 1 if summary else 1,
         conversation.next_message_seq - 1,
         limit=500,
-        allowed_subject_keys=keys,
+        allowed_subject_keys=allowed_subject_keys,
     )
     result = {
-        "catalog": memory_catalog_locked(session, scope),
+        "catalog": memory_catalog_locked(session, scope)
+        if memory_capture_generation(session, conversation.owner_user_id) is not None
+        else None,
         "summary": {
             "id": str(summary.id),
-            "covers_until_seq": conversation.summary_covers_until_seq,
+            "covers_until_seq": summary.to_seq,
             "facts": facts,
         }
         if summary
@@ -458,16 +440,55 @@ def assemble_memory_locked(
         len(json.dumps(result, ensure_ascii=False).encode("utf-8")) > HARD_CONTEXT_BYTES
         or history["next_seq"] is not None
     ):
-        pending = session.scalar(
-            select(AgentMemoryJob.id)
-            .where(
-                AgentMemoryJob.conversation_id == conversation.id,
-                AgentMemoryJob.kind == "summary",
-                AgentMemoryJob.status.in_(("pending", "running")),
-            )
-            .limit(1)
-        )
-        raise AgentGatewayError(
-            "agent_memory_waiting" if pending else "agent_context_budget_exhausted"
-        )
+        raise AgentGatewayError(memory_capacity_error(session, conversation))
     return result
+
+
+def summary_projection_locked(session, conversation, task, allowed_subject_keys=None):
+    summary = (
+        session.get(AgentConversationSummary, conversation.active_summary_id)
+        if conversation.active_summary_id
+        else None
+    )
+    if summary is not None and (
+        summary.status != "active"
+        or summary.conversation_id != conversation.id
+        or summary.owner_user_id != conversation.owner_user_id
+        or summary.to_seq != conversation.summary_covers_until_seq
+    ):
+        summary = None
+    keys = selected_keys(task) if allowed_subject_keys is None else allowed_subject_keys
+    facts = [
+        fact
+        for fact in (
+            summary.content.get("facts", []) if summary and summary.status == "active" else []
+        )
+        if set(fact.get("subject_keys", [])).issubset(keys)
+    ]
+    return summary, facts
+
+
+def memory_capacity_error(session, conversation):
+    unknown = session.scalar(
+        select(AgentMemoryJob.id)
+        .where(
+            AgentMemoryJob.conversation_id == conversation.id,
+            AgentMemoryJob.kind == "summary",
+            AgentMemoryJob.status == "failed",
+            AgentMemoryJob.provider_state.in_(("sending", "unknown")),
+        )
+        .limit(1)
+    )
+    if unknown is not None:
+        return "agent_memory_acceptance_unknown"
+    pending = session.scalar(
+        select(AgentMemoryJob.id)
+        .where(
+            AgentMemoryJob.conversation_id == conversation.id,
+            AgentMemoryJob.kind == "summary",
+            AgentMemoryJob.status.in_(("pending", "running")),
+            AgentMemoryJob.base_generation == conversation.summary_generation,
+        )
+        .limit(1)
+    )
+    return "agent_memory_waiting" if pending else "agent_memory_maintenance_required"

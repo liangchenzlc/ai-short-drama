@@ -4,6 +4,7 @@ from copy import deepcopy
 
 from short_drama.core.exceptions import Conflict
 from short_drama.dao.assistant.operations.invocation import BusinessInvocationDAO
+from short_drama.service.assistant.operations.authorization import require_receipt_capability_locked
 from short_drama.service.assistant.operations.image import image_adoption_state, image_target
 
 
@@ -110,6 +111,9 @@ def _bind_canvas(session, task, record, target):
     outputs = service.materialize_locked(canvas, binding, task)
     if not outputs or len(outputs) != (record.response_data or {}).get("expected_count", 1):
         raise Conflict("已保存画布产物数量与受理目标不一致")
+    require_receipt_capability_locked(
+        session, session.info["business_media_receipts"][task.id], "workbench_write"
+    )
     if not canvas_target_matches(session, task.initiated_by, target, task.service_type, task.id):
         raise Conflict("节点或私人参数已变化，产物已保留，未覆盖节点")
     before_revision = str(canvas.row_version)

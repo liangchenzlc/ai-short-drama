@@ -235,40 +235,42 @@ def test_batch_undo_routes_keep_decimal_identity_and_original_request(client):
     assert response.status_code == 201 and response.json()["id"] == "9007199254740997"
 
 
-def test_generation_policy_routes_are_owner_only_and_keep_decimal_versions(client):
-    from short_drama.api.dependencies.assistant import policy_service
+def test_settings_routes_are_owner_only_and_keep_decimal_versions(client):
+    from short_drama.api.dependencies.assistant import preferences_service
 
-    class Policies:
-        def get_generation_policy(self):
+    class Preferences:
+        def get_settings(self):
             return {
                 "media_generation_enabled": False,
-                "policy_version": 9007199254740993,
-                "configured_media": ["image"],
-                "available_media": [],
+                "workbench_enabled": True,
+                "long_term_memory_enabled": True,
+                "settings_version": 9007199254740993,
+                "custom_instructions": None,
+                "default_instructions": "按用户要求创作",
             }
 
-        def update_generation_policy(self, payload):
+        def update_settings(self, payload):
             assert payload.media_generation_enabled is True
-            assert payload.policy_version == 9007199254740993
+            assert payload.settings_version == 9007199254740993
             return {
-                **self.get_generation_policy(),
+                **self.get_settings(),
                 "media_generation_enabled": True,
-                "policy_version": 9007199254740994,
+                "settings_version": 9007199254740994,
             }
 
-    client.app.dependency_overrides[policy_service] = Policies
-    response = client.get("/api/v1/assistant/generation-policy")
+    client.app.dependency_overrides[preferences_service] = Preferences
+    response = client.get("/api/v1/assistant/settings")
     assert response.status_code == 200
     assert response.json()["media_generation_enabled"] is False
-    assert response.json()["policy_version"] == "9007199254740993"
+    assert response.json()["settings_version"] == "9007199254740993"
     response = client.patch(
-        "/api/v1/assistant/generation-policy",
+        "/api/v1/assistant/settings",
         json={
             "media_generation_enabled": True,
-            "policy_version": "9007199254740993",
+            "settings_version": "9007199254740993",
         },
     )
-    assert response.status_code == 200 and response.json()["policy_version"] == "9007199254740994"
+    assert response.status_code == 200 and response.json()["settings_version"] == "9007199254740994"
 
 
 @pytest.mark.parametrize(
@@ -276,16 +278,16 @@ def test_generation_policy_routes_are_owner_only_and_keep_decimal_versions(clien
     [
         {"owner_user_id": "2"},
         {"media_generation_enabled": "false"},
-        {"policy_version": "-1"},
+        {"settings_version": "-1"},
         {"available_media": ["image"]},
     ],
 )
-def test_generation_policy_rejects_owner_and_capability_injection(client, invalid):
+def test_settings_reject_owner_and_capability_injection(client, invalid):
     response = client.patch(
-        "/api/v1/assistant/generation-policy",
+        "/api/v1/assistant/settings",
         json={
             "media_generation_enabled": False,
-            "policy_version": "0",
+            "settings_version": "0",
             **invalid,
         },
     )
@@ -344,15 +346,15 @@ def test_global_creation_rejects_legacy_and_untrusted_scope_fields(client, extra
         {"owner_user_id": "2"},
         {"scope_type": "conversation"},
         {"scope_type": "user", "project_id": "1"},
+        {"source_conversation_id": "1", "source_message_ids": ["2"]},
         {"kind": "unknown"},
     ],
 )
-def test_memory_management_rejects_untrusted_owners_and_inconsistent_scopes(client, extra):
+def test_memory_management_rejects_untrusted_owners_and_removed_associations(client, extra):
     response = client.post(
         "/api/v1/assistant/memory",
         headers={"Idempotency-Key": "memory-1"},
         json={
-            "scope_type": "user",
             "kind": "preference",
             "memory_key": "dialogue",
             "title": "对白",
@@ -389,50 +391,6 @@ def test_memory_context_serializes_ids_and_zero_generation_without_provider_data
     }
 
 
-def test_deletion_preview_serializes_versions_and_routes_pagination(client):
-    from short_drama.api.dependencies.assistant import task_service
-
-    class Tasks:
-        def deletion_memory_preview(self, identifier, offset, limit):
-            assert (identifier, offset, limit) == (9007199254740993, 30, 10)
-            return {
-                "conversation_id": identifier,
-                "row_version": 9007199254740995,
-                "items": [
-                    {
-                        "id": 9007199254740997,
-                        "content_version": 2,
-                        "scope_type": "project",
-                        "project_id": 9007199254740999,
-                        "title": "对白",
-                        "content_preview": "保留后来修改的事实",
-                        "protection_reasons": ["user_edited", "independent_sources"],
-                    }
-                ],
-                "total": 31,
-                "offset": offset,
-                "limit": limit,
-            }
-
-    client.app.dependency_overrides[task_service] = Tasks
-    response = client.get(
-        "/api/v1/assistant/global/conversations/9007199254740993/deletion-memory?offset=30&limit=10"
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["conversation_id"] == "9007199254740993"
-    assert data["row_version"] == "9007199254740995"
-    assert data["items"][0] == {
-        "id": "9007199254740997",
-        "content_version": "2",
-        "scope_type": "project",
-        "project_id": "9007199254740999",
-        "title": "对白",
-        "content_preview": "保留后来修改的事实",
-        "protection_reasons": ["user_edited", "independent_sources"],
-    }
-
-
 @pytest.mark.parametrize(
     "fields",
     [
@@ -447,7 +405,7 @@ def test_deletion_preview_serializes_versions_and_routes_pagination(client):
         {"clear_derived_memory": True, "memory_selections": [{"id": "1"}]},
     ],
 )
-def test_deletion_rejects_unconfirmed_duplicate_or_unversioned_selections(client, fields):
+def test_deletion_rejects_removed_memory_cleanup_fields(client, fields):
     response = client.request(
         "DELETE",
         "/api/v1/assistant/global/conversations/1",

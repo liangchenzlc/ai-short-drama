@@ -36,14 +36,9 @@ async def invoke_business_tool(spec, arguments, context, tool_call_id):
 
 
 def _invoke_business_tool(spec, values, context, tool_call_id):
-    from short_drama.service.assistant.execution.tools import enforce_media_limit_locked
-
     with context.factory.begin() as session:
         conversation, task, run, operation = execution_locked(session, context, tool_call_id)
         identity = assistant_invocation_locked(session, conversation, task, run, operation)
-        if spec.name == "workbench__submit_generation_batch":
-            # execution_locked持父Task锁；计数只来自实际成功受理收据，所有scope共用。
-            enforce_media_limit_locked(session, task, operation, values)
         result = BusinessInvocationService(session, context.settings).execute_locked(
             identity,
             spec.name,

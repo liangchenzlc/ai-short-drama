@@ -15,14 +15,14 @@ export function canvasSettingsReturnTo(pathname = window.location.pathname): str
 }
 
 export function isModelSettingsPath(path: string) {
-    return /^\/(?:settings|ai_config)(?:[?#]|$)/u.test(path);
+    return /^\/settings(?:\/(?:models|assistant|mcp)(?:\/[^?#]*)?)?(?:[?#]|$)/u.test(path);
 }
 
 export function settingsPath(_section: SettingsSection = "channels", _continueCreation = false) {
     const returnTo = canvasSettingsReturnTo() || canvasSettingsReturnTo(new URLSearchParams(window.location.search).get("return_to") || "");
     const params = new URLSearchParams();
     if (returnTo) params.set("return_to", returnTo);
-    return `/ai_config${params.size ? `?${params}` : ""}`;
+    return `/settings/models/text${params.size ? `?${params}` : ""}`;
 }
 
 /** 当前编辑器注册可靠保存入口；卸载旧编辑器不能清除新画布的保护。 */

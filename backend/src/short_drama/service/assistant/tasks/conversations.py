@@ -8,7 +8,6 @@ from short_drama.db.scope.resource_scope import require_project
 from short_drama.domain.assistant.conversations.models import (
     AgentConversation,
 )
-from short_drama.domain.assistant.memory.memory import AgentMemoryItem
 from short_drama.domain.assistant.tasks.task import (
     AgentTask,
     AgentTaskControl,
@@ -21,9 +20,6 @@ from short_drama.schemas.assistant.tasks.task import (
 from short_drama.schemas.base import parse_identifier
 from short_drama.service.assistant.context.attachment import attachment_key
 from short_drama.service.assistant.memory.memory_store import (
-    deletion_memory_query,
-    deletion_memory_read,
-    lock_owner_conversations,
     prepare_deletion_memory_locked,
 )
 from short_drama.service.assistant.tasks.base import TaskServiceBase
@@ -125,25 +121,6 @@ class ConversationOperations(TaskServiceBase):
             self.session.flush()
             return self._read_conversation(row)
 
-    def deletion_memory_preview(self, identifier, offset=0, limit=30):
-        self.dao.validate_pagination(offset, limit)
-        with self._transaction(read_only=True):
-            conversation = self._conversation(identifier)
-            if conversation.scope_version != 3 or conversation.status != "active":
-                raise Conflict("此对话已停止使用，请核对删除状态")
-            query = deletion_memory_query(conversation)
-            rows = self.session.scalars(
-                query.order_by(AgentMemoryItem.id).offset(offset).limit(limit)
-            ).all()
-            return {
-                "conversation_id": str(conversation.id),
-                "row_version": str(conversation.row_version),
-                "items": [deletion_memory_read(self.session, row, conversation) for row in rows],
-                "total": self.session.scalar(select(func.count()).select_from(query.subquery())),
-                "offset": offset,
-                "limit": limit,
-            }
-
     def delete_global_conversation(self, identifier, payload, idempotency_key):
         from short_drama.agent.core.events import append_event
         from short_drama.agent.session.lifecycle import finalize_deletion_locked
@@ -152,7 +129,6 @@ class ConversationOperations(TaskServiceBase):
         key, request_hash = attachment_key(idempotency_key), digest(values)
         with self._transaction():
             actor = self._actor()
-            lock_owner_conversations(self.session, actor.user_id, include_deleting=True)
             identifier = parse_identifier(identifier)
             conversation = self.session.scalar(
                 select(AgentConversation)
@@ -174,17 +150,13 @@ class ConversationOperations(TaskServiceBase):
                 return self._read_conversation(conversation, last_status=None, last_message="")
             if conversation.row_version != values["row_version"]:
                 raise Conflict("对话已变化，请核对当前任务后删除")
-            prepare_deletion_memory_locked(
-                self.session, conversation, values.get("memory_selections", [])
-            )
+            prepare_deletion_memory_locked(self.session, conversation)
             conversation.status = "deleting"
             conversation.row_version += 1
             conversation.fixed_requirements = {
                 "deletion": {
                     "key": key,
                     "hash": request_hash,
-                    "clear_derived_memory": values.get("clear_derived_memory", False),
-                    "memory_selections": values.get("memory_selections", []),
                 }
             }
             append_event(

@@ -3,6 +3,8 @@ import json
 from urllib.parse import urlsplit
 
 from short_drama.ai.adapters.constants import ADAPTER_TYPES, RESOLVER_VERSION
+from short_drama.ai.adapters.image.selection import select_image_protocol
+from short_drama.ai.adapters.model_protocols import PROTOCOL_ADAPTERS
 from short_drama.ai.gateway.endpoints import endpoint as endpoint
 from short_drama.ai.gateway.transport import validated_url
 from short_drama.ai.types import GenerationError
@@ -23,6 +25,12 @@ def capability_fingerprint(snapshot, credential_identity):
 def select_adapter(snapshot):
     parts = urlsplit(validated_url(snapshot["base_url"].strip()))
     kind = snapshot.get("service_type")
+    profile = snapshot.get("runtime_profile") or {}
+    if kind != "image" and profile.get("protocol") not in {None, "auto"}:
+        adapter = PROTOCOL_ADAPTERS.get(profile["protocol"])
+        if ADAPTER_TYPES.get(adapter) != kind:
+            raise GenerationError("unsupported_protocol")
+        return adapter
     cache = snapshot.get("capability_cache")
     identity = snapshot.get("credential_identity")
     if isinstance(cache, dict) and isinstance(identity, str):
@@ -55,17 +63,20 @@ def select_adapter(snapshot):
             )
         ):
             return "dashscope_speech.v1"
-        return "openai_speech.v1"
+        if host == "api.openai.com":
+            return "openai_speech.v1"
+        raise GenerationError("unsupported_protocol")
     if kind == "text":
+        if host == "api.anthropic.com":
+            return "claude_messages.v1"
         return "openai_responses.v1" if path.endswith("/responses") else "openai_chat.v1"
     if kind == "image":
-        if ark:
-            return "ark_images.v1"
-        if dashscope:
-            return "dashscope_images.v1"
-        # Images is a documented common protocol; unsupported gateways fail explicitly.
-        return "openai_images.v1"
+        return select_image_protocol(snapshot).adapter_id
     if kind == "video":
+        if host in {"api-beijing.klingai.com", "api-singapore.klingai.com"}:
+            return "kling_video.v4"
+        if host in {"api.minimax.io", "api.minimaxi.com"}:
+            return "minimax_video.v2"
         if host == "api.modelhub.cc":
             return "modelhub_video.v1"
         if ark:

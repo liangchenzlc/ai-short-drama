@@ -1,128 +1,28 @@
-.config-form-toggles {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-}
-.config-form-toggles .form-check {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  margin: 0;
-}
-.config-form-toggles input {
-  accent-color: var(--accent-fill);
-}
-.config-default-hint {
-  margin: -4px 0 0;
-  color: var(--sub);
-  font-size: 12px;
-  line-height: 1.7;
-}
-.config-form-toggles label:has(input:disabled) {
-  color: var(--disabled-ink);
-}
-.config-advanced {
-  border-block-start: 1px solid var(--line);
-  padding-block: 12px;
-  min-width: 0;
-}
-.config-advanced summary {
-  cursor: pointer;
-  color: var(--ink);
-  font-weight: 500;
-  padding-block: 4px;
-}
-.config-advanced summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
-}
-.config-advanced-body {
-  display: grid;
-  gap: 14px;
-  padding-block-start: 12px;
-}
-.config-advanced-body fieldset {
-  display: grid;
-  gap: 14px;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-}
-.config-field-pair {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-.config-json-editor {
-  font-family: var(--font-mono, monospace);
-  min-height: 96px;
-  resize: vertical;
-  tab-size: 2;
-}
-.config-header-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: end;
-}
-.config-header-row button {
-  margin-block-end: 1px;
-}
-.config-connection {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding-block: 16px;
-  border-block-end: 1px solid var(--line);
-}
-.config-connection-info {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-.config-connection-info p {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-.config-connection-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.config-test-output {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 240px;
-  overflow: auto;
-}
-.config-test-media {
-  display: block;
-  max-width: 100%;
-  max-height: 320px;
-  object-fit: contain;
-}
-.config-editor-tool-list {
-  display: grid;
-  gap: 16px;
-}
-.config-editor-tool-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  min-height: 44px;
-}
-.config-editor-tool-row > div {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-.config-editor-tool-row p {
-  margin: 0;
-}
-.config-editor-tool-row .ant-switch {
-  flex-shrink: 0;
-}
+.model-config-dialog { width: 600px; }
+.model-config-dialog .ant-switch { min-height: 22px; height: 22px; }
+.model-config-dialog .ai-config-form { padding: 22px 24px 0; }
+.ai-config-form > fieldset { display: grid; gap: 18px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.ai-config-form label { display: grid; gap: 7px; font-size: 13px; color: var(--ink); min-width: 0; }
+.ai-config-form label > .muted { display: inline; }
+.ai-config-form :is(input, select) { min-height: 38px; width: 100%; }
+.config-field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.config-form-toggles { display: flex; align-items: center; gap: 28px; padding-top: 2px; }
+.config-form-toggles label { display: flex; align-items: center; gap: 12px; }
+.config-credential-input { position: relative; display: flex; align-items: center; }
+.config-credential-input input { padding-right: 42px; }
+.config-credential-input > button { position: absolute; right: 4px; }
+.model-config-dialog .dialog-actions { margin-inline: -24px; margin-top: 24px; padding: 16px 24px; border-top: 1px solid var(--hair); }
+.ai-config-form :is(input, select):is(:focus, :focus-visible),
+.ai-config-form :is(.ant-input-affix-wrapper, .ant-select-selector):focus-within,
+.ai-config-form .ant-select-focused .ant-select-selector,
+.ai-config-form .ant-input-affix-wrapper-focused { border-color: transparent !important; outline: none; box-shadow: none !important; background: var(--pale); }
+.model-discovery-field { display: grid; gap: 7px; }
+.model-discovery-input { display: flex; gap: 8px; min-width: 0; align-items: center; }
+.model-discovery-input .ant-select { flex: 1; min-width: 0; }
+.model-discovery-input .ant-input-affix-wrapper { min-height: 38px; padding-block: 0; }
+.model-discovery-input .ant-input { min-height: 36px; }
+.model-discovery-input > button { flex: none; min-height: 38px; padding-inline: 12px; }
+.model-dropdown-toggle { display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--sub); min-height: 24px; }
+.model-discovery-hint { margin: 0; color: var(--sub); font-size: 12px; }
+.config-test-output { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.config-test-media { display: block; max-width: 100%; max-height: 320px; object-fit: contain; }

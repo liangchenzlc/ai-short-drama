@@ -72,15 +72,25 @@ class MessageCreate(InputModel):
         return self
 
 
+class MessageTextPart(ReadModel):
+    turn_id: Identifier
+    event_seq: int
+    content: str
+
+
 class MessageRead(ReadModel):
     id: Identifier
     task_id: Identifier | None = None
+    run_id: Identifier | None = None
     seq: int
     item_seq: int | None = None
+    event_seq: int | None = None
+    text_parts: list[MessageTextPart] = Field(default_factory=list)
     row_version: Identifier = 1
     role: Literal["user", "assistant"]
     kind: Literal["reply", "narration", "notice", "tool_answer"] = "reply"
     content: str
+    interrupted: bool = False
     references: list[dict]
     artifacts: list[dict]
     created_at: datetime
@@ -90,6 +100,15 @@ class PlanProposal(InputModel):
     title: Annotated[str, Field(min_length=1, max_length=120)]
     summary: Annotated[str, Field(min_length=1, max_length=2000)]
     steps: Annotated[list[TaskSpec], Field(min_length=1, max_length=12)]
+
+
+class RunWaitSummary(ReadModel):
+    pending_questions: int
+    media_batches: int
+    generation_tasks: int
+    since: datetime
+    elapsed_seconds: int
+    message: str
 
 
 class RunRead(ReadModel):
@@ -111,6 +130,10 @@ class RunRead(ReadModel):
     finished_at: datetime | None
     queue_position: int = 0
     waiting_reason: str | None = None
+    wait_summary: RunWaitSummary | None = None
+    blocking_run_id: Identifier | None = None
+    blocking_task_id: Identifier | None = None
+    stopping: bool = False
 
 
 class ConversationRuntimeState(ReadModel):

@@ -8,6 +8,7 @@ SPEC = ToolSpec(
     args_schema=ApplyCanvasPatch,
     handler=apply_canvas_patch_locked,
     effect="write",
+    required_capability="workbench_write",
     expose_mcp=True,
     modes=frozenset({"infinite_canvas"}),
 )

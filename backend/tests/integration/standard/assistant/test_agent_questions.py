@@ -18,7 +18,7 @@ from tests.integration.standard.assistant.test_global_assistant_tasks import (
     task_actor,
     task_service,
 )
-from tests.support.assistant_runtime import RuntimeTransport, calls, tool_result
+from tests.support.assistant_runtime import RuntimeTransport, WorkerLost, calls, tool_result
 
 pytestmark = pytest.mark.integration
 task_workspace = harness_workspace
@@ -77,6 +77,23 @@ def execute_next(workspace, accepted, transport):
     with factory() as session:
         version = session.get(AgentRun, accepted.run.id).message_version
     runtime_for(factory, settings, transport).execute(accepted.run.id, version)
+
+
+def test_queued_new_task_explains_blocking_question_and_stop_target(task_workspace):
+    conversation, accepted, _ = wait_question(task_workspace)
+    factory, settings, model = task_workspace
+    with factory() as session:
+        queued = task_service(session, settings).send_task_message(
+            conversation.id,
+            {"content": "开始另一个任务", "model_config_id": model, "new_task": True},
+            "queued-behind-question",
+        )
+    assert queued.run.queue_position == 1
+    assert queued.run.blocking_run_id == accepted.run.id
+    assert queued.run.blocking_task_id == accepted.task.id
+    assert accepted.task.goal in queued.run.waiting_reason
+    assert "待答" in queued.run.waiting_reason and "停止" in queued.run.waiting_reason
+    assert queued.run.wait_summary.pending_questions == 1
 
 
 def test_multi_question_answers_resume_with_choices_and_other_without_a_resolved_form(
@@ -743,10 +760,10 @@ def test_crash_after_answer_read_before_graph_write_remains_resumable(task_works
 
     def crash(self, *args, **kwargs):
         original(self, *args, **kwargs)
-        raise RuntimeError("lost after DB answer read")
+        raise WorkerLost("lost after DB answer read")
 
     monkeypatch.setattr(QuestionService, "read_answer", crash)
-    with pytest.raises(RuntimeError, match="durable recovery"):
+    with pytest.raises(WorkerLost):
         execute_next(task_workspace, accepted, RuntimeTransport([]))
     with factory() as session:
         assert not session.get(AgentOperation, operation_id).wait_state["consumed"]
@@ -761,7 +778,11 @@ def test_crash_after_answer_read_before_graph_write_remains_resumable(task_works
 
 def test_active_skill_restores_its_call_group_without_forgotten_answer_body(task_workspace):
     from short_drama.dao.assistant.execution.transcript import AgentTranscriptDAO
-    from tests.integration.standard.assistant.test_assistant_memory import memory, service
+    from tests.integration.standard.assistant.test_assistant_memory import (
+        create_sourced_memory,
+        memory,
+        service,
+    )
     from tests.integration.standard.assistant.test_assistant_skills import _Storage, create_skill
 
     factory, settings, model = task_workspace
@@ -804,12 +825,12 @@ def test_active_skill_restores_its_call_group_without_forgotten_answer_body(task
         if number == 1:
             with factory() as session:
                 manager = service(session)
-                item = manager.create_item(
+                item = create_sourced_memory(
+                    manager,
                     memory(
                         source_conversation_id=conversation.id,
                         source_message_ids=[receipt.answer_message_id],
                     ),
-                    "forget-answer-source",
                 )
                 manager.forget_item(item.id, {"content_version": "1"})
 

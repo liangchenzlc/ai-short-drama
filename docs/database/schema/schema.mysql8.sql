@@ -25,24 +25,54 @@ CREATE TABLE `users` (
   UNIQUE KEY `uk_users_username` (username)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
+CREATE TABLE `agent_memory_items` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `owner_user_id` BIGINT UNSIGNED NOT NULL,
+  `kind` VARCHAR(16) NOT NULL,
+  `memory_key` VARCHAR(160) COLLATE utf8mb4_0900_bin NOT NULL,
+  `title` VARCHAR(200) NOT NULL,
+  `aliases` JSON NOT NULL DEFAULT (JSON_ARRAY()),
+  `tags` JSON NOT NULL DEFAULT (JSON_ARRAY()),
+  `content` MEDIUMTEXT NOT NULL,
+  `search_text` MEDIUMTEXT NOT NULL,
+  `content_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `state` VARCHAR(16) NOT NULL DEFAULT 'active',
+  `origin` VARCHAR(16) NOT NULL DEFAULT 'explicit',
+  `pinned` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `last_user_edit_at` DATETIME(6) NULL,
+  `hit_count` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `last_used_at` DATETIME(6) NULL,
+  `create_key` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `create_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_agent_memory_arrays CHECK (JSON_TYPE(aliases) = 'ARRAY' AND JSON_TYPE(tags) = 'ARRAY'),
+  CONSTRAINT ck_agent_memory_create_pair CHECK ((create_key IS NULL) = (create_hash IS NULL)),
+  CONSTRAINT ck_agent_memory_kind CHECK (kind IN ('preference','correction','setting','decision','reference')),
+  CONSTRAINT ck_agent_memory_state CHECK (state IN ('active','forgotten','superseded') AND origin IN ('explicit','extracted')),
+  CONSTRAINT ck_agent_memory_values CHECK (content_version > 0 AND pinned IN (0,1) AND CHAR_LENGTH(TRIM(content)) > 0 AND CHAR_LENGTH(TRIM(title)) > 0),
+  CONSTRAINT fk_agent_memory_items_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_agent_memory_create` (owner_user_id, create_key),
+  UNIQUE KEY `uk_agent_memory_identity` (owner_user_id, kind, memory_key),
+  UNIQUE KEY `uk_agent_memory_owner` (id, owner_user_id),
+  KEY `idx_agent_memory_catalog` (`owner_user_id`, `state`, `updated_at`, `id`),
+  FULLTEXT KEY `idx_agent_memory_fulltext` (`search_text`) WITH PARSER `ngram`
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
 CREATE TABLE `agent_preferences` (
   `id` BIGINT UNSIGNED NOT NULL,
   `owner_user_id` BIGINT UNSIGNED NOT NULL,
   `media_generation_enabled` TINYINT UNSIGNED NOT NULL DEFAULT 1,
-  `policy_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  `workbench_enabled` TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  `long_term_memory_enabled` TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  `memory_generation` BIGINT UNSIGNED NOT NULL DEFAULT 0,
   `custom_instructions` MEDIUMTEXT NULL,
   `settings_version` BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  `model_call_limit` INT UNSIGNED NOT NULL DEFAULT 240,
-  `output_token_limit` INT UNSIGNED NOT NULL DEFAULT 2000000,
-  `subagent_max_concurrency` TINYINT UNSIGNED NOT NULL DEFAULT 3,
-  `default_media_limits` JSON NOT NULL DEFAULT (JSON_OBJECT()),
   `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`),
-  CONSTRAINT ck_agent_preferences_calls CHECK (model_call_limit BETWEEN 20 AND 2000),
-  CONSTRAINT ck_agent_preferences_concurrency CHECK (subagent_max_concurrency BETWEEN 1 AND 3),
   CONSTRAINT ck_agent_preferences_media_enabled CHECK (media_generation_enabled IN (0, 1)),
-  CONSTRAINT ck_agent_preferences_tokens CHECK (output_token_limit BETWEEN 100000 AND 20000000),
-  CONSTRAINT ck_agent_preferences_version CHECK (policy_version >= 0),
+  CONSTRAINT ck_agent_preferences_switches CHECK (workbench_enabled IN (0, 1) AND long_term_memory_enabled IN (0, 1)),
   CONSTRAINT fk_agent_preferences_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_agent_preferences_owner` (owner_user_id)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
@@ -79,6 +109,8 @@ CREATE TABLE `ai_model_configs` (
   `capability_cache` JSON NULL,
   `runtime_profile` JSON NULL,
   `runtime_credentials_cipher` MEDIUMTEXT NULL,
+  `create_key` VARCHAR(64) COLLATE utf8mb4_0900_bin NULL,
+  `create_hash` VARCHAR(64) COLLATE utf8mb4_0900_bin NULL,
   `id` BIGINT UNSIGNED NOT NULL COMMENT '应用雪花算法生成；稳定且不可变的记录标识',
   `service_type` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL COMMENT '文本 / 生图 / 生视频',
   `name` VARCHAR(120) NOT NULL COMMENT '配置显示名',
@@ -104,6 +136,7 @@ CREATE TABLE `ai_model_configs` (
   CONSTRAINT ck_ai_version CHECK (`row_version` > 0),
   CONSTRAINT fk_ai_model_configs_owner_user_id FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_ai_default_service` (owner_user_id, default_service_type),
+  UNIQUE KEY `uk_ai_model_create` (owner_user_id, create_key),
   KEY `idx_ai_type_available` (`service_type`, `is_deleted`, `enabled`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COMMENT='AI模型配置' COLLATE utf8mb4_0900_ai_ci;
 
@@ -245,16 +278,18 @@ CREATE TABLE `mcp_access_tokens` (
   `name` VARCHAR(80) NOT NULL,
   `token_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `token_hint` VARCHAR(24) NOT NULL,
-  `project_ids` JSON NOT NULL,
+  `create_key` VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `create_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   `tool_names` JSON NOT NULL,
   `expires_at` DATETIME(6) NULL,
   `allowed_ips` JSON NOT NULL,
   `created_at` DATETIME(6) NOT NULL,
   `deleted_at` DATETIME(6) NULL,
   PRIMARY KEY (`id`),
-  CONSTRAINT ck_mcp_tokens_scopes CHECK (JSON_TYPE(project_ids) = 'ARRAY' AND JSON_LENGTH(project_ids) > 0 AND JSON_TYPE(tool_names) = 'ARRAY' AND JSON_LENGTH(tool_names) > 0 AND JSON_TYPE(allowed_ips) = 'ARRAY'),
+  CONSTRAINT ck_mcp_tokens_scopes CHECK (JSON_TYPE(tool_names) = 'ARRAY' AND JSON_LENGTH(tool_names) > 0 AND JSON_TYPE(allowed_ips) = 'ARRAY'),
   CONSTRAINT fk_mcp_access_tokens_owner_user_id FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_mcp_access_tokens_token_hash` (token_hash),
+  UNIQUE KEY `uk_mcp_tokens_create` (owner_user_id, create_key),
   KEY `idx_mcp_tokens_owner` (`owner_user_id`, `deleted_at`, `id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
@@ -337,6 +372,50 @@ CREATE TABLE `agent_conversations` (
   KEY `idx_agent_conversations_project` (`project_id`, `owner_user_id`, `id`),
   KEY `idx_agent_conversations_project_chat` (`owner_user_id`, `project_id`, `scope_version`, `status`, `updated_at`, `id`),
   KEY `idx_agent_conversations_scope` (`owner_user_id`, `project_id`, `scope_version`, `stage`, `subject_type`, `subject_id`, `task_type`, `status`, `updated_at`, `id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE `agent_memory_forget_rules` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `owner_user_id` BIGINT UNSIGNED NOT NULL,
+  `memory_id` BIGINT UNSIGNED NOT NULL,
+  `kind` VARCHAR(16) NOT NULL,
+  `memory_key` VARCHAR(160) COLLATE utf8mb4_0900_bin NOT NULL,
+  `forget_version` BIGINT UNSIGNED NOT NULL,
+  `source_fingerprints` JSON NOT NULL DEFAULT (JSON_ARRAY()),
+  `active` TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `restored_at` DATETIME(6) NULL,
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_agent_memory_forget CHECK (forget_version > 0 AND active IN (0,1) AND JSON_TYPE(source_fingerprints) = 'ARRAY'),
+  CONSTRAINT fk_agent_memory_forget_item FOREIGN KEY (memory_id, owner_user_id) REFERENCES agent_memory_items (id, owner_user_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_agent_memory_forget_item` (memory_id),
+  KEY `idx_agent_memory_forget_identity` (`owner_user_id`, `kind`, `memory_key`, `active`)
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE `agent_memory_revisions` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `memory_id` BIGINT UNSIGNED NOT NULL,
+  `content_version` BIGINT UNSIGNED NOT NULL,
+  `change` VARCHAR(16) NOT NULL,
+  `snapshot` JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_agent_memory_revision CHECK (content_version > 0 AND `change` IN ('create','edit','forget','restore','extract','invalidate')),
+  CONSTRAINT ck_agent_memory_revision_snapshot CHECK (JSON_TYPE(snapshot) = 'OBJECT'),
+  CONSTRAINT fk_agent_memory_revisions_item FOREIGN KEY (memory_id) REFERENCES agent_memory_items (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_agent_memory_revision` (memory_id, content_version)
+) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
+
+CREATE TABLE `agent_memory_sources` (
+  `id` BIGINT UNSIGNED NOT NULL,
+  `memory_id` BIGINT UNSIGNED NOT NULL,
+  `content_version` BIGINT UNSIGNED NOT NULL,
+  `source_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  CONSTRAINT ck_agent_memory_source CHECK (content_version > 0),
+  CONSTRAINT fk_agent_memory_sources_item FOREIGN KEY (memory_id) REFERENCES agent_memory_items (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY `uk_agent_memory_source` (memory_id, content_version, source_hash)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `agent_skill_settings` (
@@ -828,48 +907,6 @@ CREATE TABLE `agent_conversation_summaries` (
   KEY `idx_agent_summaries_range` (`conversation_id`, `from_seq`, `to_seq`, `status`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
-CREATE TABLE `agent_memory_items` (
-  `id` BIGINT UNSIGNED NOT NULL,
-  `owner_user_id` BIGINT UNSIGNED NOT NULL,
-  `scope_type` VARCHAR(16) NOT NULL,
-  `scope_key` VARCHAR(128) NOT NULL,
-  `conversation_id` BIGINT UNSIGNED NULL,
-  `project_id` BIGINT UNSIGNED NULL,
-  `kind` VARCHAR(16) NOT NULL,
-  `memory_key` VARCHAR(160) COLLATE utf8mb4_0900_bin NOT NULL,
-  `title` VARCHAR(200) NOT NULL,
-  `aliases` JSON NOT NULL DEFAULT (JSON_ARRAY()),
-  `tags` JSON NOT NULL DEFAULT (JSON_ARRAY()),
-  `content` MEDIUMTEXT NOT NULL,
-  `search_text` MEDIUMTEXT NOT NULL,
-  `content_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
-  `state` VARCHAR(16) NOT NULL DEFAULT 'active',
-  `origin` VARCHAR(16) NOT NULL DEFAULT 'explicit',
-  `pinned` TINYINT UNSIGNED NOT NULL DEFAULT 0,
-  `last_user_edit_at` DATETIME(6) NULL,
-  `hit_count` BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  `last_used_at` DATETIME(6) NULL,
-  `create_key` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
-  `create_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
-  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  PRIMARY KEY (`id`),
-  CONSTRAINT ck_agent_memory_arrays CHECK (JSON_TYPE(aliases) = 'ARRAY' AND JSON_TYPE(tags) = 'ARRAY'),
-  CONSTRAINT ck_agent_memory_create_pair CHECK ((create_key IS NULL) = (create_hash IS NULL)),
-  CONSTRAINT ck_agent_memory_kind CHECK (kind IN ('preference','correction','setting','decision','reference')),
-  CONSTRAINT ck_agent_memory_scope CHECK ((scope_type = 'user' AND scope_key = 'user' AND conversation_id IS NULL AND project_id IS NULL) OR (scope_type = 'conversation' AND conversation_id IS NOT NULL AND project_id IS NULL AND scope_key = CONCAT(conversation_id)) OR (scope_type = 'project' AND project_id IS NOT NULL AND conversation_id IS NULL AND scope_key = CONCAT(project_id))),
-  CONSTRAINT ck_agent_memory_state CHECK (state IN ('active','forgotten','superseded') AND origin IN ('explicit','extracted')),
-  CONSTRAINT ck_agent_memory_values CHECK (content_version > 0 AND pinned IN (0,1) AND CHAR_LENGTH(TRIM(content)) > 0 AND CHAR_LENGTH(TRIM(title)) > 0),
-  CONSTRAINT fk_agent_memory_items_conversation FOREIGN KEY (conversation_id) REFERENCES agent_conversations (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_agent_memory_items_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_agent_memory_items_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_agent_memory_create` (owner_user_id, create_key),
-  UNIQUE KEY `uk_agent_memory_identity` (owner_user_id, scope_type, scope_key, kind, memory_key),
-  UNIQUE KEY `uk_agent_memory_owner` (id, owner_user_id),
-  KEY `idx_agent_memory_catalog` (`owner_user_id`, `state`, `scope_type`, `scope_key`, `pinned`, `id`),
-  FULLTEXT KEY `idx_agent_memory_fulltext` (`search_text`) WITH PARSER `ngram`
-) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
-
 CREATE TABLE `agent_tasks` (
   `id` BIGINT UNSIGNED NOT NULL,
   `conversation_id` BIGINT UNSIGNED NOT NULL,
@@ -884,11 +921,9 @@ CREATE TABLE `agent_tasks` (
   `applied_control_seq` BIGINT UNSIGNED NOT NULL DEFAULT 0,
   `control_state` VARCHAR(24) NOT NULL DEFAULT 'none',
   `execution_target` JSON NULL,
-  `memory_project_ids` JSON NOT NULL DEFAULT (JSON_ARRAY()),
   `context_snapshot` JSON NULL,
   `selected_skills` JSON NOT NULL DEFAULT (JSON_ARRAY()),
   `effective_state` JSON NOT NULL DEFAULT (JSON_OBJECT()),
-  `media_limits` JSON NOT NULL DEFAULT (JSON_OBJECT()),
   `media_usage` JSON NOT NULL DEFAULT (JSON_OBJECT()),
   `error` JSON NULL,
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -896,7 +931,7 @@ CREATE TABLE `agent_tasks` (
   PRIMARY KEY (`id`),
   CONSTRAINT ck_agent_tasks_control CHECK (control_state IN ('none','stop_pending','redirect_pending','delete_pending')),
   CONSTRAINT ck_agent_tasks_goal CHECK (CHAR_LENGTH(TRIM(goal)) > 0),
-  CONSTRAINT ck_agent_tasks_objects CHECK (JSON_TYPE(memory_project_ids) = 'ARRAY' AND JSON_TYPE(selected_skills) = 'ARRAY' AND JSON_TYPE(effective_state) = 'OBJECT' AND JSON_TYPE(media_limits) = 'OBJECT' AND JSON_TYPE(media_usage) = 'OBJECT'),
+  CONSTRAINT ck_agent_tasks_objects CHECK (JSON_TYPE(selected_skills) = 'ARRAY' AND JSON_TYPE(effective_state) = 'OBJECT' AND JSON_TYPE(media_usage) = 'OBJECT'),
   CONSTRAINT ck_agent_tasks_phase CHECK (phase IN ('deciding','tool_running','waiting_media','waiting_input','settling_result','reconciling','at_boundary','terminal')),
   CONSTRAINT ck_agent_tasks_status CHECK (status IN ('queued','running','waiting_media','waiting_input','succeeded','stopped','paused_error','paused_budget')),
   CONSTRAINT ck_agent_tasks_versions CHECK (row_version > 0 AND plan_revision > 0 AND input_revision >= applied_input_revision AND control_seq >= applied_control_seq),
@@ -1538,40 +1573,6 @@ CREATE TABLE `shot_videos` (
   KEY `idx_shot_videos_shot_id_project_id` (`shot_id`, `project_id`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARSET=utf8mb4 COMMENT='分镜视频' COLLATE utf8mb4_0900_ai_ci;
 
-CREATE TABLE `agent_memory_forget_rules` (
-  `id` BIGINT UNSIGNED NOT NULL,
-  `owner_user_id` BIGINT UNSIGNED NOT NULL,
-  `memory_id` BIGINT UNSIGNED NOT NULL,
-  `scope_type` VARCHAR(16) NOT NULL,
-  `scope_key` VARCHAR(128) NOT NULL,
-  `kind` VARCHAR(16) NOT NULL,
-  `memory_key` VARCHAR(160) COLLATE utf8mb4_0900_bin NOT NULL,
-  `forget_version` BIGINT UNSIGNED NOT NULL,
-  `source_fingerprints` JSON NOT NULL DEFAULT (JSON_ARRAY()),
-  `active` TINYINT UNSIGNED NOT NULL DEFAULT 1,
-  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `restored_at` DATETIME(6) NULL,
-  PRIMARY KEY (`id`),
-  CONSTRAINT ck_agent_memory_forget CHECK (forget_version > 0 AND active IN (0,1) AND JSON_TYPE(source_fingerprints) = 'ARRAY'),
-  CONSTRAINT fk_agent_memory_forget_item FOREIGN KEY (memory_id, owner_user_id) REFERENCES agent_memory_items (id, owner_user_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_agent_memory_forget_item` (memory_id),
-  KEY `idx_agent_memory_forget_identity` (`owner_user_id`, `scope_type`, `scope_key`, `kind`, `memory_key`, `active`)
-) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
-
-CREATE TABLE `agent_memory_revisions` (
-  `id` BIGINT UNSIGNED NOT NULL,
-  `memory_id` BIGINT UNSIGNED NOT NULL,
-  `content_version` BIGINT UNSIGNED NOT NULL,
-  `change` VARCHAR(16) NOT NULL,
-  `snapshot` JSON NOT NULL DEFAULT (JSON_OBJECT()),
-  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  PRIMARY KEY (`id`),
-  CONSTRAINT ck_agent_memory_revision CHECK (content_version > 0 AND `change` IN ('create','edit','forget','restore','extract','invalidate')),
-  CONSTRAINT ck_agent_memory_revision_snapshot CHECK (JSON_TYPE(snapshot) = 'OBJECT'),
-  CONSTRAINT fk_agent_memory_revisions_item FOREIGN KEY (memory_id) REFERENCES agent_memory_items (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_agent_memory_revision` (memory_id, content_version)
-) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
-
 CREATE TABLE `agent_messages` (
   `id` BIGINT UNSIGNED NOT NULL,
   `conversation_id` BIGINT UNSIGNED NOT NULL,
@@ -1580,6 +1581,7 @@ CREATE TABLE `agent_messages` (
   `item_seq` BIGINT UNSIGNED NULL,
   `row_version` BIGINT UNSIGNED NOT NULL DEFAULT 1,
   `role` VARCHAR(16) COLLATE utf8mb4_0900_bin NOT NULL,
+  `memory_capture_generation` BIGINT UNSIGNED NULL,
   `kind` VARCHAR(16) NOT NULL DEFAULT 'reply',
   `content` MEDIUMTEXT NOT NULL DEFAULT (''),
   `references` JSON NOT NULL DEFAULT (JSON_ARRAY()),
@@ -2396,25 +2398,6 @@ CREATE TABLE `agent_attachments` (
   CONSTRAINT fk_agent_attachment_owner FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY `uk_agent_attachment_create` (conversation_id, create_key),
   KEY `idx_agent_attachment_conversation` (`conversation_id`, `id`)
-) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
-
-CREATE TABLE `agent_memory_sources` (
-  `id` BIGINT UNSIGNED NOT NULL,
-  `memory_id` BIGINT UNSIGNED NOT NULL,
-  `content_version` BIGINT UNSIGNED NOT NULL,
-  `conversation_id` BIGINT UNSIGNED NOT NULL,
-  `message_id` BIGINT UNSIGNED NULL,
-  `source_seq` BIGINT UNSIGNED NOT NULL,
-  `source_hash` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  `subject_keys` JSON NOT NULL DEFAULT (JSON_ARRAY()),
-  `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  PRIMARY KEY (`id`),
-  CONSTRAINT ck_agent_memory_source CHECK (content_version > 0 AND source_seq > 0 AND JSON_TYPE(subject_keys) = 'ARRAY'),
-  CONSTRAINT fk_agent_memory_sources_conversation FOREIGN KEY (conversation_id) REFERENCES agent_conversations (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_agent_memory_sources_item FOREIGN KEY (memory_id) REFERENCES agent_memory_items (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_agent_memory_sources_message FOREIGN KEY (message_id, conversation_id) REFERENCES agent_messages (id, conversation_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY `uk_agent_memory_source` (memory_id, content_version, conversation_id, source_seq),
-  KEY `idx_agent_memory_sources_conversation` (`conversation_id`, `memory_id`, `content_version`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE `agent_runs` (

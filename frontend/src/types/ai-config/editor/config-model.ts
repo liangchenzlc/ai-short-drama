@@ -15,32 +15,14 @@ export interface AiConfig {
   headers: ConfigHeaderReadDto[];
   credentialSource: 'manual' | 'beefapi';
   runtimeProfile: AiRuntimeProfileDto | null;
+  interfaceType: string;
   rowVersion: string;
   isDefault: boolean;
 }
 
 export interface RuntimeDraft {
-  enabled: boolean;
-  apiFormat: 'openai' | 'gemini' | 'claude';
+  apiFormat: 'auto' | 'openai' | 'gemini' | 'claude';
   protocol: string;
-  referenceAssetOrigin: string;
-  capabilityConfig: string;
-  defaultOptions: string;
-  logicalCapabilitySpec: string;
-  logicalCapabilityProfiles: string;
-  videoCapabilitiesVersion: string;
-  concurrencyLimit: string;
-  runningHubKind: 'workflow' | 'app';
-  runningHubId: string;
-  runningHubTitle: string;
-  runningHubFields: string;
-  runningHubJson: string;
-}
-
-export interface HeaderDraft {
-  name: string;
-  value: string;
-  hasValue: boolean;
 }
 
 export type ConfigDraft = Pick<AiConfig, 'name' | 'provider' | 'serviceType' | 'baseUrl' | 'modelKey' | 'enabled'> & {
@@ -48,7 +30,5 @@ export type ConfigDraft = Pick<AiConfig, 'name' | 'provider' | 'serviceType' | '
   clearApiKey: boolean;
   secretKey: string;
   clearSecretKey: boolean;
-  headers: HeaderDraft[];
-  headersChanged: boolean;
   runtime: RuntimeDraft;
 };

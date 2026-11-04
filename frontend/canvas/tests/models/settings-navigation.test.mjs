@@ -10,17 +10,17 @@ test("宿主模型导航安全返回、保存等待、冲突与画布切换保�
         await t.test("返回值仅接受画布编辑器路径，深链不接受任意URL", async () => {
             assert.equal(canvasSettingsReturnTo(), "/canvas-app/canvas/current-canvas");
             for (const path of ["https://evil.test", "//evil.test", "/projects/1", "/canvas-app/settings", "/canvas-app/canvas/..", "/canvas-app/canvas/%2F%2Fevil.test", "/canvas-app/canvas/%5Cevil", "/canvas-app/canvas/%252F", "/canvas-app/canvas/%00", "/canvas-app/canvas/%ZZ"]) assert.equal(canvasSettingsReturnTo(path), undefined);
-            assert.equal(settingsPath(), "/ai_config?return_to=%2Fcanvas-app%2Fcanvas%2Fcurrent-canvas");
+            assert.equal(settingsPath(), "/settings/models/text?return_to=%2Fcanvas-app%2Fcanvas%2Fcurrent-canvas");
             assert.equal(isModelSettingsPath("/settings?section=channels"), true);
-            assert.equal(isModelSettingsPath("/ai_config"), true);
+            assert.equal(isModelSettingsPath("/settings/models/text"), true);
             assert.equal(isModelSettingsPath("/assets"), false);
             window.location.pathname = "/canvas-app/settings";
             window.location.search = "?return_to=https%3A%2F%2Fevil.test";
-            assert.equal(settingsPath(), "/ai_config");
+            assert.equal(settingsPath(), "/settings/models/text");
             assert.equal(await navigateToSettings(), true);
-            assert.equal(destinations.pop(), "/ai_config");
+            assert.equal(destinations.pop(), "/settings/models/text");
             window.location.search = "?return_to=%2Fcanvas-app%2Fcanvas%2Ffrom-link";
-            assert.equal(settingsPath(), "/ai_config?return_to=%2Fcanvas-app%2Fcanvas%2Ffrom-link");
+            assert.equal(settingsPath(), "/settings/models/text?return_to=%2Fcanvas-app%2Fcanvas%2Ffrom-link");
             window.location.pathname = "/canvas-app/canvas/current-canvas";
             window.location.search = "";
         });

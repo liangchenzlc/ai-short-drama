@@ -1,5 +1,5 @@
 import type { AgentEvent } from '@host/types/assistant/engine';
-import type { DeltaChunk } from '@host/types/assistant/runtime/agent-events';
+import type { DeltaChunk, StreamingTextPart } from '@host/types/assistant/runtime/agent-events';
 /** Preserve partial frames across arbitrary UTF-8 network chunks. */
 export function takeSseFrames(buffer: string): {
   frames: string[];
@@ -49,15 +49,35 @@ export function addDelta(chunks: DeltaChunk[], event: AgentEvent): DeltaChunk[] 
   )
     return chunks;
   if (chunks.some((chunk) => chunk.turn === turn_id && chunk.offset === offset)) return chunks;
-  return [...chunks, { turn: turn_id, offset: offset as number, text: delta }];
+  return [...chunks, { turn: turn_id, offset: offset as number, seq: event.seq, text: delta }];
 }
-export function latestDelta(chunks: DeltaChunk[]): string {
-  const turn = chunks.at(-1)?.turn;
-  return chunks
-    .filter((chunk) => chunk.turn === turn)
-    .sort((a, b) => a.offset - b.offset)
-    .map((chunk) => chunk.text)
-    .join('');
+/** 缺口回放到水位前保留已显示正文，接上后用新回放替换，避免保留已失效片段。 */
+export function recoverDeltaReplay(
+  held: Record<string, DeltaChunk[]>, replay: Record<string, DeltaChunk[]>, cursor: number, watermark: number,
+): Record<string, DeltaChunk[]> {
+  if (cursor >= watermark) return replay;
+  const merged = { ...held };
+  for (const [runId, chunks] of Object.entries(replay)) {
+    const old = held[runId] ?? [];
+    const keys = new Set(old.map((chunk) => `${chunk.turn}:${chunk.offset}`));
+    merged[runId] = [...old, ...chunks.filter((chunk) => !keys.has(`${chunk.turn}:${chunk.offset}`))];
+  }
+  return merged;
+}
+export function streamingParts(chunks: DeltaChunk[]): StreamingTextPart[] {
+  const turns = new Map<string, DeltaChunk[]>();
+  for (const chunk of chunks) {
+    const items = turns.get(chunk.turn);
+    if (items) items.push(chunk);
+    else turns.set(chunk.turn, [chunk]);
+  }
+  return [...turns.entries()]
+    .map(([turn, items]) => ({
+      turn,
+      seq: Math.min(...items.map((item) => item.seq)),
+      text: [...items].sort((left, right) => left.offset - right.offset).map((item) => item.text).join(''),
+    }))
+    .sort((left, right) => left.seq - right.seq);
 }
 
 export const modelCanCollaborate = (

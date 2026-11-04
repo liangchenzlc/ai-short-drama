@@ -6,12 +6,12 @@
 
 | 方法 | 路径 | 契约 |
 | --- | --- | --- |
-| GET | `/assistant/settings` | 读取本人设置、默认指令及部署上限；从未保存时 `settings_version="0"` |
-| PATCH | `/assistant/settings` | 完整替换下列设置并 CAS；成功版本加一，过期 409，超出部署上限 422 |
+| GET | `/assistant/settings` | 读取本人四项偏好、默认指令和统一版本；从未保存时 `settings_version="0"`，读取不建行 |
+| PATCH | `/assistant/settings` | 部分更新并 CAS；必传 `settings_version` 及至少一个修改字段；成功版本加一，过期 409 |
 
-PATCH 所有字段必填：`custom_instructions` 为最多 16000 字符或 `null`（使用默认指令）；`model_call_limit` 为 20–2000；`output_token_limit` 为 100000–20000000；`subagent_max_concurrency` 为 1–3；`default_media_limits` 为图片／视频／音频数量对象；`settings_version` 为非负十进制版本。读取另返回 `default_instructions` 和 `deployment_limits`，不能提交这两个只读字段。未保存的推荐值是 240 次／2000000 输出 token／并发 3，按当前部署调用与输出上限收紧。
+PATCH 可提交 `custom_instructions`（最多 16000 字符，空白或 `null` 使用默认指令）、`workbench_enabled`、`media_generation_enabled`、`long_term_memory_enabled`（后三项为严格布尔值）。`settings_version` 为非负十进制版本；响应另有只读 `default_instructions`。三项开关默认开启；工作台关闭时保留媒体偏好，实际媒体能力由两者共同决定。用户调用额度、输出 Token 额度、子任务并发和默认媒体数量已从接口与数据库移除，旧字段返回 422。
 
-设置保存在 `agent_preferences`，与实时媒体开关共表但不共用版本；实时开关仍用 `policy_version`，不受本 PATCH 覆盖。新 Run 冻结设置版本、有效指令、完整系统提示词、提示词／工具目录版本与 Skill 元数据目录，继续原 Task 创建新 Run 时读取最新设置。Task 媒体数量只在创建时冻结：整个 `media_limits` 省略才继承默认，提交部分对象则整体覆盖，未给子字段为 `null`。后改默认值不会改变旧 Task 配额。向已有 `task_id` 补充或续聊时必须省略 `media_limits`，显式携带即返回 409 `assistant_task_media_limits_frozen`；结果未知的重试仍复用原始请求体和幂等键。
+四项偏好共用 `agent_preferences.settings_version`，原独立媒体策略接口及 `policy_version` 已退役。前端仅提交修改字段，文字输入 600ms 后串行同步，开关立即同步；409 与结果未知均保留草稿并先读取服务端核对。新 Run 冻结有效指令、设置版本、完整系统提示词、提示词／工具目录版本及 Skill 目录；模型调用、输出 Token 和子任务并发由内部运行预算提供。继续原 Task 的新 Run 读取最新设置，实时能力仍在工具与外发边界核验。Task 只保留真实 `media_usage` 统计，不限制用户媒体数量；未知结果重试继续使用原请求体及幂等键。
 
 新图通过唯一 `build_agent` 创建真实 `create_agent`，Context、框架摘要、最多 16 项工具选择、当前范围 Skill 依赖及调用限制使用公开 middleware API。主模型、selector、summary 共用受保护模型工厂与父 Run 的持久预算；SDK 重试关闭，未知发送不重发。凭据、连接、SDK、transport 与回调不进入图 checkpoint。活动 Skill 从真实 Operation 恢复完整调用组，每条结果保留自己的来源和 activation 身份；同组已撤回成员只保留无正文的真实终态回执。来源遗忘撤回正文与摘要保留资格。同 Task 新 Run 使用统一的 TaskInput 稳定消息身份合并历史，旧输入与触发输入各保留一次并维持原顺序。响应截断或工具参数无效仍先结算可靠供应商用量；没有可靠输出用量时保留预占，只有确认未受理才释放。
 
@@ -20,6 +20,13 @@ PATCH 所有字段必填：`custom_instructions` 为最多 16000 字符或 `null
 前端只保存和重放待确认的停止控制；旧 `resume` / `redirect` 本地记录会显示无法恢复并保留原记录，不会自动重发。停止请求的相同幂等键先查回执，即使停止开关随后关闭，也能核对已经受理的原请求。
 
 ## 正式图运行与停止恢复（2026-10-30）
+
+
+`MessageRead.interrupted` 与 `message.created.interrupted` 表示在完成前中断的正文，原 `text_parts` 继续提供轮次和事件身份。失败／取消结算持租约围栏合并已保存 delta，不截尾4000字、不重复已落库轮次；内部引用为 `{type:"interrupted_response",turn_id:"..."}`。该消息用于展示，普通历史投影不注入其正文，记忆整理仅取得固定不完整占位。
+
+`RunRead.stopping` 在running且已持久停止／删除控制时为true，表示正在收尾。活动执行约1秒读取轻量控制状态；续租仍按原频率并受真实有效期约束，短暂查询异常不等于用户停止。停止不能保证供应商未受理、无费用或已提交原生媒体被撤销；取消信号到达后，底层同步IO仍可能收尾，stopping不承诺即时Run终态。
+
+`run.error` 提供稳定 `code`、统一安全 `message`；受理不明时另带 `accepted_unknown:true`，false不额外输出。`agent_execution_error` 是不可自动恢复的执行错误；`agent_checkpoint_codec_unsupported`、`agent_checkpoint_corrupt`、`agent_checkpoint_version_mismatch` 分别表示未知格式、损坏与版本围栏不一致，保留原状态供核对，不强制重放。模型成功与轨迹归档可用性分开结算，资源 `available:false` 不代表模型调用失败。
 
 HTTP 受理继续返回 Task／Run，正式 Worker 领取冻结执行快照后一次完成图循环。工具目录使用 Run 的 permitted_tool_names，Skill 激活／释放与正文只写当前 scope 的 graph state；Task.selected_skills 为用户手选冻结元数据。正常答复直接写为 kind=reply 的助手消息，不增加验收模型 Turn。
 
@@ -31,7 +38,7 @@ HTTP 受理继续返回 Task／Run，正式 Worker 领取冻结执行快照后�
 
 完整 astream／checkpoint／pending writes 退出后才释放 Run 租约。恢复区分过期运行、等待和终态；未就绪 interrupt 不执行，已完成 checkpoint 不重复请求模型。已提交工具收据与 Command 可重放；模型 sent 或缺少可确认 graph 回执的崩溃窗口记 unknown，失败原因 agent_acceptance_unknown，不盲重发。父 Run 预算与框架本地上限触顶均进入 paused_budget。
 
-停止／暂停后普通消息在同 Task 创建新 Run，读最新助手设置并保留 Task 媒体数量；通过前一 Run 真实成功创建收据冻结明确主体身份续接成果，不向工具开放 sibling／所有 Task 操作。纯讨论重答禁用工具、排除未来消息并原位替换旧答复。图片只水合读取后的下一主模型请求，持久账本／typed checkpoint 只留引用；遗忘撤回包含旧正文的消息、摘要与后续推导。
+停止／暂停后普通消息在同 Task 创建新 Run，读最新助手设置并保留 Task 已生成成果与用量；通过前一 Run 真实成功创建收据冻结明确主体身份续接成果，不向工具开放 sibling／所有 Task 操作。纯讨论重答禁用工具、排除未来消息并原位替换旧答复。图片只水合读取后的下一主模型请求，持久账本／typed checkpoint 只留引用；遗忘撤回包含旧正文的消息、摘要与后续推导。
 
 新工具 schema 的唯一来源是 agent/tools/registry.py 及各 ToolSpec。业务结果等待、ask_user、代码／文件与原生 task 已真实接线；前端展示简洁工具／Skill 行、实际公开思考、子轨迹、输入框上方的问答面板和业务成果操作。执行实现与历史边界见[框架运行机制](../instruction/AI创作助手Harness运行机制.md)。
 
@@ -42,13 +49,15 @@ HTTP 受理继续返回 Task／Run，正式 Worker 领取冻结执行快照后�
 | GET | `/assistant/conversations/{conversation_id}/runs/{run_id}/trace` | Cookie 验权；`before_seq` 为正整数，可省略；`limit` 默认50、范围1–100；返回 `items/has_more/next_before_seq/snapshot_cursor` |
 | GET | 上述路径 `/{block_id}/resources/{resource_id}` | 仅解析此块已保存引用；返回 `resource_id/name/content/offset/length/url`，正文与临时读取地址按引用类型二选一；无权限、已删除或伪造身份404 |
 
-`TaskRuntimeState` 新增 `trace_blocks/has_more_trace/trace_before_seq`；块与 `snapshot_cursor` 在同一短事务读取。前端装快照后从该水位续传；恢复正文使用既有 `resume_cursor`，旧事件不得倒退轨迹。分页按块开始 seq 倒序，每块取水位内最近快照并合并其后增量，不建立第二张 trace 表。
+`TaskRuntimeState` 新增 `trace_blocks/has_more_trace/trace_before_seq`；块与 `snapshot_cursor` 在同一短事务读取。`MessageRead` 返回 `run_id/event_seq/text_parts`：消息事件水位来自同一 AgentEvent 序列；每个文本段含 `turn_id/event_seq/content`，只在已保存 delta 连续且合并正文与持久消息完全一致时返回。工具活动关联其真实 AgentTurn，并带首次 `started_seq`、最近 `updated_seq` 与终态 `result_seq`。前端装快照后从该水位续传；恢复正文使用既有 `resume_cursor`，旧事件不得倒退轨迹。分页按块开始 seq 倒序，每块取水位内最近快照并合并其后增量，不建立第二张 trace 表。
 
-快照的轨迹页覆盖全会话，`runs` 仅属于该次 Task 页。前端用快照边界初始化新发现的 Run，后续分别保存各 Run 返回的 `next_before_seq/has_more`，不能合并为共享游标。已知 Run 读完后，“载入更早”沿既有 `before_task_id` 分页发现旧 Run；Task 页与各 Run 历史全部读完才隐藏入口。普通刷新不重置已读进度；流缺口 resync 保留已读块，从新快照重建 Run 页和 Task 发现游标，以补回旧 Task 中的新 Run，重建前的迟到历史响应不得推进新游标。历史读取失权后清空会话状态并停止发送。
+快照的轨迹页覆盖全会话，`runs` 仅属于该次 Task 页。前端用快照边界初始化新发现的 Run，后续分别保存各 Run 返回的 `next_before_seq/has_more`，不能合并为共享游标。已知 Run 读完后，“载入更早”沿既有 `before_task_id` 分页发现旧 Run；Task 页与各 Run 历史全部读完才隐藏入口。普通刷新不重置已读进度；流缺口 resync 保留已读块，从新快照重建 Run 页和 Task 发现游标，以补回旧 Task 中的新 Run，重建前的迟到历史响应不得推进新游标。历史读取失权后清空会话状态并停止发送，并说明服务端历史仍保留。正文按AgentTurn去重，用户回答／补充消息切分助手段；resync重建期间保留已显示正文，再按原水位、turn及UTF-8 offset合并。Operation历史沿现有after_id分页保存每Task已读水位，普通快照仍合并返回操作和active_operation；连续SSE负责已缓存尾部状态／回执，resync重建重新核对缺口，不每次刷新盲扫全部Task。限页快照仅为实际返回的Operation、active_operation及trace块建立覆盖水位；历史页不推进全局消息水位。未被快照覆盖实体的迟到事件仍进入版本／终态合并，已被更新快照覆盖的旧事件不回退状态。助手仍按用户边界分段；前一用户补载可改变段key，展开选择由当前会话按持久活动／块身份恢复，并在切会话或访问结束时清理。
 
-AgentEvent 的 `seq/event_type/run_id/created_at` 信封不变。`trace.block` 携 block_id、十进制 block_version、execution_scope_id、parent_call_id、tool_call_id／subtask_id／model_call_id、kind、source、visibility、状态、时间、耗时、错误、channels、resources 和有界 result_refs。kind 为 reasoning／tool／skill／subtask／sandbox／wait；公开模型来源为 assistant／selector／summary，工具来源为 business／runtime。SDK 框架节点名、私有 state、签名和加密思考不输出。模型未提供公开 reasoning 就不生成思考块，普通正文继续使用 assistant.delta 和持久 Message。
+AgentEvent 的 `seq/event_type/run_id/created_at` 信封不变。`trace.block` 携 block_id、十进制 block_version、execution_scope_id、parent_call_id、tool_call_id／subtask_id／model_call_id／turn_id、kind、source、`trace_visibility`、状态、开始／更新／结果事件序号、时间、耗时、错误、channels、resources 和有界 result_refs。kind 为 reasoning／tool／skill／subtask／sandbox／wait；公开模型来源为 assistant／selector／summary，工具来源为 business／runtime。SDK 框架节点名、私有 state、签名和加密思考不输出。模型未提供公开 reasoning 就不生成思考块，普通正文继续使用 assistant.delta 和持久 Message。
 
-`trace.delta` 携同一块身份和版本、channel、offset、delta、created_at；offset 是该通道的 UTF-8 字节位置。每个 flush 同时落有界块快照，块预览从0开始、每通道最多16 KiB；前端按提供的位置排序去重，以 BigInt 比较版本，快照补齐缺口时立即重放可连续的已保存增量，终态不能退回 running。stdout／stderr 各自捕获预览、总量和归档，不共用模型合并输出的剩余额度。超限正文和日志沿原受管 MinIO 归档，每通道单次归档最多4 MiB；资源返回 byte_size、total_bytes、truncated、available，超过归档上限会明确标记截断。工具输入、输出正文只放有界通道及受控引用，原 OperationDetail 继续读取脱敏业务结果。
+`trace.delta` 携同一块身份和版本、channel、offset、delta、created_at；offset 是该通道的 UTF-8 字节位置。reasoning每批按2048字符拆分的delta共用即将持久化的block_version，批末只写一次最新有界块快照；块预览从0开始、每通道最多16 KiB。前端按提供的位置排序去重，以 BigInt 比较版本，快照补齐缺口时立即重放可连续的已保存增量，终态不能退回 running。stdout／stderr 各自捕获预览、总量和归档，不共用模型合并输出的剩余额度。超限正文和日志沿原受管 MinIO 归档，每通道单次归档最多4 MiB；资源返回 byte_size、total_bytes、truncated、available，超过归档上限会明确标记截断。工具输入、输出正文只放有界通道及受控引用，原 OperationDetail 继续读取脱敏业务结果。
+
+会话SSE每页满100项时立即续读，不足页且有输出时等待200ms；后续空页按400ms、800ms、1秒退避，初始空页等待1秒。每次短Session读取仍重新鉴权，cursor、Last-Event-ID、resync和断连检查语义不变。该节奏仅描述服务端读取，不承诺供应商首字时间或网络端到端时延。
 
 OperationRead、轨迹块、快照和详情共用 `action/target/title`；target 包含 kind／id／display_name／version／path，资源读取另保存本次 offset／length。整份公开展示及资源名称采用相同脱敏规则，私有冻结绑定保留真实路径用于验权读取。各工具 SPEC.presentation 从冻结事实生成展示字段；前端仅使用 action、target.display_name 和状态，例如“加载 Skill《雨夜方法》 已完成”，不显示 title 内版本、参数、结果 JSON、路径、耗时或详情展开入口。command 目标仅显示操作，不暴露命令参数。子轨迹使用同样简洁行；真实公开 reasoning 仍可展开，独立业务成果保留查看和撤销。失败仍保留已确定目标。模型调用块绑定真实 ledger 身份；Worker 恢复将旧未完成思考块标为 interrupted，新模型请求另建块，子范围父调用从持久 scope 关联。
 
@@ -56,7 +65,7 @@ OperationRead、轨迹块、快照和详情共用 `action/target/title`；target
 
 ## 同步子任务
 
-内部 `task` 沿上游 TaskToolSchema 接受 `description/subagent_type`，只允许 `workbench-task`。仅一层，冻结并发值为1–3；父子共用 Run、租约、模型预算与 Task 媒体数量，不新增子会话、后台子任务接口或 MCP 暴露。`step.started/step.updated/step.finished` 带 `scope_id`，父委派等待由实际叶子等待派生，wait_state 仍只有 generation／user_input。
+内部 `task` 沿上游 TaskToolSchema 接受 `description/subagent_type`，只允许 `workbench-task`。仅一层，冻结并发值为1–3；父子共用 Run、租约及内部模型预算，媒体用量按真实受理收据统计，不新增子会话、后台子任务接口或 MCP 暴露。工具调用和活动块都带真实 `turn_id`，子范围仍由 `parent_call_id/scope_id` 确定归属；`step.started/step.updated/step.finished` 带 `scope_id`，父委派等待由实际叶子等待派生，wait_state 仍只有 generation／user_input。
 
 description 末尾可附唯一的 `workbench-inputs` JSON 围栏块：只允许 `subjects`（subject_key 或 kind:id 列表）、`resources`（完整 ResourceRef 列表）、`generation_ids`（生成ID字符串列表）及 `script`（布尔）；每列表最多16项，块最多32768字符，description最多40000字符。声明与父当前真实授权求交并冻结到父委派 Operation.result，恢复使用同一交接，不从 description 推导 scope 身份。生成结果读取须同时交接生成身份及所属主体。未交接的父对象、剧本、文件、收据和兄弟成果不能读取；子任务可在原授权目标新建。子图不提供 task、会话历史或全局记忆工具，Skill 依赖不能重新加入这些能力。
 
@@ -112,6 +121,8 @@ Harness 处于 `stopped/paused_error/paused_budget` 时，向原任务发送普�
 
 ## 问题与生成等待
 
+`RunRead.wait_summary` 按真实未消费等待提供 `pending_questions`、`media_batches`、`generation_tasks`、`since`、`elapsed_seconds` 和安全 `message`，无等待时为 null；父级状态枚举不代替混合等待计数。排队项的 `waiting_reason` 说明前序任务目标，`blocking_run_id`／`blocking_task_id` 指向实际阻塞项，ID仍为十进制字符串。等待不强制过期；可回答问题、等待媒体或通过原任务停止入口结束等待。
+
 `runtime__ask_user` 只在缺少必要信息或选择时创建结构化问题；`runtime__wait_generation` 等待本次范围内已受理的原生媒体任务。提交立即返回身份，普通工具可继续执行；等待不再次提交。等待多个任务时全部进入 succeeded／failed／cancelled 才恢复，结果保留各项成功引用及失败码，由主模型判断后续动作。
 
 全部可执行分支退出后，有未答问题则 Run／Task 为 `waiting_input`，只有生成等待时 Run 为 `waiting_generation`、Task 为 `waiting_media`；其他分支仍执行时保持 `running`。Operation 分别为 `waiting_input`／`waiting_media`，ToolCall 分别为 `waiting_input`／`waiting_generation`。两者复用 Operation.wait_state 和真实 MySQL 图持久 interrupt；最终结果从数据库读取，不信任通知 payload。每次恢复按 interrupt id 定向，沿原 Run、scope、图线程及预算继续。重复通知和迟到完成不复活终态 Run。
@@ -138,16 +149,17 @@ pending_questions每项包含operation_id、run_id、scope_id、parent_tool_call
 
 ## 时间线与可见性
 
-消息与任务操作共用会话级 `item_seq`：`agent_messages` 与 `agent_operations` 在写入时领取同一发号器，客户端按该数值升序合并即可还原「叙述 → 步骤 → 叙述 → 产物」的真实顺序。历史会话已按 `(created_at, id)` 回填，缺失时前端回退到消息 `seq`。
+`item_seq` 仍供持久消息与操作分页使用，但助手时间线以会话级 `AgentEvent.seq` 排序。消息文本段锚定其 AgentTurn 首个 delta 的事件序号；工具活动锚定 operation 开始事件，结果保存终态事件序号。历史回复只有在流式 delta 连续且与持久正文一致时恢复段位置，否则显示完整消息并使用可确认的事件位置，不从时间戳或小数偏移猜测交错顺序。
 
 | 字段 | 位置 | 含义 |
 | --- | --- | --- |
-| `item_seq` | 消息、操作、`step.started`/`step.finished` 事件 | 会话内单调序号，唯一的排序依据 |
+| `event_seq` | 消息与活动投影 | 会话级 `AgentEvent.seq`；正文段锚定首个连续 delta，活动锚定开始事件，结果保留终态事件。它是跨实体展示排序依据 |
+| `item_seq` | 消息与操作 | 写入时的兼容展示序号；助手内容段不再用它与时间戳猜测交错顺序 |
 | `kind` | 消息 | `reply` 正式回复、`narration` 工具前的过程叙述、`notice` 失败或迟到候选提示、`tool_answer` 定向问题的真实用户答案 |
-| `visibility` | 操作 | `silent` 不渲染、`step` 折叠成步骤组、`artifact` 独立产物卡 |
+| `trace_visibility` | ToolSpec、操作与轨迹块 | `ToolTraceVisibility.VISIBLE` 进入过程段；`HIDDEN` 只省略过程段，执行、后端状态、事件游标与成果仍保留 |
 | `label` | 操作 | 面向用户的一行文案，前端不再维护工具名映射 |
 
-`silent` 工具（方法检索、记忆读写、读回执、读生成策略）不得出现在界面；方法读取（`load_skill` / `read_skill_resource`）属于 `step`，在步骤组内折叠展示，连续同名合并为一行。原始回执、工具参数与返回值一律不进入展示层，审计数据仍保留在库内。
+可见性由后端 `ToolTraceVisibility` 枚举和工具注册配置单点决定。内部方法检索、记忆读写、读回执及读生成策略配置为 `HIDDEN`；其他工具显式或默认 `VISIBLE`，未配置与未知工具均可见。显隐仅作用于前端过程投影；工具仍执行，AgentOperation、AgentEvent、工具结果关联及 SSE 水位均照常保存。业务成果与工具行显隐分离，关联成果在过程折叠后继续显示。前端按 Run/AgentTurn 将消息文本段与活动段按 `event_seq` 排列，工具开始时固定位置，结果和状态原位更新。正在流式输出、执行活动或等待关联生成任务时过程组展开且不能收起；全部结束后默认折叠，历史回复默认折叠。普通工具行显示结构化动作、对象、必要业务摘要、状态及脱敏错误；不显示原始参数、JSON、版本、私有路径和耗时。只有本身带步骤的 sandbox 活动可展开执行输出。
 
 ## 上下文与用量
 
@@ -176,7 +188,6 @@ pending_questions每项包含operation_id、run_id、scope_id、parent_tool_call
 | 方法 | 路径 | 请求或响应 |
 | --- | --- | --- |
 | GET | `/status` | `enabled/schema_ready`，不调用模型 |
-| GET / PATCH | `/generation-policy` | 本人媒体总开关；PATCH `{media_generation_enabled,policy_version}`，返回策略和媒体能力目录，见下文 |
 | GET / POST | `/global/conversations` | GET 按本人分页，支持 `project_id/query` 并校验项目所有权；POST `{title?,project_id?}`，前端必传当前项目，必带 `Idempotency-Key`；省略项目保留旧账号会话兼容，不接受 archived |
 | GET / PATCH | `/global/conversations/{id}` | 详情包含可空 `project_id`；PATCH `{row_version,title}`，不允许改绑项目 |
 | GET | `/global/history` | 本人 V0/V1/V2 历史分页，支持 `project_id` 过滤，前端只读，不继承旧授权 |
@@ -202,7 +213,7 @@ pending_questions每项包含operation_id、run_id、scope_id、parent_tool_call
 
 `state` 默认取最近 20 个任务、50 条消息及最多 200 个操作，使用分页补齐，不能将有界快照当成全部历史。轨迹由操作账本和类型化事件生成，不根据回复文本猜测执行。
 
-首次从快照的 `resume_cursor` 订阅，保留活动回复尚未持久成消息的 delta；轨迹按 `snapshot_cursor` 和实体版本去重。普通断线从已消费游标继续，不发送新消息或重做工具。V3 游标超出当前水位、缺少连续事件或末尾缺失时返回 `agent_event_resync_required`（首次读取为 HTTP 409，已开始流为 `event: resync`）；客户端重新读取一致快照、清空在途文本片段并从其恢复游标补流，保留已结算轨迹。前端发现序号缺口同样重新同步。
+首次从快照的 `resume_cursor` 订阅，保留活动回复尚未持久成消息的 delta；轨迹按实际返回实体的快照覆盖水位和版本去重。正文流式片段以 `turn_id` 和 UTF-8 byte `offset` 合并，`message.created/message.updated` 携带精确文本段；相同正文片段完成持久化后替换在途片段，避免重复或跳位。普通断线从已消费游标继续，不发送新消息或重做工具。V3 游标超出当前水位、缺少连续事件或末尾缺失时返回 `agent_event_resync_required`（首次读取为 HTTP 409，已开始流为 `event: resync`）；客户端保留已显示正文及已结算轨迹，重新读取一致快照并从其恢复游标补流，按轮次及字节位置合并重放。前端发现序号缺口同样重新同步。
 
 流中的暂时数据库等故障发送 `event: retry` 后关闭连接，客户端保留私人历史并按退避重连；只有认证／权限／会话访问终止或功能关闭才发送 `event: access-ended`，清空私人状态并停止自动重连。收到删除事件也立即结束访问。迟到快照不能覆盖更新水位、控制回执或访问终止状态；历史任务分页按实体版本合并，保留当前较高水位，不能因旧分页水位丢弃整页。
 
@@ -234,6 +245,8 @@ pending_questions每项包含operation_id、run_id、scope_id、parent_tool_call
 
 ## 任务创作方法与资料
 
+同scope同轮并行加载按合并活动集核对最多8个／8000正文估算tokens；手选优先，Agent不能自动释放manual。既有工具错误 `assistant_skill_budget.details` 提供 `active_count`、`max_active`、`body_tokens`、`max_body_tokens`、`requested_body_tokens` 和 `releasable:[{activation_id,source:'auto',body_tokens}]`，报告的是实际已提交用量。mode／policy变化时先失活不兼容方法并撤回正文及派生完整组，内部当前激活投影可携issue供模型纠正；不新增HTTP参数或终态协议。缺档／非法正文保持稳定错误码及安全身份日志。
+
 > 2026-10-30：本节旧引擎／逐轮 Harness 描述保留历史；当前停止、输入水位、scope Skill 与成果续接以上方“正式图运行与停止恢复”为准。
 
 V3 注册三个只读方法工具，与既有工具合计二十三项；它们不授予作品正文、写入、模型配置或媒体生成权限。
@@ -254,15 +267,15 @@ V3 注册三个只读方法工具，与既有工具合计二十三项；它们�
 
 任务和操作快照增加 `skill_activations`：每项有 `activation_id/skill_id/name/content_version/package_checksum/source/purpose/active/plan_revision/created_at/issue`。`source` 为 `manual/auto`；`issue` 非空表示当前缺少能力。任务包含激活历史；操作只记录领取时实际可用的方法版本，后来的改向不改写旧步骤。字段不含正文、资料内容或存储位置；正文仅在按权限读取的工具结果中返回。`step.started/step.finished` 携带同名方法摘要，ThoughtChain 展示来源、固定版本、用途、资料路径和参与步骤。
 
-## 助手媒体总开关
+## 助手能力与媒体策略
 
-AI 配置的“创作助手”标签保存一个账号级 `media_generation_enabled`，默认开启。没有偏好行时 GET 返回 `true` 和 `policy_version:"0"`，不因读取补建记录；首次保存版本为 `"1"`。PATCH 要求严格布尔值与当前十进制策略版本，版本不符返回 409；相同版本保存相同值不推进版本。迁移不重置已保存的关闭设置。此开关不授予任务范围、作品读取或媒体生成授权，也不限制文本讨论、提示词或结构工具。
+配置 → AI 创作助手 → 通用设置使用「工作台操作」父开关，开启后显示一颗「允许生成图片、视频、音频」开关。关闭工作台操作后仍允许读取用户主动引用的资料并分析，但禁止修改工作台及生成媒体。媒体开关隐藏时保留偏好；MCP 使用令牌自身的独立授权，不读取内置助手开关。
 
-返回字段为 `media_generation_enabled/policy_version/configured_media/available_media`。`configured_media` 只表示本人对应类型有未删除且启用的模型配置，不包含端点、凭据或供应商参数；开关开启时 `available_media` 返回这些已接通的类型，关闭时为空。具体执行仍由目标模式、真实用户指令和模型能力限定：标准模式开放素材／分镜图片、普通／原生有声分镜视频、角色音色及台词配音，画布开放图片、视频和音频节点。
+内部只读 `get_generation_policy` 返回 `workbench_enabled/long_term_memory_enabled/media_generation_enabled/settings_version/configured_media/available_media`；其中媒体开启状态为工作台与媒体偏好的有效合取，`available_media` 还要求本人已配置启用的相应模型。该工具不是 HTTP 设置接口，也不能修改开关。标准模式与画布继续受各自模型能力、真实执行目标及用户授权范围限制。
 
-`get_generation_policy` 是无参数只读工具；Agent 不能修改设置。每次决策准备读取实时策略，最终模型发送前再次核对版本；变化使未发送的准备输入作废重装，不增加决策调用次数。媒体在本地受理、Worker 领取与最终供应商提交前核验实时开关及本人权限；尚未外发的项返回 `assistant_media_disabled` 并释放预占。已经外发的任务继续查询、保存及保护性回填，关闭开关不伪记为取消。待停止／改向／删除不撤销当前完整工具的生成与回填许可。
+每项工具通过 `ToolSpec.required_capability` 声明所需能力；目录投影、真实工具执行、业务受理与最终供应商外发共用能力判断，覆盖主助手、子任务和间接调用。设置版本在模型发送前变化时重装尚未发送的输入，不增加真实调用次数。关闭权限后阻止未外发请求；已经外发的请求仍沿原收据查询、归档与结算。自动采用单独复核 `workbench_write`：只关闭媒体生成不影响已发产物采用，关闭工作台则仅保存候选，画布私人产物照常交付。MCP 在受理、外发及自动采用时检查来源令牌有效性和对应工具权限，已外发后撤销不阻止归档，但不再自动修改工作台。已合法采用的事实与审计保留；用户手动采用不读取助手开关。
 
-设置页面显式保存，409 保留本次选择并要求读取最新状态后核对；保存结果不明同样先读状态，不自动重提或覆盖。版本始终保留字符串精度。
+助手三页均静默自动保存，不显示保存、放弃修改或正常「已保存」。异常通过统一反馈入口核对与重试，ID 和版本始终保留字符串精度。
 
 ## 标准图片批次生成
 
@@ -422,15 +435,13 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
     }]
   },
   "execution_target": null,
-  "memory_project_ids": [],
-  "media_limits": {"images": null, "videos": null, "audio": null},
   "attachment_ids": [],
   "skills": [],
   "video_audio": "include"
 }
 ```
 
-已有任务的补充可使用 `task_id`；不能同时设置 `task_id` 和 `new_task=true`。项目 V3 的新任务在幂等回执查找之后补入所属项目的 `execution_target/memory_project_ids`，默认值不改变原请求哈希；创作模式可省略目标，画布模式新任务须指定真实当前画布。补充从任务及待应用输入恢复原目标，拒绝跨项目、跨模式、改绑原画布或指定其他项目记忆。旧 `project_id=NULL` 会话保持旧兼容语义。引用不自动授予写入，设置目标不读取其他正文，新任务不继承原任务主体，不自动载入小说、剧本或整图。
+已有任务的补充可使用 `task_id`；不能同时设置 `task_id` 和 `new_task=true`。项目 V3 新任务在幂等回执查找之后补入所属项目的 `execution_target`，不改变原请求哈希；创作模式可省略目标，画布新任务须指定真实当前画布。补充从任务及待应用输入恢复原目标，拒绝跨项目、跨模式或改绑原画布。引用不自动授予写入，设置目标不读取其他正文，新任务不继承原任务主体，不自动载入小说、剧本或整图。长期记忆始终归账号，不使用项目或会话范围参数。
 
 `subject_selection` 是本条输入希望保留的完整引用集合：`retain_keys` 仅保留本任务已存在的冻结快照；`subjects` 新选入或主动刷新指定主体；二者合计最多 16 项。省略整个字段沿用当前选择，空集合明确移除全部。`expected_input_revision` 必须等于当前任务输入水位（新任务为 `"0"`），并核对待应用输入，防止另一标签页的选择被静默覆盖；同幂等键重放先返回原回执。刷新不能同时 retain 同一主体。引用与其他补充同事务保存，在完整工具边界应用；停止时只保留输入，继续后才应用。
 
@@ -444,7 +455,7 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
 
 发送时使用 `subject_selection`，每个主体按自身版本校验；数据库 ID 不转数值，节点与画布键保留原字符串。服务端只读取已保存内容，不接受客户端正文或图文档；失效的新引用整条输入拒绝。当前页面选入／发送前等待来源编辑保存成功，409、未确认恢复及等待期间的新编辑保留草稿并阻止发送。
 
-执行目标为 `{mode:'standard',project_id}` 或 `{mode:'infinite_canvas',project_id,canvas_id}`，仅声明任务目标，不自动授予任意业务操作。项目 V3 自动将 `memory_project_ids` 限定为所属项目；旧未绑定会话兼容原先最多 16 项的显式范围。`media_limits.images/videos/audio` 沿用默认规则，分别约束标准图片／普通及原生有声分镜视频／角色音色／旧声音台词配音及画布三类媒体。
+执行目标为 `{mode:'standard',project_id}` 或 `{mode:'infinite_canvas',project_id,canvas_id}`，仅声明任务目标，不自动授予任意业务操作。`memory_project_ids` 与 `media_limits` 已从消息和任务 DTO 移除，传入返回 422；没有媒体数量配置或默认数量继承。实际媒体受理数量保留在 `media_usage`，原生生成任务、系统预算与并发保护继续生效。
 
 前端任务设置和上下文管理入口及弹窗已移除，新任务使用当前项目／画布目标，补充不发送新目标；受理不明仍逐字重放原请求及原幂等键。引用通过 `@`、当前主体和画布选择添加，已有引用标签支持移除、主动刷新和来源定位，来源版本与任务输入水位校验保留。添加图标只列图片、文本、当前画布和资产库，创作模式禁用当前画布项；原视频／音频附件 API 为兼容保留。
 
@@ -454,11 +465,11 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
 
 ## 记忆管理与按需读取
 
-当前前端不提供记忆管理、抽取澄清、维护状态和摘要详情入口，不展示内部记忆工具步骤；记忆、阶段摘要及来源保护继续在后台运行。以下路由为内部与兼容契约，不代表存在用户管理页面。
+配置 → AI 创作助手 → 长期记忆提供开关及管理入口。管理使用 560px 右侧抽屉，服务端搜索、分页并按更新时间倒序；只展示当前账号的记忆，不展示作品／会话筛选与来源，不提供新建。标题与内容停止输入 600ms 后自动提交，不显示保存按钮或正常成功提示。冲突保留草稿供选择，受理不明先 GET 核对原字段。后台抽取澄清、维护状态和摘要详情仍无前端入口。
 
 | 方法 | 路径 | 契约 |
 | --- | --- | --- |
-| GET / POST | `/memory` | GET 分页，支持 conversation_id/project_id/query/include_forgotten；POST 必带幂等键 |
+| GET / POST | `/memory` | GET 账号分页，支持 query/offset/limit/include_forgotten，按 updated_at DESC、id DESC；POST 必带幂等键 |
 | GET / PATCH | `/memory/{id}` | 当前条目；PATCH 必带 content_version，仅更新标题、正文、别名、标签和置顶 |
 | DELETE | `/memory/{id}` | `{content_version}`，遗忘，立即停止自动使用 |
 | POST | `/memory/{id}/restore` | `{content_version}`，用户明确重新记住 |
@@ -469,19 +480,23 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
 | POST | `/memory/jobs/{id}/clarifications/{index}` | 必带幂等键，`{content_version,choice:'keep_current'|'use_candidate'}`，按当前版本和真实来源确认 |
 | POST | `/memory/jobs/{id}/retry` | 必带幂等键，`{message_version}`；仅明确失败可创建独立后继作业，201 返回 `MemoryJobRead` |
 
-创建字段为 `scope_type/kind/memory_key/title/content`，可带 aliases/tags/pinned。user 范围不带 conversation_id/project_id；conversation 只带 conversation_id；project 只带 project_id。可选 `source_conversation_id/source_message_ids` 保存真实消息来源，不能借来源扩大范围。kind 为 preference/correction/setting/decision/reference。别名和记忆键规范化；正文最多 12000 字。编辑、遗忘与恢复均按内容版本校验，409 保留草稿，不能自动覆盖。
+创建字段为 `kind/memory_key/title/content`，可带 aliases/tags/pinned。记忆只归当前账号，不接受 scope_type/project_id/conversation_id/source_conversation_id/source_message_ids；返回值与修订快照也不带来源关系。kind 为 preference/correction/setting/decision/reference。别名和记忆键规范化；标题最多 200 字，正文最多 12000 字且非空。编辑、遗忘与恢复均按 content_version 校验，409 保留草稿，不能自动覆盖。DELETE 请求体为 `{content_version}`，返回状态 forgotten 的完整记忆条目。
 
-管理列表始终含账号记忆，指定 conversation_id/project_id 后叠加相应范围。模型工具的范围更窄：只允许本人账号、当前会话及本任务明确绑定的作品。目录包含真实 ID 与版本，正文通过 read_memory 按需读取。现有工具为 `memory_catalog/search_memory/read_memory/read_conversation_history`，关键词查询使用精确键、别名、标签、MySQL FULLTEXT ngram 和有界短词兜底。单次正文及 Run 总读取量受限，返回分页或继续位置；调用失败回传明确工具结果，允许模型随后继续回答。
+管理列表与记忆模型工具均仅限当前账号。目录包含真实 ID 与版本，正文通过 read_memory 按需读取。现有工具为 `memory_catalog/search_memory/read_memory/read_conversation_history`，关键词查询使用精确键、别名、标签、MySQL FULLTEXT ngram 和有界短词兜底。单次正文及 Run 总读取量受限，返回分页或继续位置；调用失败回传明确工具结果，允许模型随后继续回答。read_conversation_history 继续遵循当前任务范围，属于运行上下文，不是账号记忆关联。
 
-显式写工具为 `remember_memory/update_memory/forget_memory/restore_memory`，只在已应用用户输入含对应直接指令时开放。支持“记住：内容”“记住账号偏好：内容”“记住当前作品：内容”“修改记忆“标题”为：内容”“忘掉记忆“标题””“重新记住记忆“标题””；正文可有多行，一条输入不混合多个记忆命令。新记忆默认当前会话，作品记忆须只明确绑定一个作品。修改／遗忘／恢复按允许范围内的精确标题、键或 ID 匹配唯一条目；不明确、重名、引用示例、疑问或否定先澄清，不猜对象。
+显式写工具为 `remember_memory/update_memory/forget_memory/restore_memory`。新条目统一归账号；工具须引用当前任务已应用、且属于当前记忆开关代次的真实用户输入。记忆来源校验发生在运行现场，长期记忆实体及版本只保留不可逆的内容指纹，不保存来源会话、消息身份或主体关联。
 
-工具须引用本任务真实已应用用户消息的 ID 与原文 hash；正文和作用域由服务端解析，不能传自造正文或授权标志。修改等操作还校验真实内容版本及指令时间，旧指令不能覆盖后来的编辑。重复调用／执行尝试返回原操作效果，不追加重复版本；旧记住指令不能换标题绕过遗忘，恢复须新的明确指令。回执只给身份、范围、状态与版本，正文仍按需读取。已成功显式处理的来源不会再被后台抽取成另一条记忆。当前是有界直接指令通道，不能表述为支持任意自然语言消歧。
+修改等操作校验真实内容版本；重复调用／执行尝试返回原操作效果，不追加重复版本。账号级 kind + memory_key 与来源指纹阻止旧输入或迟到抽取把遗忘内容换标题写回，恢复须新的明确用户意图。回执只给身份、状态与版本，正文仍按需读取。已成功显式处理的输入不会再被后台抽取成另一条记忆。
 
-后台摘要／抽取使用同一 Agent 队列及独立持久作业。Run 终态同事务安排增量整理，来源 hash、连续处理水位、摘要代次及 CAS 保护迟到结果。网络调用在事务外；完整原始回执可离线重放，已发送无回执的受理不明任务不自动重发；明确限流最多三次。遗忘、纠正会失效相应摘要及在途模型输入，旧来源不能换标题重新生成事实。
+后台摘要／抽取使用同一 Agent 队列及独立持久作业。Run 终态同事务安排增量整理，来源 hash、连续处理水位、摘要代次及 CAS 保护迟到结果。网络调用在事务外；完整原始回执可离线重放，已发送无回执的受理不明任务不自动重发；明确限流最多三次。记忆修改、遗忘及开关变化失效后续请求中的缓存记忆及其派生注入，不删除真实当前对话、摘要或历史；删除对话也不删除账号记忆。
 
-同范围、类型和键的不同抽取内容保留为待澄清候选，不自动覆盖。选择候选会追加记忆版本和来源；来源已被纠正或遗忘时不显示候选正文，也不允许借澄清恢复。选择请求同键同体重放，旧版本或不同选择返回冲突。明确失败的整理记录可手动重试，保留原记录及回执且最多创建一个后继；`retry_job_id` 指向后继。受理不明／发送中、来源或模型配置已变化时禁止重试；丢响应后先刷新读取后继，不换键重复提交。
+长期记忆默认开启。关闭后 Agent 不召回、不读写、不后台抽取，已有记忆仍可人工管理；必要对话历史与摘要继续工作。开关变化递增 memory_generation，新消息受理记录 memory_capture_generation，关闭期间为 null。抽取作业冻结代次，在排队、外发及落库处复核；旧代次及不合格输入推进处理水位，重新开启也不补抽。自动提炼只收录跨作品的偏好和长期事实，不提升角色、剧情或临时任务细节。作业仍保留自己的会话输入与审计，但记忆条目不关联这些作业。
 
-整理作业 `status` 支持 `pending/running/succeeded/failed/stale/cancelled/abandoned`。凭据／配置及明确鉴权失败直接 `failed`；明确限流，以及抽取任务的已持久化无效输出，最多三次发送。只有这类可重试抽取耗尽后成为 `abandoned`，允许抽取水位越过，不扩大手动重试入口（仍仅接受 `failed`）。一般失败及受理不明不推进水位，后者不自动重发；此处次数不限制创作 Task 的累计执行。
+同账号、类型和键的不同抽取内容保留为待澄清候选，不自动覆盖。选择候选会追加记忆版本和内容指纹；来源已被纠正或遗忘时不显示候选正文，也不允许借澄清恢复。选择请求同键同体重放，旧版本或不同选择返回冲突。明确失败的整理记录可手动重试，保留原记录及回执且最多创建一个后继；`retry_job_id` 指向后继。受理不明／发送中、来源或模型配置已变化时禁止重试；丢响应后先刷新读取后继，不换键重复提交。
+
+原模型确已失效或当前来源已编辑／遗忘时，同会话有效新Run结束后的维护调度可从原连续位置安全重建，保留旧记录及来源审计。普通另选模型不替换仍有效的旧作业；`sending/unknown`不走自动重发。48KB作为多来源分组目标，单条完整来源超出该目标时仍经实际模型预算准入，不截断原文冒充覆盖。
+
+整理作业 `status` 支持 `pending/running/succeeded/failed/stale/cancelled/abandoned`。凭据／配置及明确鉴权失败直接 `failed`；明确限流，以及抽取／摘要任务已持久化完整回执后的内容校验失败，最多三次发送。内容纠正保留来源覆盖约束、各次回执及实际发送次数，安全失败说明沿原 `error.message` 返回。只有可重试抽取耗尽后成为 `abandoned`，允许抽取水位越过；摘要耗尽仍为 `failed`，不扩大手动重试入口（仍仅接受 `failed`）。一般失败及受理不明不推进水位，后者不自动重发；此处次数不限制创作 Task 的累计执行。
 
 模型输入在冻结及最终发送前检查总预算，纳入任务、Skill、工具、历史和待回传工具结果；已完整表示的近期用户输入不重复装配。Harness 默认平台窗口为 65536 tokens，可使用有效的[模型容量声明](agent.md#模型选择与运行反馈)，平台上限 262144；预留输出（最多 8192，且不超过窗口八分之一）、工具结果 4096 和安全余量 2048，近期完整工具组配额随容量缩小。使用 JSON UTF-8 字节／3 及媒体估算，不是供应商 tokenizer；实际输入和缓存用量另存 Turn／Run usage，不将声明或估算当作供应商窗口实测。超限且有有效的任务约束整理在途时，保留原输入并等待作业；没有可推进作业或整理失败时进入 `paused_budget`，保留明确约束及未闭合工具配对，不发送请求、不增加调用数。
 
@@ -489,9 +504,11 @@ AI 配置的“创作助手”标签保存一个账号级 `media_generation_enab
 
 约束整理在领取、外发、结算及注入前核对整个原始前缀的版本、内容哈希、应用及遗忘状态，并用父作业身份和覆盖修订做 CAS；新增补充不使旧前缀失效，纠正或遗忘会停止使用旧事实。网络调用不持数据库事务，完成整理只更新约束状态及行版本，不改变停止状态、控制序号、目标、主体、Skill 或工具权限。写入目录仍从真实原始用户指令生成，整理内容不能扩权。硬预算不裁剪工具调用／回执；SDK 历史中只将已压缩的原始任务提示替换为约束引用，保留其他用户内容、媒体及完整工具配对。失败重试沿用原来源及模型，`sending/unknown` 仍禁止重发。结构与来源校验不等于真实模型约束保真质量验收。
 
-阶段摘要最多 24 条事实、估算 5000 tokens。新消息用 `source_message_ids` 引用，旧事实通过 `prior_fact_indexes` 和服务端固定的 `source_summary_id` 指向上一摘要；旧摘要与区间来源保留，模型只接收上一阶段的有界事实正文和索引。必须覆盖旧事实及新增已应用用户来源，不能把助手提议升级成用户事实或无回执的完成结果；主体限制随引用合并。管理详情可逐阶段回查；纠正／遗忘会使受影响摘要链失效。来源链有界不等于摘要语义质量、真实长期成本及召回效果已验收。
+阶段摘要最多 24 条事实、估算 5000 tokens。新消息用 `source_message_ids` 引用，旧事实通过 `prior_fact_indexes` 和服务端固定的 `source_summary_id` 指向上一摘要；旧摘要与区间来源保留，模型只接收上一阶段的有界事实正文和索引。必须覆盖旧事实及新增已应用用户来源，不能把助手提议升级成用户事实或无回执的完成结果；主体限制随引用合并。内部详情可逐阶段回查；修改对话历史会失效对应摘要，账号记忆的编辑与删除不改写对话摘要。来源链有界不等于摘要语义质量、真实长期成本及召回效果已验收。
 
-遗忘与删除原始消息是不同操作。普通遗忘保留来源及版本供明确恢复，不声称物理擦除原文。
+正式图初始化使用触发消息之前的合格阶段摘要及覆盖水位后的历史，摘要事实携来源身份继续接受权限与撤回检查；历史重答不得读到未来摘要。剩余历史确实无法在有界装配中读取时返回稳定维护状态错误，不静默丢掉最早消息；实际容量仍由正式模型上下文预算判断。
+
+遗忘与删除原始消息是不同操作。普通遗忘保留记忆版本及内容指纹供明确恢复，不声称物理擦除对话原文。
 
 ## 删除与记忆保护
 

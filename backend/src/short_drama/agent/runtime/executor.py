@@ -8,6 +8,8 @@ from langchain.agents.middleware import ModelCallLimitMiddleware
 from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from short_drama.agent.core import ENGINE_VERSION
 from short_drama.agent.core.access import LeaseLost
@@ -23,7 +25,7 @@ from short_drama.agent.runtime.agent import (
 from short_drama.agent.runtime.checkpointer import MySQLCheckpointSaver
 from short_drama.agent.runtime.context import CHILD_EXCLUDED_TOOLS, RuntimeContext
 from short_drama.agent.runtime.events import AgentEventAdapter
-from short_drama.agent.runtime.lease import run_with_lease
+from short_drama.agent.runtime.lease import LeaseRenewalUnavailable, run_with_lease
 from short_drama.agent.runtime.middleware import (
     ContextMiddleware,
     ExecutionMiddleware,
@@ -43,6 +45,18 @@ from short_drama.service.assistant.execution.scope import AgentExecutionScopeSer
 from short_drama.service.assistant.execution.waiting import GenerationWaitService
 
 logger = logging.getLogger(__name__)
+
+
+def recoverable_persistence_error(error: Exception) -> bool:
+    # 仅连接/锁等暂态故障可继续同一检查点；SQL契约错误和普通代码异常重跑仍会失败。
+    return isinstance(error, (LeaseRenewalUnavailable, PoolTimeoutError)) or (
+        isinstance(error, DBAPIError)
+        and (
+            error.connection_invalidated
+            or bool(error.orig.args)
+            and error.orig.args[0] in {1040, 1205, 1213, 2002, 2003, 2006, 2013}
+        )
+    )
 
 
 async def stream_run(
@@ -106,6 +120,11 @@ class AgentRuntime:
                 status="failed",
                 error={
                     "code": error.code,
+                    **(
+                        {"accepted_unknown": True}
+                        if getattr(error, "accepted_unknown", False)
+                        else {}
+                    ),
                     **({"context_budget": facts} if facts is not None else {}),
                 },
             )
@@ -115,8 +134,11 @@ class AgentRuntime:
                     "finish", claim, status="failed", error={"code": "invalid_agent_tool_selection"}
                 )
                 return
-            logger.exception("agent_graph_interrupted", extra={"run_id": claim.run_id})
-            raise RuntimeError("Agent graph interrupted; durable recovery required") from None
+            if recoverable_persistence_error(error):
+                logger.exception("agent_graph_interrupted", extra={"run_id": claim.run_id})
+                raise RuntimeError("Agent graph interrupted; durable recovery required") from None
+            logger.exception("agent_graph_failed", extra={"run_id": claim.run_id})
+            self._service("finish", claim, status="failed", error={"code": "agent_execution_error"})
         finally:
             cleanup_run(self.factory, self.settings, claim.run_id)
 
@@ -261,14 +283,30 @@ class AgentRuntime:
             if not isinstance(message, AIMessage) or message.tool_calls or not message.text.strip():
                 raise AgentGatewayError("empty_agent_response")
             await asyncio.to_thread(
-                self._service, "finish", claim, status="succeeded", content=message.text
+                self._service,
+                "finish",
+                claim,
+                status="succeeded",
+                content=message.text,
+                model_call_id=message.response_metadata.get("protected_usage", {}).get(
+                    "model_call_id"
+                ),
             )
 
         try:
+
+            async def renew():
+                return await asyncio.to_thread(self._service, "renew", claim)
+
+            async def control():
+                return await asyncio.to_thread(self._service, "execution_active", claim)
+
             await run_with_lease(
                 deliver(),
-                renew=lambda: self._service("renew", claim),
+                renew=renew,
                 interval=max(0.1, self.settings.agent_lease_seconds / 3),
+                lease_until=claim.lease_until,
+                control=control,
                 sandbox=context.sandbox,
             )
         finally:

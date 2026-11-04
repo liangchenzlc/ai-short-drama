@@ -217,8 +217,6 @@ def test_child_selector_keeps_scoped_goal_through_summaries_and_withholds_forgot
                     session,
                     1,
                     MemoryCreate(
-                        scope_type="conversation",
-                        conversation_id=conversation.id,
                         kind="decision",
                         memory_key="child-goal-origin",
                         title="撤回委派来源",
@@ -572,17 +570,14 @@ def submit_asset_call(flow, body, factory):
 
 
 @pytest.mark.parametrize("parallel_children", [False, True])
-def test_scopes_share_media_cap_from_native_admission_receipts(flow, parallel_children):
+def test_scopes_keep_native_admission_receipts_without_a_user_media_cap(flow, parallel_children):
     from short_drama.domain import AsyncTask
     from short_drama.domain.assistant.operations.media import AgentMediaRequest
-    from short_drama.domain.assistant.tasks.task import AgentTask
     from tests.integration.standard.assistant.test_generation_waiting import media_task
 
     workspace, accepted = media_task(flow)
     factory, settings, _ = workspace
-    with factory.begin() as session:
-        task = session.get(AgentTask, accepted.task.id)
-        task.media_limits = {**task.media_limits, "images": 1}
+    child_rounds = {}
 
     def parent(body, number):
         if parallel_children:
@@ -597,10 +592,11 @@ def test_scopes_share_media_cap_from_native_admission_receipts(flow, parallel_ch
             return submit_asset_call(flow, body, factory)
         return calls(delegation("media")) if number == 3 else {"text": "受理数量已核对"}
 
-    def child(_name, body):
-        if body["messages"][-1]["role"] != "tool":
+    def child(name, body):
+        child_rounds[name] = child_rounds.get(name, 0) + 1
+        if child_rounds[name] == 1:
             return create_asset_call(str(flow.project.id), "子生成")
-        if body["messages"][-1]["tool_call_id"] == "create":
+        if child_rounds[name] == 2:
             return submit_asset_call(flow, body, factory)
         return {"text": "核对子任务受理"}
 
@@ -609,16 +605,15 @@ def test_scopes_share_media_cap_from_native_admission_receipts(flow, parallel_ch
     with factory() as session:
         run = session.get(AgentRun, accepted.run.id)
         assert run.status == "succeeded", run.error
-        assert len(session.scalars(select(AsyncTask)).all()) == 1
+        assert len(session.scalars(select(AsyncTask)).all()) == 2
         assert not session.scalars(select(AgentMediaRequest)).all()
         submissions = session.scalars(
             select(AgentOperation).where(
                 AgentOperation.tool_name == "workbench__submit_generation_batch"
             )
         ).all()
-        assert {row.status for row in submissions} == {"succeeded", "failed"}
-        failed = next(row for row in submissions if row.status == "failed")
-        assert failed.error["code"] == "assistant_media_limit"
+        assert len(submissions) == 2 and all(row.status == "succeeded" for row in submissions)
+        assert sum(item["count"] for row in submissions for item in row.result["items"]) == 2
 
 
 def test_mixed_child_waits_restore_frozen_handoff_and_do_not_rerun_completed_siblings(flow):

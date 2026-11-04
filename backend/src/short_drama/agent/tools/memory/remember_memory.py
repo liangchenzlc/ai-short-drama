@@ -12,7 +12,7 @@ def invoke_locked(
 
 TOOL = create_runtime_tool(
     "runtime__remember_memory",
-    "保存有真实用户来源的记忆，选择获准作用域；来源必须是本任务已应用消息。",
+    "保存用户明确表达的账号长期偏好；来源必须是本任务已应用的用户消息。",
     RememberMemory,
     invoke_locked,
 )
@@ -22,6 +22,7 @@ SPEC = ToolSpec(
     args_schema=TOOL.input_model,
     handler=TOOL,
     effect="write",
+    required_capability="memory_write",
     source="runtime",
     modes=frozenset(set()),
 )

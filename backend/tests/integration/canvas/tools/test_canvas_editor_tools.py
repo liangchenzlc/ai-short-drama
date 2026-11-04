@@ -313,6 +313,7 @@ def tool_seed(runtime, *, image=False):
     client, user, project, path, request = seed(runtime.app, "editor_tool_author")
     saved = client.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "name": "本人编辑器工具模型",
             "service_type": "text",

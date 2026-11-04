@@ -28,8 +28,7 @@ def _guard_memory_write(session, entity, actor, new):
         if item.owner_user_id != actor.user_id:
             raise NotFound("记忆不存在")
         if name == "agent_memory_forget_rules" and any(
-            getattr(entity, field) != getattr(item, field)
-            for field in ("scope_type", "scope_key", "kind", "memory_key")
+            getattr(entity, field) != getattr(item, field) for field in ("kind", "memory_key")
         ):
             raise NotFound("遗忘规则不属于此记忆")
     if getattr(entity, "conversation_id", None) is not None:
@@ -38,10 +37,6 @@ def _guard_memory_write(session, entity, actor, new):
             raise NotFound("记忆来源会话不存在")
     if getattr(entity, "project_id", None) is not None:
         require_project(session, entity.project_id)
-    if name == "agent_memory_sources" and entity.message_id is not None:
-        message = _agent_parent(session, "agent_messages", entity.message_id)
-        if message.conversation_id != entity.conversation_id or message.seq != entity.source_seq:
-            raise NotFound("记忆来源不属于此会话")
     if name == "agent_memory_jobs" and entity.run_id is not None:
         run = _agent_parent(session, "agent_runs", entity.run_id)
         if run.conversation_id != entity.conversation_id:
@@ -50,8 +45,6 @@ def _guard_memory_write(session, entity, actor, new):
     frozen = {
         "owner_user_id",
         "memory_id",
-        "scope_type",
-        "scope_key",
         "conversation_id",
         "project_id",
         "memory_key",

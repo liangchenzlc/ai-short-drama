@@ -195,8 +195,8 @@ class AgentModelService(BaseService):
                     AIModelConfig.service_type == "text",
                     AIModelConfig.enabled == 1,
                     AIModelConfig.is_deleted == 0,
+                    AIModelConfig.is_default == 1,
                 )
-                .order_by(AIModelConfig.is_default.desc(), AIModelConfig.id)
                 .limit(1)
             )
         if identifier is None:

@@ -209,18 +209,19 @@ def test_release_keeps_only_eligible_answer_sources_through_summary_and_reload(
             activations["old"] = tool_result(body, "load")["activation_id"]
             if forgotten:
                 from tests.integration.standard.assistant.test_assistant_memory import (
+                    create_sourced_memory,
                     memory,
                     service,
                 )
 
                 with factory() as session:
                     manager = service(session)
-                    item = manager.create_item(
+                    item = create_sourced_memory(
+                        manager,
                         memory(
                             source_conversation_id=conversation.id,
                             source_message_ids=[receipt.answer_message_id],
                         ),
-                        "forget-answer-source",
                     )
                     manager.forget_item(item.id, {"content_version": "1"})
             return {
@@ -546,15 +547,19 @@ def test_current_run_sources_survive_summary_and_worker_rebuild_without_reviving
     before_resume = len(observed)
     receipt = answer(factory, settings, question_id, values={"ending": ANSWER})
     if withdraw_trigger:
-        from tests.integration.standard.assistant.test_assistant_memory import memory, service
+        from tests.integration.standard.assistant.test_assistant_memory import (
+            create_sourced_memory,
+            memory,
+            service,
+        )
 
         with factory() as session:
             manager = service(session)
-            item = manager.create_item(
+            item = create_sourced_memory(
+                manager,
                 memory(
                     source_conversation_id=conversation.id, source_message_ids=[accepted.message.id]
                 ),
-                "forget-current-run-trigger",
             )
             manager.forget_item(item.id, {"content_version": "1"})
     resumed = RuntimeTransport(

@@ -137,6 +137,7 @@ def test_model_test_reads_saved_host_key_headers_and_ignores_forged_draft(identi
     body = request()
     saved = client.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "service_type": "text",
             "name": "已保存模型",
@@ -210,6 +211,7 @@ def test_host_model_test_accepts_exact_readonly_projection_and_rejects_other_use
     client, _ = account(identity_app, "model_test_host")
     created = client.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "service_type": "text",
             "name": "宿主文本模型",
@@ -238,6 +240,53 @@ def test_host_model_test_accepts_exact_readonly_projection_and_rejects_other_use
     altered["channel"]["baseUrl"] = "https://different.example/v1"
     altered["clientOperationId"] = uuid4().hex
     assert create(client, altered).status_code == 409
+
+
+@pytest.mark.parametrize(
+    "kind,protocol,model,adapter",
+    [
+        ("text", "openai-response", "gpt-test", "openai_responses.v1"),
+        ("image", "gemini-image", "gemini-3.1-flash-lite-image", "gemini_images.v1"),
+        ("video", "minimax-video", "MiniMax-H3", "minimax_video.v2"),
+        ("video", "kling-video", "kling-4.0", "kling_video.v4"),
+    ],
+)
+def test_saved_model_test_derives_protocol_and_input_from_config_id(
+    identity_app, kind, protocol, model, adapter
+):
+    client, _ = account(identity_app, "saved_model_test")
+    saved = client.post(
+        "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
+        json={
+            "service_type": kind,
+            "provider": "fixture",
+            "model_key": model,
+            "base_url": "https://model.example",
+            "interface_type": protocol,
+            "apikey": "saved-test-secret",
+        },
+    )
+    assert saved.status_code == 201, saved.text
+    body = {"config_id": saved.json()["id"], "clientOperationId": uuid4().hex}
+    accepted = create(client, body)
+    assert accepted.status_code == 202, accepted.text
+    assert create(client, body).status_code == 200
+    with identity_app[1]() as session:
+        record = session.scalar(
+            select(AIGenerationRecord).where(
+                AIGenerationRecord.task_id == int(accepted.json()["id"])
+            )
+        )
+        assert record.adapter == adapter
+        assert record.request_data["input"].get("prompt") or record.request_data["input"].get(
+            "messages"
+        )
+        original = session.get(AIModelConfig, int(saved.json()["id"]))
+        assert original.enabled and not original.is_deleted and original.row_version == 1
+    other, _ = account(identity_app, "foreign_saved_test")
+    body["clientOperationId"] = uuid4().hex
+    assert create(other, body).status_code == 404
 
 
 @pytest.mark.parametrize("change", ["version", "credential", "marker", "scene"])

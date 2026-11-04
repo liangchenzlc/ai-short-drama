@@ -8,10 +8,12 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
 from short_drama.agent.tools.presentation import project_display
+from short_drama.schemas.assistant.operations.trace import ToolTraceVisibility
 
 ToolEffect = Literal[
     "read", "write", "submit", "context", "wait", "ask_user", "execute", "delegate"
 ]
+ToolCapability = Literal["none", "workbench_write", "media_generate", "memory_read", "memory_write"]
 TOOL_VERSION = 5
 
 
@@ -22,11 +24,14 @@ class ToolSpec:
     args_schema: type[BaseModel] | dict[str, Any]
     handler: Callable[..., Any] | BaseTool
     effect: ToolEffect = "read"
+    required_capability: ToolCapability = "none"
     expose_mcp: bool = False
     expose_assistant: bool = True
     source: Literal["business", "runtime"] = "business"
     modes: frozenset[str] = frozenset()
     presentation: Callable[..., Any] = project_display
+    trace_kind: Literal["tool", "skill", "sandbox", "subtask", "wait"] = "tool"
+    trace_visibility: ToolTraceVisibility = ToolTraceVisibility.VISIBLE
 
 
 CANVAS_TOOL = "workbench__apply_canvas_patch"

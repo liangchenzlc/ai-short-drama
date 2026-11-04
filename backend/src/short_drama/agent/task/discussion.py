@@ -50,9 +50,9 @@ def prepare_revision(session, conversation, run):
     )
     selected = task_attachments(session, task)
     available = available_attachment_ids(session, conversation, selected)
-    _enabled, policy_version = policy_state_locked(session, conversation.owner_user_id)
+    _enabled, settings_version = policy_state_locked(session, conversation.owner_user_id)
     checkpoint = deepcopy(run.checkpoint)
-    checkpoint["generation_policy_version"] = policy_version
+    checkpoint["settings_version"] = settings_version
     checkpoint["available_attachment_ids"] = sorted(available)
     run.checkpoint = checkpoint
     instructions = (
@@ -100,7 +100,7 @@ def prepare_revision(session, conversation, run):
     }
 
 
-def replace_reply_locked(session, conversation, run, content):
+def replace_reply_locked(session, conversation, run, content, *, model_call_id=None):
     revision = run.checkpoint["discussion_revision"]
     source = session.get(AgentMessage, int(revision["source_message_id"]))
     reply = session.get(AgentMessage, int(revision["reply_message_id"]))
@@ -113,6 +113,10 @@ def replace_reply_locked(session, conversation, run, content):
         or str(reply.row_version) != revision["reply_version"]
     ):
         raise AgentGatewayError("assistant_history_source_changed")
+    from short_drama.agent.runtime.events import text_parts_for_turn
+    from short_drama.dao.assistant.execution.model_ledger import AgentModelLedgerDAO
+
+    turn = AgentModelLedgerDAO(session, run.id).call(model_call_id) if model_call_id else None
     reply.content, reply.row_version = content, reply.row_version + 1
     append_event(
         session,
@@ -122,8 +126,16 @@ def replace_reply_locked(session, conversation, run, content):
             "id": str(reply.id),
             "run_id": str(run.id),
             "seq": reply.seq,
+            "item_seq": reply.item_seq,
+            "kind": reply.kind,
             "role": reply.role,
             "row_version": str(reply.row_version),
+            "content": content,
+            "references": reply.references,
+            "artifacts": reply.artifacts,
+            "text_parts": text_parts_for_turn(
+                session, conversation, run, turn.id if turn is not None else None, content
+            ),
         },
         run_id=run.id,
     )

@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable
 from copy import deepcopy
+from dataclasses import replace
 from functools import lru_cache
 
 from short_drama.agent.tools.ask_user.ask_user import SPEC as RUNTIME__ASK_USER
@@ -33,6 +34,7 @@ from short_drama.agent.tools.memory.remember_memory import SPEC as RUNTIME__REME
 from short_drama.agent.tools.memory.restore_memory import SPEC as RUNTIME__RESTORE_MEMORY
 from short_drama.agent.tools.memory.search_memory import SPEC as RUNTIME__SEARCH_MEMORY
 from short_drama.agent.tools.memory.update_memory import SPEC as RUNTIME__UPDATE_MEMORY
+from short_drama.agent.tools.presentation import tool_trace_kind
 from short_drama.agent.tools.projects.list_projects import SPEC as WORKBENCH__LIST_PROJECTS
 from short_drama.agent.tools.projects.read_project import SPEC as WORKBENCH__READ_PROJECT
 from short_drama.agent.tools.resources.describe_creation_target import (
@@ -80,6 +82,7 @@ from short_drama.agent.tools.standard.read_current_script import (
     SPEC as WORKBENCH__READ_CURRENT_SCRIPT,
 )
 from short_drama.agent.tools.standard.read_storyboard import SPEC as WORKBENCH__READ_STORYBOARD
+from short_drama.agent.tools.trace_visibility import tool_trace_visibility
 
 
 def build_catalog(specs: Iterable[ToolSpec]) -> dict[str, ToolSpec]:
@@ -138,6 +141,14 @@ TOOL_SPECS = (
     RUNTIME__EXPORT_ARTIFACTS,
     RUNTIME__MATERIALIZE_SKILL_RESOURCE,
 )
+TOOL_SPECS = tuple(
+    replace(
+        spec,
+        trace_kind=tool_trace_kind(spec.name),
+        trace_visibility=tool_trace_visibility(spec.name),
+    )
+    for spec in TOOL_SPECS
+)
 _CATALOG = build_catalog(TOOL_SPECS)
 
 
@@ -145,15 +156,24 @@ def get_spec(name: str) -> ToolSpec:
     return _CATALOG[name]
 
 
-def available_specs(task, *, media_enabled: bool) -> tuple[ToolSpec, ...]:
+def available_specs(
+    task, *, media_enabled: bool, workbench_enabled: bool = True, memory_enabled: bool = True
+) -> tuple[ToolSpec, ...]:
     mode = (task.execution_target or {}).get("mode")
+    capabilities = {
+        "none": True,
+        "workbench_write": workbench_enabled,
+        "media_generate": workbench_enabled and media_enabled,
+        "memory_read": memory_enabled,
+        "memory_write": memory_enabled,
+    }
     return tuple(
         spec
         for spec in TOOL_SPECS
         if spec.expose_assistant
         and (spec.source != "business" or bool(mode))
         and (not spec.modes or mode in spec.modes)
-        and (spec.effect != "submit" or bool(mode) and media_enabled)
+        and capabilities[spec.required_capability]
     )
 
 
@@ -177,14 +197,24 @@ def tool_manifest(
     return deepcopy(
         list(
             _schema_manifest(
-                tuple(spec.name for spec in available_specs(task, media_enabled=media_enabled))
+                tuple(
+                    spec.name
+                    for spec in available_specs(task, media_enabled=media_enabled, **capabilities)
+                )
             )
         )
     )
 
 
-def tool_catalog(task, *, media_enabled: bool) -> list[dict]:
+def tool_catalog(
+    task, *, media_enabled: bool, workbench_enabled: bool = True, memory_enabled: bool = True
+) -> list[dict]:
     return [
         {"name": spec.name, "description": spec.description, "effect": spec.effect}
-        for spec in available_specs(task, media_enabled=media_enabled)
+        for spec in available_specs(
+            task,
+            media_enabled=media_enabled,
+            workbench_enabled=workbench_enabled,
+            memory_enabled=memory_enabled,
+        )
     ]

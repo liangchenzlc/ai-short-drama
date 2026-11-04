@@ -1,3 +1,5 @@
+> **2026-11-04 当前入口：** [配置、账号记忆与 MCP 迁移](migrations/2026-11-03-settings-module/README.md)已在随机隔离 MySQL 预演，并在当前开发库备份后执行。统一助手偏好版本、账号级记忆、令牌幂等和图片工作流退役，不增加表，完整结构为121表。下方历史迁移状态不代表当前库；新库只执行最新完整 SQL。
+
 # 数据库设计
 
 2026-10-30：[助手运行底座迁移](migrations/2026-10-29-assistant-runtime/README.md)按001→005升级为122表。003设置与004持久等待保持121表；005新增 `mcp_access_tokens` 及审计 nullable source／token_id，历史审计保留NULL。`agent_preferences` 的实时媒体政策使用 `policy_version`，助手完整设置使用独立 `settings_version`；默认调用240、输出2000000、子助手并发3、媒体数量空对象。004增加 `agent_operations.wait_state`，扩展 waiting_input 状态、活跃会话生成列和消息 tool_answer CHECK，不新增问题表。完整链已在119表基线的隔离测试库预演，Agent／MCP／identity结构就绪，9条原业务与审计记录保留，未修改应用库。

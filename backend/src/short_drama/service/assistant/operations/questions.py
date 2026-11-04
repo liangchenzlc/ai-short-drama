@@ -23,6 +23,7 @@ from short_drama.schemas.assistant.operations.questions import (
 )
 from short_drama.schemas.base import parse_identifier
 from short_drama.service.assistant.execution.waiting import bound_run, schedule_ready_locked
+from short_drama.service.assistant.memory.memory_store import memory_capture_generation
 from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
 
@@ -136,6 +137,9 @@ class QuestionService:
                 item_seq=allocate_item_seq(conversation),
                 role="user",
                 kind="tool_answer",
+                memory_capture_generation=memory_capture_generation(
+                    self.session, conversation.owner_user_id
+                ),
                 content=answer_text(request, answer),
                 references=[
                     {

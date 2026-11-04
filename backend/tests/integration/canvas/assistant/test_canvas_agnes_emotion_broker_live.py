@@ -129,6 +129,7 @@ def test_original_emotion_real_agnes_through_formal_generation_worker(
     }
     created = owner.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "name": "Agnes表情真实验收",
             "service_type": "image",

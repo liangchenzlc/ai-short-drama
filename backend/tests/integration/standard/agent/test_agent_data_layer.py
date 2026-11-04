@@ -83,14 +83,17 @@ def test_assistant_preference_migration_is_additive_and_never_resets_a_saved_dis
     with engine.begin() as connection:
         connection.execute(AgentPreference.__table__.insert().values(id=1, owner_user_id=1))
         row = connection.execute(select(AgentPreference.__table__)).mappings().one()
-        assert row["media_generation_enabled"] == 1 and row["policy_version"] == 1
+        assert row["media_generation_enabled"] == 1 and row["settings_version"] == 0
+        assert row["workbench_enabled"] == row["long_term_memory_enabled"] == 1
         connection.execute(
-            AgentPreference.__table__.update().values(media_generation_enabled=0, policy_version=2)
+            AgentPreference.__table__.update().values(
+                media_generation_enabled=0, settings_version=2
+            )
         )
     assert apply_migration(engine)["executed"] == []
     with engine.connect() as connection:
         assert connection.scalar(select(AgentPreference.media_generation_enabled)) == 0
-        assert connection.scalar(select(AgentPreference.policy_version)) == 2
+        assert connection.scalar(select(AgentPreference.settings_version)) == 2
         assert inspect_agent_schema(connection) == {"status": "ready", "gaps": []}
 
 

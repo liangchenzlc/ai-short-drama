@@ -183,7 +183,6 @@ def test_global_assistant_agnes_reads_real_memory_before_answering(global_live_w
         service = task_tests.task_service(session, settings)
         memory = AgentMemoryService(session).create_item(
             {
-                "scope_type": "user",
                 "kind": "preference",
                 "memory_key": "dialogue-rhythm",
                 "title": "对白节奏",

@@ -47,6 +47,8 @@ def _workspace(db_session):
     factory = sessionmaker(db_session.get_bind(), expire_on_commit=False, autoflush=False)
     settings = SimpleNamespace(
         agent_enabled=True,
+        agent_run_decision_cap=240,
+        agent_run_output_token_cap=2_000_000,
         agent_lease_seconds=180,
         generation_publish_lease_seconds=15,
         encryption_key=None,
@@ -273,7 +275,7 @@ def test_discussion_revision_rejects_stale_versions_and_executed_dependencies(ta
         assert eligibility.code == "assistant_history_dependency"
 
 
-def test_discussion_revision_preserves_history_used_by_saved_memory(task_workspace):
+def test_account_memory_does_not_bind_or_block_conversation_revision(task_workspace):
     from short_drama.schemas.assistant.memory.memory import MemoryCreate
     from short_drama.service.assistant.memory.memory import create_memory_locked, source_rows
 
@@ -282,12 +284,10 @@ def test_discussion_revision_preserves_history_used_by_saved_memory(task_workspa
     factory, settings, _model = task_workspace
     with factory.begin() as session:
         session.info["actor"] = task_actor()
-        create_memory_locked(
+        remembered = create_memory_locked(
             session,
             1,
             MemoryCreate(
-                scope_type="conversation",
-                conversation_id=conversation.id,
                 kind="decision",
                 memory_key="discussion-rhythm",
                 title="镜头节奏",
@@ -295,18 +295,20 @@ def test_discussion_revision_preserves_history_used_by_saved_memory(task_workspa
             ),
             sources=source_rows(session, 1, conversation.id, [accepted.message.id]),
         )
+        memory_id = remembered.id
     with factory() as session:
         service = task_service(session, settings)
         eligibility = service.discussion_eligibility(conversation.id, accepted.message.id)
-        assert not eligibility.allowed and eligibility.code == "assistant_history_dependency"
-        with pytest.raises(WorkflowError) as denied:
-            service.revise_discussion(
-                conversation.id,
-                accepted.message.id,
-                {"kind": "regenerate", "row_version": "1"},
-                "memory-protected-history",
-            )
-        assert denied.value.code == "assistant_history_dependency"
+        assert eligibility.allowed
+        service.revise_discussion(
+            conversation.id,
+            accepted.message.id,
+            {"kind": "regenerate", "row_version": "1"},
+            "independent-account-memory",
+        )
+        from short_drama.service.assistant.memory.memory import AgentMemoryService
+
+        assert AgentMemoryService(session).get_item(memory_id).content == "保留原讨论作为依据"
 
 
 def test_discussion_revision_never_accepts_a_tool_receipt(task_workspace):
@@ -544,7 +546,7 @@ def test_account_conversations_do_not_require_projects_and_do_not_leak(task_work
     conversation, accepted = new_task(task_workspace)
     assert conversation.project_id is None and conversation.scope_version == 3
     assert accepted.task.execution_target is None
-    assert accepted.task.memory_project_ids == [] and accepted.task.selected_subjects == []
+    assert accepted.task.selected_subjects == []
     with factory.begin() as session:
         session.add(
             User(
@@ -570,45 +572,44 @@ def test_account_conversations_do_not_require_projects_and_do_not_leak(task_work
             second.control_task(accepted.task.id, {"kind": "stop"}, "other-stop")
 
 
-def test_generation_policy_defaults_without_writing_and_retains_an_explicit_disable(task_workspace):
+def test_assistant_settings_defaults_without_writing_and_retains_an_explicit_disable(
+    task_workspace,
+):
     from scripts.agent_system_migration import apply_migration
     from short_drama.domain.assistant.operations.preference import AgentPreference
-    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
+    from short_drama.service.assistant.settings.preferences import AssistantSettingsService
 
-    factory, _settings, _model = task_workspace
+    factory, settings, _model = task_workspace
     with factory() as session:
         session.info["actor"] = task_actor()
-        service = AssistantPolicyService(session)
-        initial = service.get_generation_policy()
-        assert initial.media_generation_enabled is True and initial.policy_version == 0
-        assert initial.configured_media == [] and initial.available_media == []
+        service = AssistantSettingsService(session, settings)
+        initial = service.get_settings()
+        assert initial.media_generation_enabled is True and initial.settings_version == 0
         with session.begin():
             assert session.scalar(select(func.count()).select_from(AgentPreference)) == 0
-        saved = service.update_generation_policy(
-            {"media_generation_enabled": False, "policy_version": "0"}
+        saved = service.update_settings(
+            {"media_generation_enabled": False, "settings_version": "0"}
         )
-        assert saved.media_generation_enabled is False and saved.policy_version == 1
-        unchanged = service.update_generation_policy(
-            {"media_generation_enabled": False, "policy_version": "1"}
+        assert saved.media_generation_enabled is False and saved.settings_version == 1
+        unchanged = service.update_settings(
+            {"media_generation_enabled": False, "settings_version": "1"}
         )
-        assert unchanged.policy_version == 1
+        assert unchanged.settings_version == 2
         with pytest.raises(Conflict):
-            service.update_generation_policy(
-                {"media_generation_enabled": True, "policy_version": "0"}
-            )
+            service.update_settings({"media_generation_enabled": True, "settings_version": "0"})
     assert apply_migration(factory.kw["bind"])["executed"] == []
     with factory() as session:
         session.info["actor"] = task_actor()
-        assert AssistantPolicyService(session).get_generation_policy() == saved
+        assert AssistantSettingsService(session, settings).get_settings() == unchanged
 
 
-def test_generation_policy_is_owner_scoped_and_stale_identity_cannot_write_foreign_preferences(
+def test_assistant_settings_is_owner_scoped_and_stale_identity_cannot_write_foreign_preferences(
     task_workspace,
 ):
     from short_drama.domain.assistant.operations.preference import AgentPreference
-    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
+    from short_drama.service.assistant.settings.preferences import AssistantSettingsService
 
-    factory, _settings, _model = task_workspace
+    factory, settings, _model = task_workspace
     with factory.begin() as session:
         session.add(
             User(
@@ -624,12 +625,12 @@ def test_generation_policy_is_owner_scoped_and_stale_identity_cannot_write_forei
         )
     with factory() as session:
         session.info["actor"] = task_actor(2)
-        AssistantPolicyService(session).update_generation_policy(
-            {"media_generation_enabled": False, "policy_version": "0"}
+        AssistantSettingsService(session, settings).update_settings(
+            {"media_generation_enabled": False, "settings_version": "0"}
         )
         session.info["actor"] = task_actor()
-        initial = AssistantPolicyService(session).get_generation_policy()
-        assert initial.media_generation_enabled is True and initial.policy_version == 0
+        initial = AssistantSettingsService(session, settings).get_settings()
+        assert initial.media_generation_enabled is True and initial.settings_version == 0
         with session.begin():
             assert session.scalars(select(AgentPreference)).all() == []
     with factory() as session, session.begin():
@@ -641,13 +642,13 @@ def test_generation_policy_is_owner_scoped_and_stale_identity_cannot_write_forei
         session.rollback()
 
 
-def test_generation_policy_optimistic_version_rejects_concurrent_first_saves(task_workspace):
+def test_assistant_settings_optimistic_version_rejects_concurrent_first_saves(task_workspace):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
-    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
+    from short_drama.service.assistant.settings.preferences import AssistantSettingsService
 
-    factory, _settings, _model = task_workspace
+    factory, settings, _model = task_workspace
     barrier = Barrier(2)
 
     def save(enabled):
@@ -655,8 +656,8 @@ def test_generation_policy_optimistic_version_rejects_concurrent_first_saves(tas
             session.info["actor"] = task_actor()
             barrier.wait(timeout=10)
             try:
-                saved = AssistantPolicyService(session).update_generation_policy(
-                    {"media_generation_enabled": enabled, "policy_version": "0"}
+                saved = AssistantSettingsService(session, settings).update_settings(
+                    {"media_generation_enabled": enabled, "settings_version": "0"}
                 )
                 return saved.media_generation_enabled
             except Conflict:
@@ -667,46 +668,46 @@ def test_generation_policy_optimistic_version_rejects_concurrent_first_saves(tas
     assert outcomes.count("conflict") == 1
     with factory() as session:
         session.info["actor"] = task_actor()
-        saved = AssistantPolicyService(session).get_generation_policy()
-        assert saved.policy_version == 1
+        saved = AssistantSettingsService(session, settings).get_settings()
+        assert saved.settings_version == 1
         assert saved.media_generation_enabled is next(
             value for value in outcomes if type(value) is bool
         )
 
 
-def test_generation_policy_version_overflow_does_not_change_the_setting(task_workspace):
+def test_generation_settings_version_overflow_does_not_change_the_setting(task_workspace):
     from short_drama.domain.assistant.operations.preference import AgentPreference
     from short_drama.schemas.base import UINT64_MAX
-    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
+    from short_drama.service.assistant.settings.preferences import AssistantSettingsService
 
-    factory, _settings, _model = task_workspace
+    factory, settings, _model = task_workspace
     with factory.begin() as session:
         session.add(
             AgentPreference(
                 id=9007199254740993,
                 owner_user_id=1,
                 media_generation_enabled=0,
-                policy_version=UINT64_MAX,
+                settings_version=UINT64_MAX,
                 updated_at=utcnow(),
             )
         )
     with factory() as session:
         session.info["actor"] = task_actor()
-        service = AssistantPolicyService(session)
+        service = AssistantSettingsService(session, settings)
         with pytest.raises(Conflict):
-            service.update_generation_policy(
-                {"media_generation_enabled": True, "policy_version": str(UINT64_MAX)}
+            service.update_settings(
+                {"media_generation_enabled": True, "settings_version": str(UINT64_MAX)}
             )
-        saved = service.get_generation_policy()
-        assert saved.media_generation_enabled is False and saved.policy_version == UINT64_MAX
+        saved = service.get_settings()
+        assert saved.media_generation_enabled is False and saved.settings_version == UINT64_MAX
 
 
 def test_generation_policy_reports_only_own_enabled_models_without_claiming_execution(
     task_workspace,
 ):
-    from short_drama.service.assistant.tasks.policy import AssistantPolicyService
+    from short_drama.service.assistant.tasks.policy import generation_policy_locked
 
-    factory, _settings, _model = task_workspace
+    factory, settings, _model = task_workspace
     with factory() as session:
         session.info["actor"] = task_actor()
         service = AIModelConfigService(session)
@@ -729,10 +730,11 @@ def test_generation_policy_reports_only_own_enabled_models_without_claiming_exec
                 "enabled": 0,
             }
         )
-        policy = AssistantPolicyService(session).get_generation_policy()
+        with session.begin():
+            policy = generation_policy_locked(session, 1)
         assert policy.configured_media == ["image"] and policy.available_media == ["image"]
         assert "private-provider" not in policy.model_dump_json()
-        assert policy.media_generation_enabled is True and policy.policy_version == 0
+        assert policy.media_generation_enabled is True and policy.settings_version == 0
 
 
 def test_supplements_reuse_task_and_run_but_new_task_is_separate(task_workspace):
@@ -4464,7 +4466,6 @@ def media_tool_run(
     workspace,
     *,
     count=1,
-    limit=None,
     content=None,
     before_execute=None,
     item_patch=None,
@@ -4544,15 +4545,6 @@ def media_tool_run(
                 "execution_target": execution_target
                 or {"mode": "standard", "project_id": reference["project_id"]},
                 "subject_selection": {"expected_input_revision": "0", "subjects": references},
-                **(
-                    {
-                        "media_limits": {
-                            "audio" if media_kind == "audio" else f"{media_kind}s": limit
-                        }
-                    }
-                    if limit is not None
-                    else {}
-                ),
             },
             f"{identity_key}-message",
         )
@@ -4839,9 +4831,7 @@ def test_assistant_media_native_shot_adoption_does_not_send_unselected_linked_co
         )
 
 
-def canvas_media_flow(
-    workspace, *, kind="image", count=1, limit=None, nodes=1, target_indices=None, **kwargs
-):
+def canvas_media_flow(workspace, *, kind="image", count=1, nodes=1, target_indices=None, **kwargs):
     from short_drama.domain.canvas.document.canvas import CanvasNode
     from short_drama.service.canvas.document.canvas import CanvasService
 
@@ -4884,7 +4874,6 @@ def canvas_media_flow(
     flow = media_tool_run(
         workspace,
         count=count,
-        limit=limit,
         references=references,
         targets=[references[index] for index in target_indices]
         if target_indices is not None

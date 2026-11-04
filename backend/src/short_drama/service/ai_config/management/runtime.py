@@ -6,6 +6,8 @@ from copy import deepcopy
 from pydantic import ValidationError
 
 from short_drama.ai.adapters.catalog import capability_fingerprint
+from short_drama.ai.adapters.image.selection import select_image_protocol
+from short_drama.ai.adapters.model_protocols import PROTOCOL_ADAPTERS
 from short_drama.ai.adapters.runninghub.adapters import RUNNINGHUB_ADAPTERS
 from short_drama.ai.adapters.text.chat_protocols import COMPATIBLE_CHAT_PROTOCOLS
 from short_drama.ai.adapters.video.video_adapters import VIDEO_ADAPTERS
@@ -18,30 +20,6 @@ from short_drama.schemas.canvas.models.model_catalog import (
     CanvasChannelHeader,
     validate_channel_headers,
 )
-
-PROTOCOL_ADAPTERS = {
-    **dict.fromkeys(COMPATIBLE_CHAT_PROTOCOLS, "openai_chat.v1"),
-    "chat-completion": "openai_chat.v1",
-    "openai-response": "openai_responses.v1",
-    "claude-api": "claude_messages.v1",
-    "gemini-generate-content": "gemini_generate_content.v1",
-    "google-gemini-generate-content": "gemini_generate_content.v1",
-    "openai-image": "openai_images.v1",
-    "volcengine-ark-image": "ark_images.v1",
-    "qwen-image": "dashscope_images.v1",
-    "dashscope-qwen-image": "dashscope_images.v1",
-    "openai-audio": "openai_speech.v1",
-    "async-audio": "canvas_async_audio.v1",
-    "volcengine-ark-video": "ark_video.v1",
-    "qwen-video": "dashscope_video.v1",
-    "dashscope-wan-video": "dashscope_video.v1",
-    "newapi": "canvas_openai_videos.v1",
-    "openai-video": "canvas_openai_videos.v1",
-    "openai-videos": "canvas_openai_videos.v1",
-    "newapi-channel-2": "canvas_newapi_video_generations.v1",
-    "runninghub-workflow": "canvas_runninghub_workflow.v1",
-    **{f"runninghub-workflow-{kind}": adapter for adapter, kind in RUNNINGHUB_ADAPTERS.items()},
-}
 
 
 def legacy_runtime_profile(channel: dict, profile: dict) -> dict:
@@ -113,31 +91,45 @@ def model_runtime_public(config, cipher, binding=None) -> dict:
 
 def canvas_model_default_capability_config(config) -> dict | None:
     """画布复用普通模型的本地适配能力，不回写或替代显式运行配置。"""
-    if getattr(config, "runtime_profile", None) is not None or config.service_type != "video":
+    profile = getattr(config, "runtime_profile", None) or {}
+    if profile.get("capability_config") is not None or config.service_type != "video":
         return None
     from short_drama.ai.adapters.catalog import select_adapter
     from short_drama.ai.adapters.video.input_capabilities import video_input_capabilities
 
     snapshot = {key: getattr(config, key) for key in ("base_url", "model_key", "service_type")}
+    snapshot["runtime_profile"] = profile
     try:
         adapter = select_adapter(snapshot)
     except GenerationError:
         return None
-    if adapter != "modelhub_video.v1":
+    if adapter not in {"modelhub_video.v1", "minimax_video.v2", "kling_video.v4"}:
         return None
     inputs = video_input_capabilities(snapshot, adapter)
-    if not inputs["reference_images"]:
+    if not inputs["reference_images"] and not inputs["first_frame"]:
         return None
+    operations = ["text_to_video", "image_to_video"]
+    if inputs["reference_images"]:
+        operations.append("reference_to_video")
+    ratios = (
+        ["21:9", "16:9", "9:16", "1:1"]
+        if adapter == "kling_video.v4"
+        else ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]
+    )
     return {
         "version": 1,
         "video": {
-            "references": {"maxImages": 9},
-            "duration": {"selection": "enum", "values": inputs["duration_seconds"], "default": 5},
-            "ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+            "references": {"maxImages": 9 if inputs["reference_images"] else 2},
+            "duration": {
+                "selection": "enum",
+                "values": inputs["duration_seconds"],
+                "default": 10 if adapter == "kling_video.v4" else 5,
+            },
+            "ratios": ratios,
             "defaultRatio": "16:9",
             "resolutions": inputs["resolutions"],
             "defaultResolution": inputs["resolutions"][0],
-            "operations": ["text_to_video", "image_to_video", "reference_to_video"],
+            "operations": operations,
             "defaultOperation": "text_to_video",
         },
     }
@@ -158,15 +150,38 @@ def refresh_runtime_model(config, channel_key: str = "") -> bool:
     adapter = runtime_protocol_adapter(profile, channel_key, config.model_key, config.service_type)
     from short_drama.ai.adapters.constants import ADAPTER_TYPES
 
-    expected_format = "claude" if adapter == "claude_messages.v1" else "openai"
+    if profile["protocol"] == "auto":
+        from short_drama.ai.adapters.catalog import select_adapter
+
+        adapter = select_adapter(
+            {
+                "base_url": config.base_url,
+                "model_key": config.model_key,
+                "service_type": config.service_type,
+            }
+        )
+    expected_format = (
+        "claude"
+        if adapter == "claude_messages.v1"
+        else "gemini"
+        if adapter in {"gemini_images.v1", "gemini_generate_content.v1"}
+        else "openai"
+    )
     if (
-        profile["api_format"] != expected_format
+        profile["api_format"] not in {expected_format, "auto"}
         or ADAPTER_TYPES.get(adapter) != config.service_type
     ):
         raise GenerationError("unsupported_protocol")
     identity = model_credential_identity(config)
     snapshot = {key: getattr(config, key) for key in ("base_url", "model_key", "service_type")}
     cache = {"adapter": adapter, "fingerprint": capability_fingerprint(snapshot, identity)}
+    if config.service_type == "image":
+        selected = select_image_protocol({**snapshot, "runtime_profile": profile})
+        cache["image_protocol"] = {
+            "interface_type": selected.interface_type,
+            "protocol_revision": selected.protocol_revision,
+            "capabilities": selected.capabilities,
+        }
     capability = profile.get("capability_config") or {}
     if adapter in RUNNINGHUB_ADAPTERS:
         cache["canvas_runninghub_workflow"] = deepcopy(profile.get("runninghub_workflow") or {})

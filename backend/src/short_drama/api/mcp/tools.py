@@ -83,16 +83,18 @@ def catalog_tool(spec: ToolSpec, state: State) -> FunctionTool:
         def execute() -> dict[str, Any] | ToolResult:
             # 认证事务在业务事务前结束；撤销在每次协议请求和业务调用边界生效。
             with state.session_factory() as session:
-                current = McpTokenService(session, tool_specs=()).authenticate(
+                tokens = McpTokenService(session, tool_specs=())
+                current = tokens.authenticate(
                     bearer_secret(request), request.state.mcp_client_ip, principal.actor.request_id
                 )
+                project_ids = tokens.current_project_ids(current.actor.user_id)
             identity = BusinessInvocation(
                 actor=replace(current.actor, request_id=external_id),
                 source="mcp",
                 request_id=token_hash("mcp:" + external_id),
                 token_id=current.token_id,
                 scope=InvocationScope(
-                    project_ids=current.project_ids,
+                    project_ids=project_ids,
                     tool_names=current.tool_names,
                     subject_policy="project",
                     allowed_subjects={},

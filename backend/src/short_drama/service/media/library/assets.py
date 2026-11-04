@@ -167,7 +167,7 @@ class MediaAssetService(BaseService):
 
         if task.cancel_requested:
             raise WorkflowError("generation_cancelled", "任务已取消，生成视频仅保留在历史中")
-        if not may_submit(self.session, task):
+        if not may_submit(self.session, task, required_capability="workbench_write"):
             raise WorkflowError("generation_access_revoked", "生成者已无权更新此分镜")
         source = record.request_data.get("source") or {}
         captured = record.request_data.get("source_snapshot") or {}

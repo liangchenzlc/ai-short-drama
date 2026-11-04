@@ -1,13 +1,15 @@
 import copy
 
 from short_drama.ai.adapters.catalog import select_adapter
+from short_drama.ai.adapters.image.common import openai_image_references as _openai_image_references
 from short_drama.ai.adapters.image.image_operations import (
     operation_vision_supported,
 )
+from short_drama.ai.adapters.image.registry import IMAGE_ADAPTERS, get_image_adapter
 from short_drama.ai.adapters.runninghub.adapters import (
     RUNNINGHUB_ADAPTERS,
 )
-from short_drama.ai.adapters.submission import _openai_image_references, build_submission
+from short_drama.ai.adapters.submission import build_submission
 from short_drama.ai.adapters.text.chat_protocols import (
     is_compatible_chat,
 )
@@ -45,6 +47,7 @@ def resolved_parameters(body):
             "messages",
             "input",
             "content",
+            "contents",
             "image",
             "mask",
         }
@@ -112,6 +115,8 @@ def capabilities(snapshot):
         return empty
     kind = snapshot.get("service_type")
     model = snapshot.get("model_key", "")
+    if adapter in IMAGE_ADAPTERS:
+        return get_image_adapter(adapter).capabilities(snapshot)
     edit = model.startswith("qwen-image-edit") or model == "wan2.6-image"
     return {
         "known": True,
@@ -123,12 +128,12 @@ def capabilities(snapshot):
             "image": ["aspect", "resolution", "count"],
             "video": ["aspect", "resolution", "duration_ms"],
         }[kind],
-        "reference_images": adapter == "ark_images.v1"
+        "reference_images": adapter in {"ark_images.v1", "minimax_video.v2"}
         or (adapter == "modelhub_video.v1" and model in {"seedance-2.0-mini", "minimax-h3"})
         or (adapter == "dashscope_images.v1" and edit)
         or (adapter == "openai_images.v1" and _openai_image_references(model)),
         "first_frame": kind == "video",
-        "last_frame": adapter == "ark_video.v1"
+        "last_frame": adapter in {"ark_video.v1", "minimax_video.v2", "kling_video.v4"}
         or (adapter == "modelhub_video.v1" and model in {"seedance-2.0-mini", "minimax-h3"})
         or (adapter == "dashscope_video.v1" and "kf2v" in snapshot.get("model_key", "")),
         **({"video_input": video_input_capabilities(snapshot, adapter)} if kind == "video" else {}),

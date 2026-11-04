@@ -92,6 +92,7 @@ def test_original_angle_real_agnes_through_formal_generation_worker(
     secret = live_key()
     created = owner.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "name": "Agnes独立多角度真实验收",
             "service_type": "image",

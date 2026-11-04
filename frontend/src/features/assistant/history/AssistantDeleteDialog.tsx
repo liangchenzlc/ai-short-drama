@@ -72,7 +72,6 @@ export function AssistantDeleteDialog({
           onClick={() =>
             onSubmit({
               row_version: conversation.row_version,
-              clear_derived_memory: false,
             })
           }
         >

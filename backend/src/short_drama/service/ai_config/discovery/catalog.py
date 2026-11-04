@@ -10,6 +10,8 @@ from urllib.parse import urlsplit, urlunsplit
 import urllib3
 from urllib3.exceptions import HTTPError, TimeoutError
 
+from short_drama.ai.adapters.model_protocols import INTERFACE_BY_ID
+from short_drama.ai.official_models import builtin_catalog
 from short_drama.core.exceptions import BusinessError
 from short_drama.schemas.ai_config.discovery.catalog import (
     DiscoveredModel,
@@ -57,7 +59,7 @@ def normalize_base_url(value):
         raise ModelDiscoveryError("address", 400) from None
 
 
-def model_paths(base_url):
+def model_paths(base_url, *, api_format="openai"):
     """Preserve custom prefixes and version segments; fallback only on 404/405."""
     parts = urlsplit(base_url)
     path = parts.path.rstrip("/")
@@ -67,8 +69,10 @@ def model_paths(base_url):
         if path.endswith(suffix):
             path = path[: -len(suffix)]
             break
-    if parts.hostname == "generativelanguage.googleapis.com":
-        return [f"{path or '/v1beta'}/models"]
+    if parts.hostname == "generativelanguage.googleapis.com" or api_format == "gemini":
+        if not re.search(r"/v\d+(?:beta\d*)?$", path):
+            path += "/v1beta"
+        return [f"{path}/models"]
     if re.search(r"/v\d+(?:beta\d*)?$", path):
         paths = [f"{path}/models"]
         if not path.endswith("/v1"):
@@ -90,6 +94,16 @@ class ModelDiscoveryService:
 
     def discover(self, payload: ModelDiscoveryRequest):
         base = normalize_base_url(payload.base_url)
+        interface = INTERFACE_BY_ID.get(payload.interface_type)
+        if payload.interface_type != "auto" and (
+            interface is None or interface.kind != payload.service_type
+        ):
+            raise ModelDiscoveryError("unsupported_protocol", 422)
+        builtin = builtin_catalog(base, payload.service_type, payload.interface_type)
+        if builtin is not None:
+            return ModelDiscoveryRead(
+                items=[DiscoveredModel(id=identifier) for identifier in builtin], source="builtin"
+            )
         # Explicit null means no key; omission permits reuse for an unchanged saved URL.
         secret = payload.apikey
         if payload.config_id is not None and "apikey" not in payload.model_fields_set:
@@ -118,10 +132,12 @@ class ModelDiscoveryService:
             "Host": parts.netloc,
             "User-Agent": "ShortDrama-ModelDiscovery/1.0",
         }
-        if host == "generativelanguage.googleapis.com":
+        if host == "generativelanguage.googleapis.com" or (
+            interface and interface.api_format == "gemini"
+        ):
             if key:
                 headers["x-goog-api-key"] = key
-        elif host == "api.anthropic.com":
+        elif host == "api.anthropic.com" or (interface and interface.api_format == "claude"):
             headers["anthropic-version"] = "2023-06-01"
             if key:
                 headers["x-api-key"] = key
@@ -141,7 +157,13 @@ class ModelDiscoveryService:
             else:
                 pool = urllib3.HTTPConnectionPool(**options)
             try:
-                return fetch_catalog(pool, model_paths(base), headers, key, deadline)
+                return fetch_catalog(
+                    pool,
+                    model_paths(base, api_format=interface.api_format if interface else "openai"),
+                    headers,
+                    key,
+                    deadline,
+                )
             except TimeoutError:
                 last_timeout = True
             except (HTTPError, OSError, ValueError):
@@ -194,7 +216,7 @@ def fetch_catalog(pool, paths, headers, key, deadline):
         finally:
             response.close()
             response.release_conn()
-    raise ModelDiscoveryError("unsupported")
+    return ModelDiscoveryRead(items=[], status="unavailable")
 
 
 def parse_models(data, secret=""):

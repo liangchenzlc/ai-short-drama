@@ -12,8 +12,9 @@ from short_drama.agent.runtime.trace_content import display_refs, display_safe
 from short_drama.agent.task.queries import task_for_run as task_for_run
 from short_drama.agent.tools.contracts import TOOL_VERSION
 from short_drama.agent.tools.presentation import label as tool_label
-from short_drama.agent.tools.presentation import visibility as tool_visibility
+from short_drama.agent.tools.trace_visibility import tool_trace_visibility
 from short_drama.dao.assistant.tasks.task import AgentTaskDAO
+from short_drama.domain.assistant.conversations.models import AgentEvent
 from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall
 from short_drama.domain.assistant.undo.undo import AgentBatchUndo
 from short_drama.schemas.assistant.tasks.task import OperationRead, TaskRead
@@ -21,16 +22,19 @@ from short_drama.service.base import utcnow
 from short_drama.utils.snowflake import next_id
 
 
-def read_operation(row, *, undo_receipts=()):
+def read_operation(row, *, undo_receipts=(), event_seq=None, result_seq=None, turn_id=None):
     return OperationRead(
         **(row.result or {}).get("_display", {}),
         id=row.id,
         task_id=row.task_id,
         run_id=row.run_id,
         call_id=row.tool_call_id,
+        turn_id=turn_id,
         tool_name=row.tool_name,
         item_seq=row.item_seq,
-        visibility=tool_visibility(row.tool_name),
+        event_seq=event_seq,
+        result_seq=result_seq,
+        trace_visibility=tool_trace_visibility(row.tool_name),
         label=tool_label(row.tool_name),
         tool_version=row.tool_version,
         plan_revision=row.plan_revision,
@@ -50,7 +54,17 @@ def read_operations(session, rows):
     from short_drama.schemas.assistant.undo.undo import BatchUndoRead
 
     receipts = {}
+    event_metadata = {}
+    turn_ids = {}
     if rows:
+        turn_ids = {
+            str(call_id): str(turn_id)
+            for call_id, turn_id in session.execute(
+                select(AgentToolCall.id, AgentToolCall.turn_id).where(
+                    AgentToolCall.id.in_([row.tool_call_id for row in rows])
+                )
+            )
+        }
         for row in session.scalars(
             select(AgentBatchUndo)
             .where(AgentBatchUndo.operation_id.in_([row.id for row in rows]))
@@ -59,7 +73,32 @@ def read_operations(session, rows):
             receipts.setdefault(row.operation_id, []).append(
                 BatchUndoRead.model_validate(row, from_attributes=True).model_dump(mode="json")
             )
-    return [read_operation(row, undo_receipts=receipts.get(row.id, ())) for row in rows]
+        for event_type, seq, payload in session.execute(
+            select(AgentEvent.event_type, AgentEvent.seq, AgentEvent.payload)
+            .where(
+                AgentEvent.run_id.in_({row.run_id for row in rows}),
+                AgentEvent.event_type.in_(["step.started", "step.finished"]),
+                AgentEvent.payload["operation_id"].as_string().in_([str(row.id) for row in rows]),
+            )
+            .order_by(AgentEvent.seq)
+        ):
+            operation_id = payload.get("operation_id")
+            if not operation_id:
+                continue
+            item = event_metadata.setdefault(str(operation_id), {})
+            if event_type == "step.started":
+                item.setdefault("event_seq", seq)
+            else:
+                item["result_seq"] = seq
+    return [
+        read_operation(
+            row,
+            undo_receipts=receipts.get(row.id, ()),
+            turn_id=turn_ids.get(str(row.tool_call_id)),
+            **event_metadata.get(str(row.id), {}),
+        )
+        for row in rows
+    ]
 
 
 _UNSET_OPERATION = object()
@@ -96,7 +135,6 @@ def read_task(session, task, *, active_operation=_UNSET_OPERATION):
         control_state=task.control_state,
         interruptions=task_capabilities(task),
         execution_target=task.execution_target,
-        memory_project_ids=task.memory_project_ids,
         selected_subjects=selected,
         source_context={
             "kind": selected[0]["source_kind"],
@@ -111,7 +149,6 @@ def read_task(session, task, *, active_operation=_UNSET_OPERATION):
             for item in task.selected_skills
         ],
         skill_activations=[],
-        media_limits=task.media_limits,
         media_usage=task.media_usage,
         active_operation=read_operation(operation) if operation else None,
         error=task.error,
@@ -259,7 +296,6 @@ def pending_task_locked(session, task):
         for field in (
             "context_snapshot",
             "execution_target",
-            "memory_project_ids",
             "selected_skills",
         ):
             if field in item.payload:
@@ -301,8 +337,6 @@ def apply_inputs_locked(session, conversation, task, run, *, through_revision=No
             task.selected_skills = payload["selected_skills"]
         if "execution_target" in payload:
             task.execution_target = payload["execution_target"]
-        if "memory_project_ids" in payload:
-            task.memory_project_ids = payload["memory_project_ids"]
         item.applied_plan_revision = task.plan_revision
     task.applied_input_revision = inputs[-1].input_revision
     task.row_version += 1

@@ -1,4 +1,4 @@
-"""Explicit memory scopes and version-bound edits; all public identities remain strings."""
+"""Account-owned memory and version-bound edits; public identities remain strings."""
 
 import re
 import unicodedata
@@ -9,7 +9,6 @@ from pydantic import Field, field_validator, model_validator
 
 from short_drama.schemas.base import Identifier, InputModel, NonnegativeVersion, ReadModel
 
-MemoryScopeType = Literal["user", "conversation", "project"]
 MemoryKind = Literal["preference", "correction", "setting", "decision", "reference"]
 MemoryText = Annotated[str, Field(min_length=1, max_length=12000)]
 Labels = Annotated[list[Annotated[str, Field(min_length=1, max_length=80)]], Field(max_length=16)]
@@ -20,9 +19,6 @@ def normalize_memory_key(value: str) -> str:
 
 
 class MemoryCreate(InputModel):
-    scope_type: MemoryScopeType
-    conversation_id: Identifier | None = None
-    project_id: Identifier | None = None
     kind: MemoryKind
     memory_key: Annotated[str, Field(min_length=1, max_length=160)]
     title: Annotated[str, Field(min_length=1, max_length=200)]
@@ -30,10 +26,6 @@ class MemoryCreate(InputModel):
     aliases: Labels = Field(default_factory=list)
     tags: Labels = Field(default_factory=list)
     pinned: bool = False
-    source_message_ids: Annotated[list[Identifier], Field(max_length=16)] = Field(
-        default_factory=list
-    )
-    source_conversation_id: Identifier | None = None
 
     @field_validator("memory_key")
     @classmethod
@@ -57,21 +49,6 @@ class MemoryCreate(InputModel):
         if any(not value or "\x00" in value for value in result):
             raise ValueError("Memory labels cannot be blank")
         return result
-
-    @model_validator(mode="after")
-    def scope_fields(self):
-        valid = {
-            "user": self.conversation_id is None and self.project_id is None,
-            "conversation": self.conversation_id is not None and self.project_id is None,
-            "project": self.project_id is not None and self.conversation_id is None,
-        }
-        if not valid[self.scope_type]:
-            raise ValueError("Memory scope fields do not match")
-        if bool(self.source_message_ids) != bool(self.source_conversation_id):
-            raise ValueError("Memory message sources require their conversation")
-        if len(set(self.source_message_ids)) != len(self.source_message_ids):
-            raise ValueError("Memory message sources must be unique")
-        return self
 
 
 class MemoryPatch(InputModel):
@@ -99,9 +76,6 @@ class MemoryVersion(InputModel):
 
 class MemoryRead(ReadModel):
     id: Identifier
-    scope_type: MemoryScopeType
-    conversation_id: Identifier | None
-    project_id: Identifier | None
     kind: MemoryKind
     memory_key: str
     title: str
@@ -112,7 +86,6 @@ class MemoryRead(ReadModel):
     state: Literal["active", "forgotten", "superseded"]
     origin: Literal["explicit", "extracted"]
     content_version: Identifier
-    sources: list[dict] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

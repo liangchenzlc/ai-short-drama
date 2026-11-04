@@ -44,6 +44,11 @@ def _authentication(snapshot, credential, headers, *, adapter=None):
         raise GenerationError("invalid_credential")
     secret = _credential(credential)
     headers = dict(headers)
+    if adapter == "gemini_images.v1":
+        if not secret:
+            raise GenerationError("invalid_credential")
+        headers["x-goog-api-key"] = secret
+        return secret, headers, [secret]
     if secret:
         headers["Authorization"] = f"Bearer {secret}"
     return secret, headers, [secret] if secret else []

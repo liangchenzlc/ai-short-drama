@@ -64,7 +64,8 @@ async function contextFixture(page: Page, stage: 'source' | 'assets' = 'source')
     if (path.endsWith('/events')) return route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': heartbeat\n\n' });
     if (path.endsWith('/state')) return reply({ conversation_id: '301', snapshot_cursor: 0, resume_cursor: 0,
       messages: { items: state.messages, total: state.messages.length, offset: 0, limit: 50 },
-      tasks: state.tasks, runs: state.runs, operations: [], inputs: [], has_more_tasks: false, has_more_operations: false });
+      tasks: state.tasks, runs: state.runs, operations: [], inputs: [], has_more_tasks: false, has_more_operations: false,
+      trace_blocks: [], has_more_trace: false, trace_before_seq: null });
     if (path.endsWith('/runs')) return reply({ items: [], total: 0, offset: 0, limit: 1 });
     if (/^\/tasks\/\d+\/(subjects|attachments)$/.test(path)) {
       const task = state.tasks.find(item => item.id === path.split('/')[2])!;
@@ -127,9 +128,9 @@ async function contextFixture(page: Page, stage: 'source' | 'assets' = 'source')
         state.attachments.forEach(item => { if (body.attachment_ids?.includes(item.id)) item.pending = false; });
         const task = { id: String(501 + state.tasks.length), conversation_id: '301', goal: body.content, status: 'succeeded', phase: 'terminal',
           row_version: '1', plan_revision: '1', input_revision: '1', applied_input_revision: '1', control_seq: '0', applied_control_seq: '0', control_state: 'none',
-          execution_target: body.execution_target ?? null, memory_project_ids: body.memory_project_ids ?? [], source_context: null, selected_subjects: [],
+          execution_target: body.execution_target ?? null, source_context: null, selected_subjects: [],
           skills: body.skills ?? [], task_attachments: state.attachments.filter(item => body.attachment_ids?.includes(item.id)).map(item => ({ id: item.id, kind: item.kind, name: item.name, checksum_sha256: item.checksum_sha256, available: true })),
-          media_limits: body.media_limits ?? { images: null, videos: null, audio: null }, media_usage: {}, active_operation: null, error: null, created_at: time, updated_at: time };
+          media_usage: {}, active_operation: null, error: null, created_at: time, updated_at: time };
         state.tasks.push(task);
         const message = { id: String(2001 + state.messages.length), task_id: task.id, seq: state.messages.length + 1, role: 'user', content: body.content, references, artifacts: [], created_at: time };
         state.messages.push(message);

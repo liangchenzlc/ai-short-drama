@@ -1,6 +1,5 @@
 import { errorMessage, isCancelled } from '@host/api/http';
 import { aiModelConfigs } from '@host/features/ai-config/editor/config-api';
-import { usesRuntimeModelDiscovery } from '@host/features/ai-config/editor/config-form-model';
 import type { AiConfig, ConfigDraft } from '@host/types/ai-config/editor/config-model';
 import { AutoComplete, Input } from 'antd';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
@@ -25,18 +24,15 @@ export function ModelIdentifierField({
   const options = models.filter((model) => model.value.toLowerCase().includes(search.toLowerCase()));
   const popupVisible = open && options.length > 0 && !disabled && !loading;
   const active = useRef<AbortController | null>(null);
-  // Used only in memory to discard replies for credentials/addresses that changed mid-flight.
+  // 地址或接口变化后丢弃旧目录；凭据只留在当前表单内存中。
   const signature = JSON.stringify([
     form.baseUrl,
     form.apiKey,
     form.clearApiKey,
     form.secretKey,
     form.clearSecretKey,
-    form.headers,
-    form.headersChanged,
     form.runtime.apiFormat,
     form.runtime.protocol,
-    form.runtime.enabled,
     existing?.id,
   ]);
   const latest = useRef(signature);
@@ -70,11 +66,11 @@ export function ModelIdentifierField({
     setOpen(false);
     setSearch('');
     try {
-      const result = usesRuntimeModelDiscovery(form)
-        ? await aiModelConfigs.discoverRuntimeModels(form, existing, controller.signal)
-        : await aiModelConfigs.discoverModels(
+      const result = await aiModelConfigs.discoverModels(
             {
               base_url: form.baseUrl.trim(),
+              service_type: form.serviceType,
+              interface_type: form.runtime.protocol,
               ...(existing ? { config_id: existing.id } : {}),
               ...(form.clearApiKey ? { apikey: null } : form.apiKey ? { apikey: form.apiKey } : {}),
             },
@@ -87,8 +83,8 @@ export function ModelIdentifierField({
       if (result.items.length) input.current?.focus();
       setFeedback(
         result.items.length
-          ? `已获取 ${result.items.length} 个模型，可直接下拉选择，也可输入搜索。${result.truncated ? '当前列表为部分结果，仍可手动填写其他模型。' : ''}`
-          : '服务未返回可用模型，可以手动填写模型标识。',
+          ? `${result.items.length} 个可用模型`
+          : '暂无模型目录，请手动填写模型标识。',
       );
     } catch (cause) {
       if (controller.signal.aborted || latest.current !== requestedSignature || isCancelled(cause)) return;
@@ -136,9 +132,10 @@ export function ModelIdentifierField({
           popupMatchSelectWidth={true}
         >
           <Input
+            type="text"
             required
             autoComplete="off"
-            suffix={
+            suffix={models.length > 0 && (
               <button
                 type="button"
                 className="model-dropdown-toggle"
@@ -164,24 +161,24 @@ export function ModelIdentifierField({
                   <path d="m6 9 6 6 6-6" />
                 </svg>
               </button>
-            }
+            )}
             aria-describedby="model-discovery-feedback"
-            placeholder="下拉选择或输入模型标识"
+            placeholder={models.length ? '选择或输入模型标识' : '输入模型标识'}
           />
         </AutoComplete>
         <button type="button" onClick={discover} disabled={disabled || loading} aria-busy={loading}>
           {loading ? '获取中…' : '获取模型'}
         </button>
       </div>
-      <p
+      {feedback && <p
         id="model-discovery-feedback"
         className={failed ? 'form-error' : 'model-discovery-hint'}
         role={failed ? 'alert' : 'status'}
       >
         {search && models.length > 0 && !options.length && !failed
-          ? '没有匹配的模型，可以保留当前输入作为自定义模型标识。'
-          : feedback || '点击获取模型时，使用当前服务地址、API 密钥和请求头读取列表；不支持探测的服务可手动填写。'}
-      </p>
+          ? '无匹配项，可使用当前输入。'
+          : feedback}
+      </p>}
     </div>
   );
 }

@@ -1038,6 +1038,7 @@ def test_original_table_geometry_media_and_serial_known_unaccepted_retries(
     for kind in ("image", "video"):
         response = owner.post(
             "/api/v1/ai-model-configs",
+            headers={"Idempotency-Key": uuid4().hex},
             json={
                 "name": "Agnes真实分镜媒体-" + kind,
                 "service_type": kind,

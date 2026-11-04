@@ -6,11 +6,14 @@ import type {
   AssistantUndoReceipt,
 } from '@host/types/assistant/api';
 import type { AgentEvent, AgentMessage } from '@host/types/assistant/engine';
-import type { TaskProjection } from '@host/types/assistant/runtime/assistant-task-state';
+import { ToolTraceVisibility } from '@host/types/assistant/trace';
+import type { OperationPagination, TaskProjection } from '@host/types/assistant/runtime/assistant-task-state';
 import { applyTraceEvent, mergeTraceBlocks } from '@host/features/assistant/runtime/assistant-trace';
 export const emptyTaskProjection = (conversationId: string): TaskProjection => ({
   conversationId,
   snapshotCursor: -1,
+  operationSnapshotCursors: {},
+  traceSnapshotCursors: {},
   deleted: false,
   tasks: {},
   operations: {},
@@ -18,12 +21,24 @@ export const emptyTaskProjection = (conversationId: string): TaskProjection => (
   traceDeltas: {},
 });
 const version = (value: string) => (/^\d+$/.test(value) ? BigInt(value) : -1n);
+export function operationPageStart(snapshot: AssistantTaskSnapshot, taskId: string, cached?: OperationPagination): OperationPagination | null {
+  if (!snapshot.has_more_operations) return null;
+  const prefix = snapshot.operations.filter((item) => item.task_id === taskId).at(-1)?.id;
+  const activeId = snapshot.tasks.find((task) => task.id === taskId)?.active_operation?.id;
+  if (cached?.complete && (!activeId || version(activeId) <= version(cached.afterId ?? '0'))) return null;
+  return { afterId: cached?.afterId ?? prefix, complete: false };
+}
 export function mergeAssistantMessages(old: AgentMessage[], items: AgentMessage[]) {
   const byId = new Map(old.map((item) => [item.id, item]));
   for (const item of items) {
     if (item.role !== 'user' && item.role !== 'assistant') continue;
     const previous = byId.get(item.id);
-    if (!previous || version(previous.row_version ?? '1') <= version(item.row_version ?? '1')) byId.set(item.id, item);
+    if (!previous || version(previous.row_version ?? '1') <= version(item.row_version ?? '1'))
+      byId.set(item.id, {
+        ...item,
+        run_id: item.run_id ?? previous?.run_id,
+        event_seq: item.event_seq ?? previous?.event_seq,
+      });
   }
   return [...byId.values()].sort((left, right) => left.seq - right.seq);
 }
@@ -62,10 +77,32 @@ export function mergeOperations(old: Record<string, AssistantOperation>, items: 
     );
     next[item.id] = {
       ...item,
+      event_seq: existing?.event_seq ?? item.event_seq,
+      result_seq: item.result_seq ?? existing?.result_seq,
       undo_receipts: [...receipts.values()].sort((a, b) => (version(a.id) < version(b.id) ? -1 : 1)),
     };
   }
   return next;
+}
+
+export function mergeTaskEntities(
+  state: TaskProjection,
+  snapshot: Pick<AssistantTaskSnapshot, 'snapshot_cursor' | 'operations' | 'trace_blocks'>,
+): TaskProjection {
+  if (state.deleted) return state;
+  const operationSnapshotCursors = { ...state.operationSnapshotCursors };
+  const traceSnapshotCursors = { ...state.traceSnapshotCursors };
+  // 限页快照只覆盖实际返回的实体；历史页也不能降低已读实体的覆盖水位。
+  for (const item of snapshot.operations)
+    operationSnapshotCursors[item.id] = Math.max(operationSnapshotCursors[item.id] ?? -1, snapshot.snapshot_cursor);
+  for (const block of snapshot.trace_blocks)
+    traceSnapshotCursors[block.block_id] = Math.max(traceSnapshotCursors[block.block_id] ?? -1, snapshot.snapshot_cursor);
+  return mergeTraceBlocks({
+    ...state,
+    operationSnapshotCursors,
+    traceSnapshotCursors,
+    operations: mergeOperations(state.operations, snapshot.operations),
+  }, snapshot.trace_blocks);
 }
 
 export function mergeTaskSnapshot(
@@ -83,22 +120,31 @@ export function mergeTaskSnapshot(
   for (const item of snapshot.tasks) {
     if (!tasks[item.id] || version(tasks[item.id].row_version) <= version(item.row_version)) tasks[item.id] = item;
   }
-  return mergeTraceBlocks({
+  return mergeTaskEntities({
     ...state,
     snapshotCursor: Math.max(state.snapshotCursor, snapshot.snapshot_cursor),
     tasks,
-    operations: mergeOperations(state.operations, snapshot.operations),
-  }, snapshot.trace_blocks ?? []);
+  }, {
+    snapshot_cursor: snapshot.snapshot_cursor,
+    operations: [...snapshot.operations, ...snapshot.tasks.flatMap((task) => task.active_operation ? [task.active_operation] : [])],
+    trace_blocks: snapshot.trace_blocks ?? [],
+  });
 }
 
-/** Older replay for text may precede the snapshot; it must not rewind trace state. */
+/** Replay fences follow actual entity coverage; versions still protect omitted entities from rewind. */
 export function applyTaskEvent(state: TaskProjection, event: AgentEvent): TaskProjection {
-  if (state.deleted || event.seq <= state.snapshotCursor) return state;
-  if (event.event_type === 'conversation.deleted') return { ...state, deleted: true, tasks: {}, operations: {}, traceBlocks: {}, traceDeltas: {} };
+  if (state.deleted) return state;
+  const p = event.payload;
+  const snapshotCursor = event.event_type === 'trace.block' || event.event_type === 'trace.delta'
+    ? state.traceSnapshotCursors[String(p.block_id)] ?? -1
+    : event.event_type.startsWith('step.') || event.event_type === 'operation.undo.completed'
+      ? state.operationSnapshotCursors[String(p.operation_id)] ?? -1
+      : state.snapshotCursor;
+  if (event.seq <= snapshotCursor) return state;
+  if (event.event_type === 'conversation.deleted') return { ...state, deleted: true, tasks: {}, operations: {}, traceBlocks: {}, traceDeltas: {}, operationSnapshotCursors: {}, traceSnapshotCursors: {} };
   if (event.event_type === 'trace.block' || event.event_type === 'trace.delta') return applyTraceEvent(state, event);
   if (event.event_type === 'operation.undo.completed') {
-    const p = event.payload,
-      receipt = p.receipt as AssistantUndoReceipt | undefined;
+    const receipt = p.receipt as AssistantUndoReceipt | undefined;
     const old = typeof p.operation_id === 'string' ? state.operations[p.operation_id] : undefined;
     if (
       !old ||
@@ -123,7 +169,6 @@ export function applyTaskEvent(state: TaskProjection, event: AgentEvent): TaskPr
     )
   )
     return state;
-  const p = event.payload;
   if (
     typeof p.operation_id !== 'string' ||
     typeof p.task_id !== 'string' ||
@@ -151,18 +196,21 @@ export function applyTaskEvent(state: TaskProjection, event: AgentEvent): TaskPr
   )
     ? p.phase
     : 'tool_running';
-  const visibility =
-    p.visibility === 'silent' || p.visibility === 'artifact' || p.visibility === 'step'
-      ? p.visibility
-      : (old?.visibility ?? 'step');
+  const trace_visibility =
+    p.trace_visibility === ToolTraceVisibility.HIDDEN
+      ? ToolTraceVisibility.HIDDEN
+      : ToolTraceVisibility.VISIBLE;
   const item: AssistantOperation = {
     id: p.operation_id,
     task_id: p.task_id,
     run_id: event.run_id,
     call_id: p.call_id,
+    turn_id: typeof p.turn_id === 'string' ? p.turn_id : (old?.turn_id ?? null),
     tool_name: p.tool_name,
     item_seq: typeof p.item_seq === 'number' ? p.item_seq : (old?.item_seq ?? null),
-    visibility,
+    trace_visibility,
+    event_seq: old?.event_seq ?? event.seq,
+    result_seq: event.event_type === 'step.finished' ? event.seq : (old?.result_seq ?? null),
     label: typeof p.label === 'string' ? p.label : (old?.label ?? ''),
     action: old?.action,
     target: old?.target,

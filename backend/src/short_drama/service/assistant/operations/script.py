@@ -10,6 +10,9 @@ from short_drama.domain.assistant.tasks.task import AgentOperation
 from short_drama.schemas.assistant.operations.script import ScriptProposalRead
 from short_drama.schemas.base import parse_identifier
 from short_drama.schemas.creation.writing.script.documents import WritingVersion
+from short_drama.service.assistant.operations.authorization import (
+    require_assistant_capability_locked,
+)
 from short_drama.service.assistant.operations.script_read import bound_document
 from short_drama.service.creation.writing.script.documents import ProjectWritingService
 
@@ -60,6 +63,9 @@ def apply(service, operation_id, payload):
         applied = (operation.result or {}).get("script_applied_version")
         if applied:
             return {"project_id": change["project_id"], "content_version": applied}
+        require_assistant_capability_locked(
+            service.session, conversation.owner_user_id, "workbench_write"
+        )
         if values.content_version != int(change["content_version"]):
             raise WorkflowError(
                 "assistant_script_changed", "建议的剧本版本不匹配，请重新生成建议", 409

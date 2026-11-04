@@ -15,7 +15,7 @@ export interface RunningHubWorkflowDto {
 }
 export interface AiRuntimeProfileDto {
   version: 1;
-  api_format: 'openai' | 'gemini' | 'claude';
+  api_format: 'auto' | 'openai' | 'gemini' | 'claude';
   protocol: string;
   reference_asset_origin?: string | null;
   capability_config?: ConfigJsonObject | null;
@@ -50,6 +50,8 @@ export interface AiModelConfigDto {
   headers: ConfigHeaderReadDto[];
   credential_source: 'manual' | 'beefapi';
   runtime_profile: AiRuntimeProfileDto | null;
+  interface_type: string;
+  create_key: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -63,6 +65,7 @@ export interface AiModelConfigCreateDto {
   secret_key?: string | null;
   headers?: ConfigHeaderWriteDto[];
   runtime_profile?: AiRuntimeProfileDto | null;
+  interface_type?: string;
   enabled: 0 | 1;
 }
 export type AiModelConfigUpdateDto = Partial<Omit<AiModelConfigCreateDto, 'service_type'>> & { row_version: string };
@@ -76,6 +79,8 @@ export interface ModelDiscoveryRequestDto {
   base_url: string;
   apikey?: string | null;
   config_id?: string;
+  service_type?: ServiceTypeDto;
+  interface_type?: string;
 }
 export interface RuntimeModelDiscoveryRequestDto {
   baseUrl: string;
@@ -88,6 +93,13 @@ export interface RuntimeModelDiscoveryRequestDto {
 export interface ModelDiscoveryDto {
   items: { id: string }[];
   truncated: boolean;
+  source?: 'provider' | 'builtin';
+  status?: 'available' | 'unavailable';
+}
+export interface ModelConfigurationOptionsDto {
+  interfaces: { id: string; label: string; api_format: AiRuntimeProfileDto['api_format']; requires_secret_key: boolean }[];
+  providers: { id: string; label: string; base_url: string; interface_type: string }[];
+  models: { id: string; interface_type: string }[];
 }
 export interface AiModelCapabilitiesDto {
   known: boolean;

@@ -15,9 +15,7 @@ from short_drama.ai.types import GenerationError, GenerationResult
 from short_drama.schemas.canvas.generation.runninghub.runninghub import RunningHubWorkflow
 
 RUNNINGHUB_PLUGIN = "runninghub-workflow-provider"
-RUNNINGHUB_ADAPTERS = {
-    f"canvas_runninghub_workflow_{kind}.v1": kind for kind in ("image", "video", "audio")
-}
+RUNNINGHUB_ADAPTERS = {f"canvas_runninghub_workflow_{kind}.v1": kind for kind in ("video", "audio")}
 RUNNINGHUB_VIDEO = "canvas_runninghub_workflow_video.v1"
 RUNNINGHUB_POLL_SECONDS = 2.5
 URL_CONTAINERS = {

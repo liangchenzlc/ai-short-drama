@@ -66,7 +66,14 @@ def frozen_canvas_parameters(
     """准入 transform 在设置 canvas_node 来源后保存此闭合 envelope。"""
     config = request.input.config
     if request.input.mode == "image":
-        if adapter not in {None, "openai_images.v1", "ark_images.v1", "dashscope_images.v1"}:
+        if adapter not in {
+            None,
+            "openai_images.v1",
+            "ark_images.v1",
+            "dashscope_images.v1",
+            "gemini_images.v1",
+            "grok_images.v1",
+        }:
             unsupported("image options")
         values = {"mode": "image"}
         for field, default in (("size", "1:1"), ("quality", "auto")):

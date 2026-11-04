@@ -4,7 +4,11 @@ from short_drama.agent.runtime.read_tools import _read_history
 from short_drama.agent.tools.contracts import MEMORY_READ_LIMIT
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain.assistant.execution.models import AgentRun
-from short_drama.service.assistant.memory.memory_store import checked_scope, read_memories_locked
+from short_drama.service.assistant.memory.memory_store import (
+    checked_scope,
+    read_memories_locked,
+    require_memory_enabled,
+)
 
 
 def _read(session, conversation, task, operation, values, *, history):
@@ -19,11 +23,10 @@ def _read(session, conversation, task, operation, values, *, history):
     if history:
         result = _read_history(session, conversation, task, values, budget)
     else:
+        require_memory_enabled(session, conversation.owner_user_id)
         if len(set(values.ids)) != len(values.ids):
             raise WorkflowError("invalid_tool_arguments", "记忆 ID 不能重复", 422)
-        scope = checked_scope(
-            session, conversation.owner_user_id, conversation.id, task.memory_project_ids
-        )
+        scope = checked_scope(session, conversation.owner_user_id)
         result = read_memories_locked(
             session,
             scope,

@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import os
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -42,6 +43,7 @@ def test_saved_key_discovery_is_read_only_and_cannot_redirect_key(
             item = (
                 await client.post(
                     root,
+                    headers={"Idempotency-Key": uuid4().hex},
                     json={
                         "service_type": "text",
                         "name": "discovery",

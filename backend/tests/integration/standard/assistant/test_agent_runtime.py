@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import select
 
 from short_drama.agent.coordinator.recovery import recover
+from short_drama.agent.core.state import failure_message
 from short_drama.agent.runtime import executor
 from short_drama.core.time import utcnow
 from short_drama.domain.assistant.conversations.models import AgentEvent, AgentMessage
@@ -23,7 +24,7 @@ from tests.integration.standard.assistant.test_global_assistant_tasks import (
     new_task,
     task_service,
 )
-from tests.support.assistant_runtime import RuntimeTransport, calls
+from tests.support.assistant_runtime import RuntimeTransport, WorkerLost, calls
 
 pytestmark = pytest.mark.integration
 task_workspace = harness_workspace
@@ -345,7 +346,7 @@ def test_summary_command_replays_after_durable_model_receipt(task_workspace, mon
     def crash(service, signature, message):
         original_result(service, signature, message)
         if message.text == "摘要后正式交付":
-            raise RuntimeError("lost after compacted model receipt before graph command")
+            raise WorkerLost("lost after compacted model receipt before graph command")
 
     def route(body):
         if not body.get("tools"):
@@ -361,7 +362,7 @@ def test_summary_command_replays_after_durable_model_receipt(task_workspace, mon
     monkeypatch.setattr(executor, "assistant_middleware", compact)
     monkeypatch.setattr(executor, "stream_run", capture)
     monkeypatch.setattr(AgentToolExecutionService, "model_result", crash)
-    with pytest.raises(RuntimeError, match="durable recovery"):
+    with pytest.raises(WorkerLost):
         runtime.execute(accepted.run.id, 1)
     monkeypatch.setattr(AgentToolExecutionService, "model_result", original_result)
     version = expire(task_workspace, accepted)
@@ -712,7 +713,8 @@ def test_32k_context_rejection_persists_safe_facts_and_sent_usage(
     with factory() as session:
         session.info["actor"] = task_actor()
         assert AgentRunService(session, settings).get_run(accepted.run.id).error == {
-            "code": "agent_context_budget_exhausted"
+            "code": "agent_context_budget_exhausted",
+            "message": failure_message("agent_context_budget_exhausted"),
         }
 
 
@@ -970,10 +972,10 @@ def test_execute_finishes_two_model_rounds_without_broker_reschedule(
 
         def crash(service, signature, message):
             original(service, signature, message)
-            raise RuntimeError("worker lost after model receipt before graph checkpoint")
+            raise WorkerLost("worker lost after model receipt before graph checkpoint")
 
         monkeypatch.setattr(AgentToolExecutionService, "model_result", crash)
-        with pytest.raises(RuntimeError, match="durable recovery"):
+        with pytest.raises(WorkerLost):
             runtime.execute(accepted.run.id, version)
         with factory() as session:
             prepared = session.scalar(
@@ -1011,7 +1013,7 @@ def test_execute_finishes_two_model_rounds_without_broker_reschedule(
             select(AgentOperation).where(AgentOperation.run_id == run.id)
         ).all()
         assert len(operations) == 1 and operations[0].status == "succeeded"
-        assert operations[0].result["policy_version"] == "0"
+        assert operations[0].result["settings_version"] == "0"
         assert session.get(AgentToolCall, operations[0].tool_call_id).status == "succeeded"
         assert run.usage["tool_calls"] == 1
         messages = session.scalars(
@@ -1043,6 +1045,172 @@ def expire(workspace, accepted):
     assert recover(factory, settings) == 1
     with factory() as session:
         return session.get(AgentRun, accepted.run.id).message_version
+
+
+@pytest.mark.parametrize("question", [False, True], ids=["read", "ask_user"])
+def test_first_tool_creates_one_operation_and_preserves_turn_identity(task_workspace, question):
+    from tests.integration.standard.assistant.test_agent_questions import QUESTION
+
+    _, accepted = new_task(task_workspace)
+    factory, settings, _ = task_workspace
+    name = "runtime__ask_user" if question else "runtime__describe_creation_target"
+    transport = RuntimeTransport(
+        [calls(("first-tool", name, QUESTION if question else {})), {"text": "已核对目标"}],
+        selections=[[name], []],
+    )
+    runtime = runtime_for(factory, settings, transport)
+    runtime.execute(accepted.run.id, 1)
+    runtime.execute(accepted.run.id, 1)
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        assert run.status == ("waiting_input" if question else "succeeded"), run.error
+        operation = session.scalars(
+            select(AgentOperation).where(AgentOperation.run_id == run.id)
+        ).one()
+        call = session.get(AgentToolCall, operation.tool_call_id)
+        assert operation.tool_name == call.tool_name == name
+        with factory() as reader:
+            detail = task_service(reader, settings).operation_detail(operation.id)
+            assert detail.model_dump(mode="json")["turn_id"] == str(call.turn_id)
+            assert detail.action and detail.title and detail.target is not None
+        assert "summary" not in operation.result["_display"]
+        started = session.scalars(
+            select(AgentEvent).where(
+                AgentEvent.run_id == run.id, AgentEvent.event_type == "step.started"
+            )
+        ).one()
+        assert started.payload["turn_id"] == str(call.turn_id)
+        assert run.usage["decision_calls"] == len(transport.requests)
+        if question:
+            assert operation.wait_state["kind"] == "user_input"
+            assert operation.wait_state["consumed"] is False
+            assert run.lease_token is None
+        else:
+            assert operation.status == call.status == "succeeded"
+
+
+@pytest.mark.parametrize(
+    "failure", ["orm_type_error", "removed_tool", "runtime_error", "mysql_schema_error"]
+)
+def test_deterministic_graph_failure_is_terminal_and_recovery_does_not_schedule(
+    task_workspace, monkeypatch, failure
+):
+    from short_drama.service.assistant.execution import tools
+
+    _, accepted = new_task(task_workspace)
+    factory, settings, _ = task_workspace
+    if failure == "removed_tool":
+        from short_drama.agent.tools import registry
+
+        monkeypatch.delitem(registry._CATALOG, "runtime__describe_creation_target")
+    elif failure == "orm_type_error":
+        constructor = tools.AgentOperation.__init__
+
+        def invalid_operation(operation, **kwargs):
+            constructor(operation, **kwargs, invalid_private_argument="PRIVATE_ERROR_CANARY")
+
+        monkeypatch.setattr(tools.AgentOperation, "__init__", invalid_operation)
+    else:
+        original = tools.AgentToolExecutionService.start_tool
+
+        def broken_tool(service, *args):
+            original(service, *args)
+            if failure == "mysql_schema_error":
+                from pymysql.err import OperationalError as DriverOperationalError
+                from sqlalchemy.exc import OperationalError
+
+                raise OperationalError("private sql", {}, DriverOperationalError(1054, "CANARY"))
+            raise RuntimeError("PRIVATE_ERROR_CANARY")
+
+        monkeypatch.setattr(tools.AgentToolExecutionService, "start_tool", broken_tool)
+    transport = RuntimeTransport([calls(("first-tool", "runtime__describe_creation_target", {}))])
+    runtime = runtime_for(factory, settings, transport)
+    runtime.execute(accepted.run.id, 1)
+    with factory.begin() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        assert run.status == "failed" and run.error == {"code": "agent_execution_error"}
+        task = session.get(AgentTask, accepted.task.id)
+        assert task.status == "paused_error" and task.phase == "terminal"
+        assert task.error == run.error
+        assert run.lease_token is run.lease_until is None
+        assert run.message_status == "idle" and run.next_run_at is None
+        version, usage, request_count = (
+            run.message_version,
+            deepcopy(run.usage),
+            len(transport.requests),
+        )
+        operations = session.scalars(
+            select(AgentOperation).where(AgentOperation.run_id == run.id)
+        ).all()
+        assert all(row.status == "failed" for row in operations)
+        assert "CANARY" not in json.dumps([run.error, *[row.error for row in operations]])
+        events = session.scalars(select(AgentEvent).where(AgentEvent.run_id == run.id)).all()
+        assert "CANARY" not in json.dumps([event.payload for event in events])
+    later = utcnow() + timedelta(seconds=settings.agent_lease_seconds + 1)
+    monkeypatch.setattr("short_drama.agent.coordinator.recovery.utcnow", lambda: later)
+    assert recover(factory, settings) == 0
+    runtime.execute(accepted.run.id, version)
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        assert run.status == "failed" and run.message_version == version and run.usage == usage
+    assert len(transport.requests) == request_count
+
+
+@pytest.mark.parametrize("failure", ["disconnect", "lock_timeout", "pool_timeout"])
+def test_database_disconnect_resumes_prepared_first_tool_without_repeating_model(
+    task_workspace, monkeypatch, failure
+):
+    from pymysql.err import OperationalError as DriverOperationalError
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+
+    from short_drama.service.assistant.execution.tools import AgentToolExecutionService
+
+    _, accepted = new_task(task_workspace)
+    factory, settings, _ = task_workspace
+    original = AgentToolExecutionService.start_tool
+
+    def disconnected(*args):
+        if failure == "pool_timeout":
+            raise PoolTimeoutError("controlled exhausted pool")
+        code = 1205 if failure == "lock_timeout" else 2013
+        raise OperationalError(
+            "controlled storage boundary", {}, DriverOperationalError(code, "lost")
+        )
+
+    monkeypatch.setattr(AgentToolExecutionService, "start_tool", disconnected)
+    transport = RuntimeTransport(
+        [calls(("first-tool", "runtime__describe_creation_target", {})), {"text": "已恢复核对"}]
+    )
+    with pytest.raises(RuntimeError, match="durable recovery"):
+        runtime_for(factory, settings, transport).execute(accepted.run.id, 1)
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        assert run.status == "running"
+        call = session.scalars(select(AgentToolCall).where(AgentToolCall.run_id == run.id)).one()
+        assert call.status == "prepared"
+        turn = session.get(AgentTurn, call.turn_id)
+        assert turn.status == "succeeded" and turn.response["graph_message"]
+        settled_turn_ids = set(
+            session.scalars(select(AgentTurn.id).where(AgentTurn.run_id == run.id))
+        )
+        assert not session.scalar(select(AgentOperation.id).where(AgentOperation.run_id == run.id))
+    monkeypatch.setattr(AgentToolExecutionService, "start_tool", original)
+    version = expire(task_workspace, accepted)
+    runtime_for(factory, settings, transport).execute(accepted.run.id, version)
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        assert run.status == "succeeded", run.error
+        operation = session.scalars(
+            select(AgentOperation).where(AgentOperation.run_id == run.id)
+        ).one()
+        assert operation.status == "succeeded" and operation.tool_call_id == call.id
+        turns = session.scalars(select(AgentTurn).where(AgentTurn.run_id == run.id)).all()
+        assert settled_turn_ids < {turn.id for turn in turns}
+        assert run.usage["decision_calls"] == len(turns) == len(transport.requests) == 4
+        assert run.usage["output_tokens"] == 3 * len(turns)
+        assert run.usage["reserved_output_tokens"] == 0
+    assert len(transport.main_requests) == 2
 
 
 def test_duplicate_delivery_cannot_claim_the_active_graph(task_workspace):
@@ -1210,7 +1378,7 @@ def test_worker_rebuild_restores_successful_skill_command_before_checkpoint(
 
     def crash(self, operation_id, output):
         original(self, operation_id, output)
-        raise RuntimeError("worker disappeared after operation commit before graph write")
+        raise WorkerLost("worker disappeared after operation commit before graph write")
 
     monkeypatch.setattr(AgentToolExecutionService, "finish_tool", crash)
     first = RuntimeTransport(
@@ -1228,7 +1396,7 @@ def test_worker_rebuild_restores_successful_skill_command_before_checkpoint(
             )
         ]
     )
-    with pytest.raises(RuntimeError, match="durable recovery"):
+    with pytest.raises(WorkerLost):
         runtime_for(factory, settings, first).execute(accepted.run.id, 1)
     with factory() as session:
         operation = session.scalar(
@@ -1358,9 +1526,18 @@ def test_final_input_handoff_preserves_the_framework_call_budget(task_workspace,
             select(AgentMessage.id).where(
                 AgentMessage.task_id == task.id,
                 AgentMessage.role == "assistant",
+                AgentMessage.kind == "reply",
                 AgentMessage.content == "原最终答复",
             )
         )
+        interrupted = session.scalars(
+            select(AgentMessage).where(
+                AgentMessage.task_id == task.id,
+                AgentMessage.content == "原最终答复",
+            )
+        ).one()
+        assert interrupted.kind == "narration"
+        assert interrupted.references[0]["type"] == "interrupted_response"
     assert len(transport.main_requests) == 1
 
 
@@ -1795,6 +1972,59 @@ def test_heartbeat_cancels_inflight_model_and_records_unknown_acceptance(
         assert unknown.usage["reserved_output_tokens"] == 8192
 
 
+def test_renewal_outage_expires_into_recovery_without_user_cancellation(
+    task_workspace, monkeypatch
+):
+    from sqlalchemy.exc import OperationalError
+
+    from short_drama.agent.gateway.contracts import AgentGatewayError
+    from short_drama.agent.runtime.model_ledger import RunModelLedger
+    from short_drama.service.assistant.execution.run import AgentRunService
+
+    _, accepted = new_task(task_workspace)
+    factory, settings, _ = task_workspace
+    settings.agent_lease_seconds = 1
+    entered, release, cancelled = Event(), Event(), Event()
+    observed_ledgers = []
+    original = RunModelLedger.save_error
+
+    def record(self, payload):
+        original(self, payload)
+        observed_ledgers.append(self)
+        if payload.get("code") == "agent_model_cancelled":
+            cancelled.set()
+
+    def unavailable(self, claim):
+        raise OperationalError("controlled renew", {}, OSError(2006, "controlled outage"))
+
+    def block(_body, _number):
+        entered.set()
+        assert release.wait(10)
+
+    monkeypatch.setattr(RunModelLedger, "save_error", record)
+    monkeypatch.setattr(AgentRunService, "renew", unavailable)
+    transport = RuntimeTransport([{"text": "late answer"}], before_reply=block)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(runtime_for(factory, settings, transport).execute, accepted.run.id, 1)
+        try:
+            assert entered.wait(10)
+            assert cancelled.wait(4)
+        finally:
+            release.set()
+        with pytest.raises(RuntimeError, match="durable recovery required"):
+            future.result(timeout=10)
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        assert run.status == "running" and run.error is None and run.cancel_requested == 0
+        assert run.lease_token and run.lease_until <= utcnow()
+        turn = session.scalar(select(AgentTurn).where(AgentTurn.run_id == run.id))
+        request = turn.request_messages[0]
+        assert len(transport.main_requests) == 1
+    with pytest.raises(AgentGatewayError) as denied:
+        observed_ledgers[-1].before_send(request)
+    assert denied.value.code == "agent_admission_denied"
+
+
 def test_unready_interrupt_is_not_resumed_and_stop_finishes_wait_immediately(
     task_workspace, monkeypatch
 ):
@@ -1897,11 +2127,11 @@ def test_completed_checkpoint_recovers_without_another_model_request(task_worksp
     original = AgentRunService.finish
 
     def crash(*args, **kwargs):
-        raise RuntimeError("worker lost after final checkpoint before terminal settlement")
+        raise WorkerLost("worker lost after final checkpoint before terminal settlement")
 
     monkeypatch.setattr(AgentRunService, "finish", crash)
     first = RuntimeTransport([{"text": "检查点里的完整答复"}])
-    with pytest.raises(RuntimeError, match="durable recovery"):
+    with pytest.raises(WorkerLost):
         runtime_for(factory, settings, first).execute(accepted.run.id, 1)
     monkeypatch.setattr(AgentRunService, "finish", original)
     version = expire(task_workspace, accepted)
@@ -2350,7 +2580,7 @@ def test_committed_business_receipt_survives_worker_loss_before_tool_settlement(
     original = AgentToolExecutionService.finish_tool
 
     def crash(*args, **kwargs):
-        raise RuntimeError("worker disappeared after business receipt before tool settlement")
+        raise WorkerLost("worker disappeared after business receipt before tool settlement")
 
     monkeypatch.setattr(AgentToolExecutionService, "finish_tool", crash)
     first = RuntimeTransport(
@@ -2376,7 +2606,7 @@ def test_committed_business_receipt_survives_worker_loss_before_tool_settlement(
             )
         ]
     )
-    with pytest.raises(RuntimeError, match="durable recovery"):
+    with pytest.raises(WorkerLost):
         runtime_for(factory, settings, first).execute(accepted.run.id, 1)
     with factory() as session:
         operation = session.scalar(
@@ -2512,7 +2742,6 @@ def test_forgotten_memory_is_removed_before_the_next_model_round(task_workspace)
         task_service(session, settings)
         memory = AgentMemoryService(session).create_item(
             {
-                "scope_type": "user",
                 "kind": "preference",
                 "memory_key": "runtime-style",
                 "title": "旧风格",

@@ -6,7 +6,7 @@ import logging
 from short_drama.agent.core.access import LeaseLost, lock_run
 from short_drama.agent.core.fence import owns_execution
 from short_drama.agent.resources.contracts import reference_json
-from short_drama.core.exceptions import Conflict, NotFound
+from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.dao.assistant.execution.graph import AgentGraphDAO
 from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint, AgentGraphWrite
 from short_drama.utils.snowflake import next_id
@@ -46,7 +46,7 @@ class AgentGraphService:
             raise NotFound("任务执行图不存在")
         if (run.checkpoint or {}).get("engine") != self.version:
             logger.error("agent_graph_version_mismatch", extra={"run_id": self.run_id})
-            raise Conflict("执行图版本不能在任务中途切换")
+            raise WorkflowError("agent_checkpoint_version_mismatch", "执行图版本不能在任务中途切换")
         if self.fence[1] is None or not owns_execution(run, self.fence):
             raise LeaseLost()
 
@@ -71,7 +71,9 @@ class AgentGraphService:
             ):
                 if row.graph_version != self.version:
                     logger.error("agent_graph_version_mismatch", extra={"run_id": self.run_id})
-                    raise Conflict("执行图版本不能在任务中途切换")
+                    raise WorkflowError(
+                        "agent_checkpoint_version_mismatch", "执行图版本不能在任务中途切换"
+                    )
                 result.append(
                     {
                         "namespace": row.namespace,

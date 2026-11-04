@@ -54,16 +54,19 @@ def test_create_list_options_delete_exposes_secret_only_once(token_http):
     path = "/api/v1/account/mcp-tokens"
     options = client.get(path + "/options")
     assert options.status_code == 200, options.text
-    assert options.json()["projects"] == [{"id": str(project.id), "name": "令牌作品"}]
+    assert "projects" not in options.json()
+    assert options.json()["connection_url"] == "https://testserver/mcp/"
+    assert options.json()["transport"] == "streamable-http"
+    assert [len(names) for names in options.json()["capability_groups"].values()] == [8, 3, 1]
     names = {tool["name"] for tool in options.json()["tools"]}
     assert "workbench__apply_standard_patch" in names
     assert not {"task", "execute", "runtime__load_skill"} & names
     response = client.post(
         path,
+        headers={"Idempotency-Key": "create-test-token"},
         json={
             "name": "  外部工作台  ",
-            "project_ids": [str(project.id)],
-            "tool_names": ["workbench__apply_standard_patch"],
+            "workbench_enabled": True,
             "allowed_ips": ["192.0.2.4/24", "2001:0db8::1"],
         },
     )
@@ -71,6 +74,8 @@ def test_create_list_options_delete_exposes_secret_only_once(token_http):
     token = response.json()
     assert token["name"] == "外部工作台" and token["secret"].startswith("sdmcp_")
     assert token["allowed_ips"] == ["192.0.2.0/24", "2001:db8::1"]
+    assert len(token["tool_names"]) == 11
+    assert token["create_key"] == "create-test-token"
     rows = client.get(path).json()
     assert len(rows) == 1 and rows[0]["id"] == token["id"]
     assert "secret" not in rows[0] and "token_hash" not in rows[0]
@@ -80,6 +85,7 @@ def test_create_list_options_delete_exposes_secret_only_once(token_http):
     with factory() as session:
         row = session.scalar(select(model).where(model.id == int(token["id"])))
         assert row.token_hash == token_hash(token["secret"])
+    assert client.delete(path + "/" + token["id"]).status_code == 204
     assert client.delete(path + "/" + token["id"]).status_code == 204
     assert client.get(path).json() == []
     with factory() as session:
@@ -101,12 +107,12 @@ def test_create_list_options_delete_exposes_secret_only_once(token_http):
 )
 def test_token_input_rejects_invalid_scope_name_time_and_ip(token_http, change):
     client, project, _ = token_http
-    payload = {
-        "name": "valid",
-        "project_ids": [str(project.id)],
-        "tool_names": ["workbench__read_current_script"],
-    }
-    response = client.post("/api/v1/account/mcp-tokens", json=payload | change)
+    payload = {"name": "valid"}
+    response = client.post(
+        "/api/v1/account/mcp-tokens",
+        json=payload | change,
+        headers={"Idempotency-Key": "invalid-input"},
+    )
     assert response.status_code == 422, response.text
 
 
@@ -116,3 +122,27 @@ def test_token_management_still_requires_browser_cookie_and_csrf(token_http):
     assert client.post(path, headers={"X-CSRF-Token": "wrong"}, json={}).status_code == 403
     client.cookies.clear()
     assert client.get(path, headers={"Authorization": "Bearer sdmcp_unknown"}).status_code == 401
+
+
+def test_creation_replay_and_precise_recovery_never_reveal_secret_again(token_http):
+    client, _project, _factory = token_http
+    path = "/api/v1/account/mcp-tokens"
+    body = {"name": "外部助手", "workbench_enabled": False}
+    headers = {"Idempotency-Key": "settings-token-create-1"}
+    first = client.post(path, json=body, headers=headers)
+    again = client.post(path, json=body, headers=headers)
+    assert first.status_code == 201, first.text
+    assert again.status_code == 200, again.text
+    assert first.json()["id"] == again.json()["id"]
+    assert first.json()["secret"] and again.json()["secret"] is None
+    assert first.json()["expires_at"] == again.json()["expires_at"]
+    changed = client.post(path, json={**body, "workbench_enabled": True}, headers=headers)
+    assert changed.status_code == 409, changed.text
+    rows = client.get(path, params={"create_key": headers["Idempotency-Key"]}).json()
+    assert [row["id"] for row in rows] == [first.json()["id"]]
+    assert all("secret" not in row for row in rows)
+    assert client.delete(path + "/" + first.json()["id"]).status_code == 204
+    revoked = client.post(path, json=body, headers=headers)
+    assert revoked.status_code == 200 and revoked.json()["secret"] is None
+    rows = client.get(path, params={"create_key": headers["Idempotency-Key"]}).json()
+    assert rows[0]["deleted_at"] is not None

@@ -37,7 +37,7 @@ def test_create_validation_never_echoes_sensitive_input():
     assert "sensitive-example-credential" not in response.text
     assert "input" not in response.text
     fields = {item["field"] for item in response.json()["error"]["fields"]}
-    assert {"service_type", "name", "apikey"} <= fields
+    assert {"service_type", "apikey"} <= fields
 
 
 def test_invalid_identifier_and_missing_version_are_422():

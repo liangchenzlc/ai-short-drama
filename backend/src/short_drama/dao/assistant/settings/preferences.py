@@ -1,4 +1,4 @@
-"""Account preference reads and the account mutex used by both preference versions."""
+"""Account preference reads and the mutex for the unified settings version."""
 
 from sqlalchemy import select
 

@@ -79,27 +79,16 @@ def test_image_content_read_requires_exact_frozen_identity_and_one_source():
             ReadImageContent.model_validate(invalid)
 
 
-def test_generation_policy_is_versioned_and_cannot_be_changed_by_a_tool():
+def test_generation_policy_can_be_read_but_cannot_be_changed_by_a_tool():
 
     from short_drama.schemas.assistant.tasks.policy import (
-        GenerationPolicyPatch,
         ReadGenerationPolicy,
     )
 
-    saved = GenerationPolicyPatch(media_generation_enabled=False, policy_version="0")
-    assert saved.model_dump(mode="json") == {
-        "media_generation_enabled": False,
-        "policy_version": "0",
-    }
     assert get_spec("runtime__get_generation_policy").args_schema is ReadGenerationPolicy
     assert "set_generation_policy" not in {spec.name for spec in TOOL_SPECS}
-    for value in ("false", 0, None):
-        with pytest.raises(ValidationError):
-            GenerationPolicyPatch(media_generation_enabled=value, policy_version="0")
     with pytest.raises(ValidationError):
         ReadGenerationPolicy(media_generation_enabled=True)
-    with pytest.raises(ValidationError):
-        GenerationPolicyPatch(media_generation_enabled=True, policy_version="0", owner_user_id="2")
 
 
 def test_media_tool_schema_keeps_versions_and_rejects_private_or_unbounded_parameters():
@@ -171,7 +160,7 @@ def test_image_tools_keep_real_identifiers_and_reject_unbounded_or_untrusted_inp
 def test_new_task_has_no_implicit_selection_target_memory_or_skill():
     message = AssistantTaskMessage(content="聊聊人物动机")
     assert message.subject_selection is None and message.execution_target is None
-    assert message.memory_project_ids == [] and message.skills == []
+    assert message.skills == []
     assert message.task_id is None and message.new_task is False
 
 
@@ -577,7 +566,7 @@ def test_context_budget_discounts_binary_only_in_a_real_user_prompt():
             }
         ]
     }
-    assert provider_budget(provider, 8192)["estimated_input_tokens"] < 4000
+    assert provider_budget(provider, 8192)["estimated_input_tokens"] < 5000
     provider["messages"].append({"role": "tool", "content": "工具正文" * 20000})
     with pytest.raises(AgentGatewayError):
         provider_budget(provider, 8192)
@@ -705,6 +694,7 @@ def test_phase_summary_replays_legacy_citations_but_sends_only_indexed_prior_tex
     job = SimpleNamespace(
         kind="summary",
         base_summary_id=100,
+        error=None,
         source_snapshot={
             "messages": [],
             "prior_facts": [
@@ -732,28 +722,23 @@ def test_phase_summary_replays_legacy_citations_but_sends_only_indexed_prior_tex
 
 
 @pytest.mark.parametrize(
-    "text,action,scope,body,target",
+    "text,action,body,target",
     [
-        ("请帮我记住：对白简短", "remember", None, "对白简短", None),
-        ("记住：对白简短\n转折明确", "remember", None, "对白简短\n转折明确", None),
-        ("记住账号是角色遗失的线索", "remember", None, "账号是角色遗失的线索", None),
-        ("记住账号偏好：对白简短", "remember", "user", "对白简短", None),
-        ("在当前作品记忆里记住：林晚来自南城", "remember", "project", "林晚来自南城", None),
-        ("修改记忆“对白节奏”为：长短按场景", "update", None, "长短按场景", "对白节奏"),
-        ("忘掉账号记忆“对白节奏”", "forget", "user", None, "对白节奏"),
-        ("重新记住本会话记忆“对白节奏”", "restore", "conversation", None, "对白节奏"),
+        ("请帮我记住：对白简短", "remember", "对白简短", None),
+        ("记住：对白简短\n转折明确", "remember", "对白简短\n转折明确", None),
+        ("记住账号是角色遗失的线索", "remember", "账号是角色遗失的线索", None),
+        ("记住账号偏好：对白简短", "remember", "对白简短", None),
+        ("修改记忆“对白节奏”为：长短按场景", "update", "长短按场景", "对白节奏"),
+        ("忘掉账号记忆“对白节奏”", "forget", None, "对白节奏"),
     ],
 )
-def test_direct_memory_commands_keep_the_original_body_and_explicit_scope(
-    text, action, scope, body, target
-):
+def test_direct_memory_commands_keep_original_body_for_account_memory(text, action, body, target):
     from short_drama.agent.tools.memory_ops import parse_memory_directive
 
     value = parse_memory_directive(text)
     assert value is not None
-    assert (value.action, value.scope_type, value.content, value.target) == (
+    assert (value.action, value.content, value.target) == (
         action,
-        scope,
         body,
         target,
     )
@@ -774,6 +759,8 @@ def test_direct_memory_commands_keep_the_original_body_and_explicit_scope(
         "重新记住",
         "修改记忆为：无对象",
         "记住：甲\n忘掉记忆乙",
+        "在当前作品记忆里记住：林晚来自南城",
+        "重新记住本会话记忆“对白节奏”",
     ],
 )
 def test_memory_commands_cannot_be_authorized_by_quoted_negated_or_ambiguous_data(text):

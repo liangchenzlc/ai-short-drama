@@ -214,6 +214,7 @@ def save_channel(runtime, client, *, capability=None, protocol=None):
         capability_config["text"] = deepcopy(CAPABILITY if capability is None else capability)
     saved = client.post(
         "/api/v1/ai-model-configs",
+        headers={"Idempotency-Key": uuid4().hex},
         json={
             "name": "真实图片文字协议验证",
             "service_type": "text",

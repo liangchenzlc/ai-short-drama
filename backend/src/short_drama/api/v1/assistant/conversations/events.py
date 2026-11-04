@@ -46,6 +46,7 @@ async def conversation_events(
 
     async def stream():
         after, rows, heartbeat = cursor, initial, time.monotonic()
+        delay = 1.0
         while not await request.is_disconnected():
             for event in rows:
                 yield f"id: {event.seq}\nevent: agent\ndata: {event.model_dump_json()}\n\n"
@@ -53,7 +54,10 @@ async def conversation_events(
             if time.monotonic() - heartbeat >= 15:
                 yield ": heartbeat\n\n"
                 heartbeat = time.monotonic()
-            await asyncio.sleep(1)
+            # 满页通常还有积压；活跃输出短等，连续空页退回原有一秒上限。
+            if len(rows) < 100:
+                delay = 0.2 if rows else min(1.0, delay * 2)
+                await asyncio.sleep(delay)
             try:
                 rows = await run_in_threadpool(read, after)
             except BusinessError as error:

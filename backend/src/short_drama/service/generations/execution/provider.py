@@ -331,7 +331,7 @@ class ProviderExecution(ExecutionServiceBase):
                 )
             media_ids = request.get("input", {}).get("reference_media_ids")
             if media_ids and (
-                adapter in {"openai_images.v1", "modelhub_video.v1"}
+                adapter in {"openai_images.v1", "modelhub_video.v1", "minimax_video.v2"}
                 or uses_canvas_inline_images(snapshot, request, adapter)
             ):
                 options["reference_loader"] = StoredImageReferences(
@@ -348,7 +348,13 @@ class ProviderExecution(ExecutionServiceBase):
                 options["mask_reference_loader"] = StoredImageReferences(
                     self.factory, self.storage, self.settings, [mask_id]
                 )
-            if adapter in {"ark_video.v1", "dashscope_video.v1", "modelhub_video.v1"}:
+            if adapter in {
+                "ark_video.v1",
+                "dashscope_video.v1",
+                "modelhub_video.v1",
+                "minimax_video.v2",
+                "kling_video.v4",
+            }:
                 frames = [
                     request["input"][f"{name}_frame_media_id"]
                     for name in ("first", "last")

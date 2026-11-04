@@ -139,7 +139,7 @@ export function ScriptRewriteDialog({
           {resolvedModel === undefined && (
             <p className="sd-hint">
               请选择可用的文本模型，或
-              <a href="/ai_config" target="_blank" rel="noreferrer">
+              <a href="/settings/models/text" target="_blank" rel="noreferrer">
                 前往 AI 配置
               </a>
               添加。

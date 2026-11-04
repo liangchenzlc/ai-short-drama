@@ -11,26 +11,11 @@ from short_drama.domain.base import Base
 from short_drama.domain.options import OPTIONS
 
 
-def scope_check(name):
-    return CheckConstraint(
-        "(scope_type = 'user' AND scope_key = 'user' AND conversation_id IS NULL "
-        "AND project_id IS NULL) OR (scope_type = 'conversation' AND conversation_id IS NOT NULL "
-        "AND project_id IS NULL AND scope_key = CONCAT(conversation_id)) OR "
-        "(scope_type = 'project' AND project_id IS NOT NULL AND conversation_id IS NULL "
-        "AND scope_key = CONCAT(project_id))",
-        name=name,
-    )
-
-
 class AgentMemoryItem(Base):
     __tablename__ = "agent_memory_items"
 
     id: Mapped[int] = _id()
     owner_user_id: Mapped[int] = _number()
-    scope_type: Mapped[str] = mapped_column(VARCHAR(16))
-    scope_key: Mapped[str] = mapped_column(VARCHAR(128))
-    conversation_id: Mapped[int | None] = _number(nullable=True)
-    project_id: Mapped[int | None] = _number(nullable=True)
     kind: Mapped[str] = mapped_column(VARCHAR(16))
     memory_key: Mapped[str] = mapped_column(VARCHAR(160, collation="utf8mb4_0900_bin"))
     title: Mapped[str] = mapped_column(VARCHAR(200))
@@ -52,12 +37,8 @@ class AgentMemoryItem(Base):
 
     __table_args__ = (
         _fk(["owner_user_id"], "users", name="fk_agent_memory_items_owner"),
-        _fk(["conversation_id"], "agent_conversations", name="fk_agent_memory_items_conversation"),
-        _fk(["project_id"], "projects", name="fk_agent_memory_items_project"),
         UniqueConstraint(
             "owner_user_id",
-            "scope_type",
-            "scope_key",
             "kind",
             "memory_key",
             name="uk_agent_memory_identity",
@@ -68,9 +49,7 @@ class AgentMemoryItem(Base):
             "idx_agent_memory_catalog",
             "owner_user_id",
             "state",
-            "scope_type",
-            "scope_key",
-            "pinned",
+            "updated_at",
             "id",
         ),
         Index(
@@ -79,7 +58,6 @@ class AgentMemoryItem(Base):
             mysql_prefix="FULLTEXT",
             mysql_with_parser="ngram",
         ),
-        scope_check("ck_agent_memory_scope"),
         CheckConstraint(
             "kind IN ('preference','correction','setting','decision','reference')",
             name="ck_agent_memory_kind",
@@ -133,39 +111,19 @@ class AgentMemorySource(Base):
     id: Mapped[int] = _id()
     memory_id: Mapped[int] = _number()
     content_version: Mapped[int] = _number()
-    conversation_id: Mapped[int] = _number()
-    message_id: Mapped[int | None] = _number(nullable=True)
-    source_seq: Mapped[int] = _number()
     source_hash: Mapped[str] = _hash()
-    subject_keys: Mapped[list] = _json(array=True)
     created_at: Mapped[datetime] = _time()
 
     __table_args__ = (
         _fk(["memory_id"], "agent_memory_items", name="fk_agent_memory_sources_item"),
-        _fk(
-            ["conversation_id"], "agent_conversations", name="fk_agent_memory_sources_conversation"
-        ),
-        _fk(
-            ["message_id", "conversation_id"],
-            "agent_messages",
-            ["id", "conversation_id"],
-            name="fk_agent_memory_sources_message",
-        ),
         UniqueConstraint(
             "memory_id",
             "content_version",
-            "conversation_id",
-            "source_seq",
+            "source_hash",
             name="uk_agent_memory_source",
         ),
-        Index(
-            "idx_agent_memory_sources_conversation",
-            "conversation_id",
-            "memory_id",
-            "content_version",
-        ),
         CheckConstraint(
-            "content_version > 0 AND source_seq > 0 AND JSON_TYPE(subject_keys) = 'ARRAY'",
+            "content_version > 0",
             name="ck_agent_memory_source",
         ),
         OPTIONS,
@@ -178,8 +136,6 @@ class AgentMemoryForgetRule(Base):
     id: Mapped[int] = _id()
     owner_user_id: Mapped[int] = _number()
     memory_id: Mapped[int] = _number()
-    scope_type: Mapped[str] = mapped_column(VARCHAR(16))
-    scope_key: Mapped[str] = mapped_column(VARCHAR(128))
     kind: Mapped[str] = mapped_column(VARCHAR(16))
     memory_key: Mapped[str] = mapped_column(VARCHAR(160, collation="utf8mb4_0900_bin"))
     forget_version: Mapped[int] = _number()
@@ -199,8 +155,6 @@ class AgentMemoryForgetRule(Base):
         Index(
             "idx_agent_memory_forget_identity",
             "owner_user_id",
-            "scope_type",
-            "scope_key",
             "kind",
             "memory_key",
             "active",

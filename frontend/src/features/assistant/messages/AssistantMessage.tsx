@@ -9,7 +9,11 @@ import remarkGfm from 'remark-gfm';
 export function AssistantReply({ text }: { text: string }) {
   return (
     <div className="ai-assistant-reply">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+        a: ({ href, children }) => /^https?:\/\//i.test(href ?? '')
+          ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+          : <a href={href}>{children}</a>,
+      }}>{text}</ReactMarkdown>
     </div>
   );
 }
@@ -27,7 +31,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 }) {
   const user = message.role === 'user';
   const revised = !!onHistory && /^\d+$/.test(message.row_version ?? '1') && BigInt(message.row_version ?? '1') > 1n;
-  const references = message.references?.filter((reference) => reference.type !== 'subject_scope' && reference.type !== 'question_answer') ?? [];
+  const references = message.references?.filter((reference) => !['subject_scope', 'question_answer', 'interrupted_response'].includes(String(reference.type))) ?? [];
   const attachments = references.filter((reference) => reference.type === 'attachment');
   const materials = references.filter((reference) => reference.type === 'subject');
   const others = references.filter((reference) => reference.type !== 'attachment' && reference.type !== 'subject');
@@ -38,6 +42,7 @@ export const AssistantMessage = memo(function AssistantMessage({
       ) : (
         <AssistantReply text={message.content} />
       )}
+      {message.interrupted ? <span className="ai-assistant-meta" role="status">已中断</span> : null}
       {attachments.length || materials.length ? (
         <div className="ai-assistant-message-attachments" aria-label="消息素材">
           {attachments.map((reference, index) => {

@@ -680,6 +680,7 @@ def test_original_table_two_selected_shots_real_agnes_image_and_direct_video(
     for kind in ("image", "video"):
         response = owner.post(
             "/api/v1/ai-model-configs",
+            headers={"Idempotency-Key": uuid4().hex},
             json={
                 "name": "Agnes真实分镜媒体-" + kind,
                 "service_type": kind,

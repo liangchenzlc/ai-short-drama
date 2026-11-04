@@ -1,40 +1,71 @@
+import { McpTokenDialogs } from '@host/features/assistant/settings/McpTokenDialogs';
 import { useMcpAccessTokens } from '@host/features/assistant/settings/useMcpAccessTokens';
-import { Dialog } from '@host/shared/ui/Dialog';
 import { StudioFeedback, useStudioMessage } from '@host/shared/ui/StudioFeedback';
-import type { McpAccessToken } from '@host/types/assistant/settings/editor';
-import { Button, Input, Select, Skeleton } from 'antd';
-import './assistant-settings.css';
+import type { McpAccessToken } from '@host/types/assistant/settings/mcp';
+import { Button, Empty, Input, Skeleton, Tooltip } from 'antd';
+import { Copy, Eye, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useRef } from 'react';
+import './mcp-access-tokens.css';
 
-export function McpAccessTokens({ active }: { active: boolean }) {
-  const { tokens, options, loaded, loading, busy, issue, formOpen, setFormOpen, name, setName, expiry, setExpiry, ips, setIps, projects, setProjects, tools, setTools, formIssue, setFormIssue, secret, setSecret, deleting, setDeleting, read, create, remove } = useMcpAccessTokens(active);
+const dateLabel = (value: string | null) => value
+  ? new Date(value).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  : '长期有效';
+
+function permissionLabel(token: McpAccessToken) {
+  if (token.tool_names.includes('workbench__submit_generation_batch')) return '工作台操作、媒体生成';
+  return token.tool_names.includes('workbench__apply_standard_patch') ? '工作台操作' : '只读访问';
+}
+
+function McpConnection({ value }: { value: string }) {
   const message = useStudioMessage();
-  const expired = (token: McpAccessToken) => !!token.expires_at && new Date(token.expires_at).getTime() <= Date.now();
-  return <section className="assistant-mcp-tokens" aria-labelledby="assistant-mcp-title">
-    <div className="assistant-settings-inline"><h3 id="assistant-mcp-title">MCP 账号令牌</h3><Button disabled={!options || loading || busy} onClick={() => { setName(''); setExpiry(''); setIps(''); setProjects([]); setTools([]); setFormIssue(''); setFormOpen(true); }}>创建令牌</Button><Button disabled={loading || busy} onClick={() => void read()}>读取令牌列表</Button></div>
-    <p className="muted">仅授权工作台业务工具。完整密钥只显示一次；删除后立即失效。</p>
-    {issue && <StudioFeedback type="error" persistent title="MCP 令牌" message={issue} />}
-    {loading && !loaded ? <Skeleton active /> : !loaded ? <p>尚未读取令牌列表。</p> : !tokens.length ? <p>还没有 MCP 令牌。创建时选择可访问的项目和业务工具。</p> :
-      <div className="assistant-token-list"><table><thead><tr><th>名称 / 密钥提示</th><th>状态 / 到期</th><th>授权范围</th><th>IP 白名单</th><th>创建时间</th><th>操作</th></tr></thead><tbody>
-        {tokens.map(token => <tr key={token.id}><td>{token.name}<small>{token.token_hint}</small></td><td>{expired(token) ? '已过期' : '有效'}<small>{token.expires_at ? new Date(token.expires_at).toLocaleString() : '长期有效'}</small></td><td><small>{token.project_ids.map(id => options?.projects.find(item => item.id === id)?.name ?? '项目已不可访问').join('、')}</small><small>{token.tool_names.join('、')}</small></td><td><small>{token.allowed_ips.join('、') || '不限'}</small></td><td>{new Date(token.created_at).toLocaleString()}</td><td><Button danger size="small" disabled={busy || loading} onClick={() => { setDeleting(token); setFormIssue(''); }}>删除 {token.name}</Button></td></tr>)}
-      </tbody></table></div>}
-    {formOpen && options && <Dialog title="创建 MCP 令牌" onClose={() => setFormOpen(false)} canClose={!busy}>
-      <form className="assistant-token-form" onSubmit={event => { event.preventDefault(); void create(); }}>
-        <label><span>令牌名称</span><Input aria-label="令牌名称" maxLength={80} value={name} disabled={busy} onChange={event => setName(event.target.value)} required /></label>
-        <label><span>到期时间（可选）</span><Input aria-label="到期时间（可选）" type="datetime-local" value={expiry} disabled={busy} onChange={event => setExpiry(event.target.value)} /></label>
-        <label><span>IP / CIDR 白名单（可选）</span><Input.TextArea aria-label="IP / CIDR 白名单（可选）" value={ips} disabled={busy} rows={2} placeholder="每行一项，例如 192.0.2.1 或 192.0.2.0/24" onChange={event => setIps(event.target.value)} /></label>
-        <label><span>授权项目</span><Select aria-label="授权项目" mode="multiple" value={projects} disabled={busy} options={options.projects.map(item => ({ value: item.id, label: item.name }))} onChange={setProjects} /></label>
-        <label><span>授权工具</span><Select aria-label="授权工具" mode="multiple" value={tools} disabled={busy} optionFilterProp="label" options={options.tools.map(item => ({ value: item.name, label: `${item.name} · ${item.description}` }))} onChange={setTools} /></label>
-        {formIssue && <p role="alert">{formIssue}</p>}
-        <div className="dialog-actions"><Button disabled={busy} onClick={() => setFormOpen(false)}>取消</Button><Button htmlType="submit" type="primary" loading={busy}>创建</Button></div>
-      </form>
-    </Dialog>}
-    {secret !== null && <Dialog title="保存 MCP 密钥" onClose={() => setSecret(null)}>
-      <p>完整密钥仅显示这一次。关闭后无法再次读取。</p><pre className="assistant-token-secret" aria-label="一次性 MCP 密钥">{secret}</pre>
-      <div className="dialog-actions"><Button onClick={async () => { try { await navigator.clipboard.writeText(secret); message.success('密钥已复制。'); } catch { message.error('复制失败，请手动选择并复制密钥。'); } }}>复制密钥</Button><Button type="primary" onClick={() => setSecret(null)}>已保存，关闭</Button></div>
-    </Dialog>}
-    {deleting && <Dialog title="删除 MCP 令牌" onClose={() => setDeleting(null)} canClose={!busy}>
-      <p>删除「{deleting.name}」后，使用此密钥的请求立即失效。</p>{formIssue && <p role="alert">{formIssue}</p>}
-      <div className="dialog-actions"><Button disabled={busy} onClick={() => setDeleting(null)}>取消</Button><Button danger loading={busy} onClick={() => void remove()}>确认删除</Button></div>
-    </Dialog>}
+  const input = useRef<HTMLInputElement | null>(null);
+  return <label className="mcp-endpoint">
+    <span>接入地址</span>
+    <div className="mcp-endpoint-box">
+      <Input aria-label="MCP 接入地址" value={value} readOnly ref={node => { input.current = node?.input ?? null; }} />
+      <Tooltip title="复制接入地址"><Button type="text" aria-label="复制接入地址" icon={<Copy size={16} />} onClick={async () => {
+        try { await navigator.clipboard.writeText(value); message.success('接入地址已复制。', 'mcp-address-copy'); }
+        catch { input.current?.select(); message.error('复制失败，请选中接入地址后复制。', 'mcp-address-copy'); }
+      }} /></Tooltip>
+    </div>
+  </label>;
+}
+
+export function McpAccessTokens({ active = true }: { active?: boolean }) {
+  const state = useMcpAccessTokens(active);
+  const { tokens, options, loaded, loading, busy, issue, pending, openCreate, openToken, read } = state;
+  return <section className="mcp-settings" aria-label="MCP 接入">
+    {options && <McpConnection value={options.connection_url} />}
+    <div className="mcp-toolbar">
+      <span>{loaded ? `共 ${tokens.length} 个令牌` : 'MCP 令牌'}</span>
+      <div>
+        <Tooltip title="刷新令牌"><Button type="text" aria-label="刷新令牌" loading={loading} disabled={busy} icon={<RefreshCw size={16} />} onClick={() => void read()} /></Tooltip>
+        <Button type={pending ? 'default' : 'primary'} disabled={!options || busy || loading} icon={pending ? undefined : <Plus size={16} />} onClick={openCreate}>
+          {pending ? '核对创建结果' : '创建令牌'}
+        </Button>
+      </div>
+    </div>
+    {issue && <StudioFeedback type="error" persistent title="MCP 令牌" message={issue} noticeKey="mcp-list-error" actions={<Button onClick={() => void read()}>重新读取</Button>} />}
+    {loading && !loaded ? <Skeleton active paragraph={{ rows: 4 }} /> : !loaded ?
+      <div className="mcp-empty" role="alert"><p>令牌读取失败</p><Button onClick={() => void read()}>重新读取</Button></div> :
+      !tokens.length ? <Empty className="mcp-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有 MCP 令牌" /> :
+      <div className="mcp-table-wrap"><table className="mcp-table">
+        <caption className="sr-only">MCP 令牌列表</caption>
+        <thead><tr><th>名称</th><th>MCP 令牌</th><th>授权范围</th><th>有效期</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>{tokens.map(token => {
+          const expired = !!token.expires_at && new Date(token.expires_at).getTime() <= Date.now();
+          return <tr key={token.id}>
+            <td><strong title={token.name}>{token.name}</strong></td>
+            <td><span className="mcp-token-hint">{token.token_hint}</span></td>
+            <td>{permissionLabel(token)}</td><td>{dateLabel(token.expires_at)}</td>
+            <td><span className={`mcp-state${expired ? '' : ' active'}`}>{expired ? '已过期' : '有效'}</span></td>
+            <td><div className="mcp-token-actions">
+              <Tooltip title="查看授权"><Button type="text" size="small" disabled={busy || loading} icon={<Eye size={16} />} aria-label={`查看授权：${token.name}`} onClick={() => openToken('details', token)} /></Tooltip>
+              <Tooltip title="撤销令牌"><Button type="text" size="small" disabled={busy || loading} icon={<Trash2 size={16} />} aria-label={`撤销令牌：${token.name}`} onClick={() => openToken('revoke', token)} /></Tooltip>
+            </div></td>
+          </tr>;
+        })}</tbody>
+      </table></div>}
+    <McpTokenDialogs active={active} {...state} />
   </section>;
 }

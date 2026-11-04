@@ -25,7 +25,7 @@
 @import '../layouts/studio/web.css';
 @import '../../features/creation/workspace/styles/web.css';
 @import '../../features/creation/writing/editor/styles/web.css';
-@import '../../pages/ai-config/index.css';
+@import '../../features/creation/assets/editor/asset-editor.css';
 @import '../../features/generations/tasks/styles/table.css';
 @import '../../shared/media/styles/preview.css';
 @import './workbench.css';

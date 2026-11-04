@@ -1,10 +1,12 @@
 # HTTP API 约定
 
-本人助手非实时设置使用 `GET/PATCH /assistant/settings`，PATCH 为完整设置替换并核对 `settings_version`，部署上限超出返回 422；与实时媒体开关的 `policy_version` 分开。完整字段、冻结时点及 409 处理见[助手设置](assistant.md#单助手设置)。
+创作助手同版契约补充：MessageRead.interrupted明确标识中断正文，RunRead.stopping表示停止／删除正在收尾；run.error返回稳定code与安全message，受理不明时保留accepted_unknown=true。详细规则见[助手接口](assistant.md#正式图运行与停止恢复2026-10-30)。
+
+本人助手设置使用 `GET/PATCH /assistant/settings`，指令、工作台操作、媒体生成及长期记忆共用 `settings_version`。PATCH 只包含修改字段与版本；409 保留输入并核对服务端状态。用户运行额度和媒体数量、独立 `generation-policy` 接口已退役，技术预算仍由部署与运行时管理。详见[助手设置](assistant.md#单助手设置)。
 
 结构化问题使用 `POST /assistant/operations/{operation_id}/answer`，要求 Cookie、同源 Origin、CSRF 与 Idempotency-Key。问题支持多题单选／多选，每题 2–4 项与推荐标记；“其他”以自定义字符串提交。答案定向恢复原 Run，保存自然语言用户消息；一致快照含 `pending_questions`，不可答时 request 为 null。完整字段、跳过及终态幂等见[问题与生成等待](assistant.md#问题与生成等待)。
 
-执行轨迹通过 `GET /assistant/conversations/{conversation_id}/runs/{run_id}/trace` 分页读取，默认50、最大100；块内受控详情使用其下 `/{block_id}/resources/{resource_id}`，不能提交存储定位。快照含有界轨迹，SSE 保持原事件信封、Cookie 验权和409重新同步机制；界面仅显示操作、对象和状态，不提供工具详情入口，见[统一执行轨迹](assistant.md#统一执行轨迹)。
+执行轨迹通过 `GET /assistant/conversations/{conversation_id}/runs/{run_id}/trace` 分页读取，默认50、最大100；块内受控详情使用其下 `/{block_id}/resources/{resource_id}`，不能提交存储定位。快照含有界轨迹，SSE 保持会话级事件序号、Cookie 验权和409重新同步机制；助手将正文、活动和结果按事件序号组成连续回复，过程可折叠，工具显隐使用 `ToolTraceVisibility` 枚举且未知工具默认可见，见[统一执行轨迹](assistant.md#统一执行轨迹)。
 
 当前接口统一使用 `/api/v1`。本文描述已实现契约；完整字段、类型和默认值以运行中的 `/openapi.json`、`/docs` 及 [Pydantic schemas](../../backend/src/short_drama/schemas) 为准。账号验证默认启用；两种模式的项目均仅所有者可访问；模型配置和私人资源仅本人可读。
 

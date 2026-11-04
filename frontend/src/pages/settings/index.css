@@ -1,0 +1,22 @@
+.settings-page { max-width: 1440px; margin-inline: auto; }
+.settings-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+.settings-heading h1 { margin: 0; font-size: 26px; font-weight: 650; letter-spacing: -.025em; }
+.settings-heading > div { display: flex; align-items: center; gap: 12px; }
+.settings-layout { display: grid; grid-template-columns: 156px minmax(0, 1fr); gap: 28px; min-height: 540px; }
+.settings-navigation { border-right: 1px solid var(--hair); padding-right: 16px; }
+.settings-nav-group { display: grid; gap: 4px; padding-block: 0 18px; margin-bottom: 16px; border-bottom: 1px solid var(--hair); }
+.settings-nav-group:last-child { border: 0; }
+.settings-nav-group > p { margin: 0 10px 8px; color: var(--sub); font-size: 12px; }
+.settings-nav-item { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 10px; border-radius: 7px; color: var(--sub); font-size: 13px; text-decoration: none; }
+.settings-nav-item:hover { background: var(--pale); color: var(--ink); }
+.settings-nav-item.active { background: var(--surface-selected, var(--pale)); color: var(--ink); font-weight: 600; }
+.settings-pending-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--sub); margin-left: auto; }
+.settings-panel { min-width: 0; }
+.settings-panel .ant-switch { min-height: 22px; height: 22px; }
+.settings-panel .ant-switch-small { min-height: 16px; height: 16px; }
+.settings-media-tabs { display: flex; gap: 28px; border-bottom: 1px solid var(--hair); margin-bottom: 22px; }
+.settings-media-tabs a { position: relative; padding: 0 0 14px; color: var(--sub); font-size: 14px; text-decoration: none; }
+.settings-media-tabs a.active { color: var(--ink); }
+.settings-media-tabs a.active::after { content: ''; position: absolute; inset: auto 0 -1px; height: 2px; background: var(--ink); }
+.model-settings-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; font-size: 12px; }
+.model-settings-pagination { margin-top: 20px; justify-content: flex-end; }

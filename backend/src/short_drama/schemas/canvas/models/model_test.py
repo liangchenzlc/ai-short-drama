@@ -30,16 +30,23 @@ class CanvasModelTestChannel(CanvasModelChannelInput):
 
 
 class CanvasModelTestCreate(CanvasGenerationProtocol):
-    channel: CanvasModelTestChannel
-    model: str = Field(min_length=1, max_length=255)
-    mode: Kind
-    prompt: Prompt
+    config_id: Identifier | None = Field(default=None, alias="config_id")
+    channel: CanvasModelTestChannel | None = None
+    model: str | None = Field(default=None, min_length=1, max_length=255)
+    mode: Kind | None = None
+    prompt: Prompt = "请回复：连接成功"
     config: dict[str, str | bool | int | float | None] = Field(default_factory=dict)
     text_options: CanvasTextOptions = Field(default_factory=lambda: CanvasTextOptions(stream=False))
     client_operation_id: OperationId
 
     @model_validator(mode="after")
     def selected_profile(self):
+        if self.config_id is not None:
+            if self.channel is not None or self.model is not None or self.mode is not None:
+                raise ValueError("已保存模型测试只接受配置身份")
+            return self
+        if self.channel is None or self.model is None or self.mode is None:
+            raise ValueError("渠道测试缺少模型配置")
         profiles = [item for item in self.channel.model_profiles if item.model == self.model]
         if (
             self.model not in self.channel.models

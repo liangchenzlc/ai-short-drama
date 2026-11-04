@@ -17,6 +17,10 @@ from short_drama.dao.assistant.operations.invocation import BusinessInvocationDA
 from short_drama.db.scope.resource_scope import require_project
 from short_drama.domain.assistant.operations.invocation import BusinessToolInvocation
 from short_drama.domain.identity.audit.models import AuditEvent
+from short_drama.service.assistant.operations.authorization import (
+    require_assistant_capability_locked,
+    require_mcp_tool_locked,
+)
 from short_drama.service.base import BaseService
 from short_drama.utils.json_digest import digest
 from short_drama.utils.snowflake import next_id
@@ -140,6 +144,18 @@ class BusinessInvocationService(BaseService):
         user = self.invocations.account(identity.actor.user_id, lock=mutating)
         if user is None or user.status != "active" or user.email_verified_at is None:
             raise WorkflowError("authentication_required", "Please sign in", 401)
+        if identity.source == "mcp":
+            require_mcp_tool_locked(
+                self.session, identity.actor.user_id, identity.token_id, tool_name
+            )
+        elif mutating:
+            require_assistant_capability_locked(
+                self.session,
+                identity.actor.user_id,
+                "media_generate"
+                if tool_name == "workbench__submit_generation_batch"
+                else "workbench_write",
+            )
 
     def _write(
         self,

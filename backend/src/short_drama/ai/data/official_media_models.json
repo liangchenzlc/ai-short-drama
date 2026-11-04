@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "verified_at": "2026-11-04",
+  "providers": [
+    {
+      "id": "minimax",
+      "hosts": ["api.minimax.io", "api.minimaxi.com"],
+      "service_type": "video",
+      "interface_type": "minimax-video",
+      "discovery": "builtin",
+      "sources": [
+        "https://platform.minimax.io/docs/api-reference/video-generation-v2-create",
+        "https://platform.minimax.io/docs/api-reference/video-generation-v2-query"
+      ],
+      "models": [
+        {"id": "MiniMax-H3", "duration_min": 4, "duration_max": 15, "resolutions": ["768p", "2K"]},
+        {"id": "MiniMax-H3-Highspeed", "duration_min": 4, "duration_max": 15, "resolutions": ["480p", "768p"]},
+        {"id": "MiniMax-H3-Lite", "duration_min": 4, "duration_max": 15, "resolutions": ["480p", "768p"]},
+        {"id": "MiniMax-H3-Max", "duration_min": 5, "duration_max": 15, "resolutions": ["480p", "768p"]}
+      ]
+    },
+    {
+      "id": "kling",
+      "hosts": ["api-beijing.klingai.com", "api-singapore.klingai.com"],
+      "service_type": "video",
+      "interface_type": "kling-video",
+      "discovery": "builtin",
+      "sources": [
+        "https://app.klingai.com/global/dev/document-api/api/get-started/authentication",
+        "https://app.klingai.com/global/dev/document-api/api/video/4-0/text-to-video",
+        "https://app.klingai.com/global/dev/document-api/api/video/4-0/image-to-video"
+      ],
+      "models": [
+        {"id": "kling-4.0", "duration_min": 3, "duration_max": 30, "resolutions": ["720p", "1080p"]}
+      ]
+    },
+    {
+      "id": "google",
+      "hosts": ["generativelanguage.googleapis.com"],
+      "service_type": "image",
+      "interface_type": "gemini-image",
+      "discovery": "provider",
+      "sources": ["https://github.com/googleapis/python-genai/blob/main/README.md"],
+      "models": [{"id": "gemini-3.1-flash-lite-image"}]
+    },
+    {
+      "id": "volcengine-image",
+      "hosts": ["ark.cn-beijing.volces.com"],
+      "service_type": "image",
+      "interface_type": "volcengine-ark-image",
+      "discovery": "provider",
+      "sources": ["https://www.volcengine.com/docs/82379/1541523"],
+      "models": [{"id": "doubao-seedream-5-0-pro-260628"}]
+    },
+    {
+      "id": "volcengine-video",
+      "hosts": ["ark.cn-beijing.volces.com"],
+      "service_type": "video",
+      "interface_type": "volcengine-ark-video",
+      "discovery": "provider",
+      "sources": ["https://www.volcengine.com/docs/82379/1520757"],
+      "models": [
+        {"id": "doubao-seedance-1-0-lite-i2v-250428"},
+        {"id": "doubao-seedance-1-0-pro-250528"},
+        {"id": "doubao-seedance-2-0-260128"},
+        {"id": "doubao-seedance-2-5-260628"}
+      ]
+    }
+  ]
+}

@@ -1,354 +1,103 @@
+import { aiModelConfigs } from '@host/api/ai-config/management';
 import { ApiError, errorMessage } from '@host/api/http';
-import { applyPreset, providerPresets } from '@host/features/ai-config/catalog/provider-presets';
-import { createConfigDraft, serializeConfigDraft } from '@host/features/ai-config/editor/config-form-model';
+import { CredentialField } from '@host/features/ai-config/editor/CredentialField';
+import { createConfigDraft } from '@host/features/ai-config/editor/config-form-model';
 import { serviceLabels } from '@host/features/ai-config/editor/config-model';
 import { ModelIdentifierField } from '@host/features/ai-config/editor/ModelIdentifierField';
-import { RuntimeConfigFields } from '@host/features/ai-config/editor/RuntimeConfigFields';
 import { confirmAction } from '@host/shared/ui/confirm';
 import { Dialog } from '@host/shared/ui/Dialog';
+import { StudioFeedback } from '@host/shared/ui/StudioFeedback';
+import type { ModelConfigurationOptionsDto } from '@host/types/ai-config/api';
 import type { AiConfig, ConfigDraft, ServiceType } from '@host/types/ai-config/editor/config-model';
-import { useEffect, useState, type FormEvent } from 'react';
+import { Button, Switch, Tooltip } from 'antd';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import './config-form.css';
-export function ConfigForm({
-  existing,
-  serviceType,
-  onClose,
-  onSave,
-  onReload,
-}: {
-  existing: AiConfig | null;
-  serviceType: ServiceType;
-  onClose: () => void;
-  onSave: (draft: ConfigDraft, makeDefault: boolean) => Promise<void>;
+
+export function ConfigForm({ existing, serviceType, onClose, onSave, onReload }: {
+  existing: AiConfig | null; serviceType: ServiceType; onClose: () => void;
+  onSave: (draft: ConfigDraft, makeDefault: boolean, createKey: string) => Promise<void>;
   onReload: () => Promise<void>;
 }) {
-  const [form, setForm] = useState<ConfigDraft>(() => createConfigDraft(existing, serviceType));
-  const runningHub = /^runninghub-workflow-(image|video|audio)$/.test(form.runtime.protocol);
+  const [form, setForm] = useState(() => createConfigDraft(existing, serviceType));
   const [makeDefault, setMakeDefault] = useState(existing?.isDefault ?? false);
-  const [initial] = useState(() => JSON.stringify(form));
-  async function requestClose() {
-    if (
-      pending ||
-      ((JSON.stringify(form) !== initial || makeDefault !== (existing?.isDefault ?? false)) &&
-        !(await confirmAction('关闭会放弃尚未保存的配置修改，确定关闭？')))
-    )
-      return;
-    onClose();
-  }
+  const [options, setOptions] = useState<ModelConfigurationOptionsDto | null>(null);
+  const [optionsError, setOptionsError] = useState('');
+  const [optionsRevision, setOptionsRevision] = useState(0);
   const [error, setError] = useState('');
-  const [fields, setFields] = useState<string[]>([]);
   const [conflict, setConflict] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
   const [pending, setPending] = useState(false);
-  const dirty = JSON.stringify(form) !== initial || makeDefault !== (existing?.isDefault ?? false);
+  const initial = useRef(JSON.stringify(form));
+  const createKey = useRef(crypto.randomUUID());
+  const dirty = JSON.stringify(form) !== initial.current || makeDefault !== (existing?.isDefault ?? false);
+  const selectedInterface = options?.interfaces.find(item => item.id === form.runtime.protocol);
+  const dualKey = selectedInterface?.requires_secret_key ?? false;
   useEffect(() => {
-    if (!dirty && !pending) return;
-    const protect = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
+    const controller = new AbortController();
+    setOptionsError('');
+    aiModelConfigs.options(serviceType, controller.signal).then(value => { if (!controller.signal.aborted) setOptions(value); }).catch(cause => { if (!controller.signal.aborted) setOptionsError(errorMessage(cause)); });
+    return () => controller.abort();
+  }, [serviceType, optionsRevision]);
+  useEffect(() => {
+    if (!dirty && !pending && !uncertain) return;
+    const protect = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', protect);
     return () => window.removeEventListener('beforeunload', protect);
-  }, [dirty, pending]);
-  const change = (partial: Partial<ConfigDraft>) => setForm((value) => ({ ...value, ...partial }));
+  }, [dirty, pending, uncertain]);
+  const change = (partial: Partial<ConfigDraft>) => setForm(old => ({ ...old, ...partial }));
+  async function close() {
+    if (pending || uncertain) return;
+    if (dirty && !await confirmAction('关闭会放弃尚未保存的模型修改，确定关闭？')) return;
+    onClose();
+  }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (pending || conflict) return;
-    if (!form.name.trim() || !form.provider.trim() || !form.modelKey.trim()) {
-      setError('请填写名称、提供商和模型标识。');
-      return;
-    }
-    try {
-      serializeConfigDraft(form);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '请核对高级配置。');
-      return;
-    }
-    setPending(true);
-    setError('');
-    setFields([]);
-    try {
-      await onSave(form, form.enabled && makeDefault);
-    } catch (cause) {
+    setPending(true); setError('');
+    try { await onSave(form, form.enabled && makeDefault, createKey.current); }
+    catch (cause) {
       setError(errorMessage(cause));
-      if (cause instanceof ApiError) {
-        setConflict(cause.status === 409);
-        setFields(cause.fields.map((field) => field.message));
-      }
-    } finally {
-      setPending(false);
-    }
+      setConflict(cause instanceof ApiError && cause.status === 409);
+      setUncertain(!existing && !(cause instanceof ApiError && cause.code === 'DEFAULT_UPDATE_FAILED')
+        && (!(cause instanceof ApiError) || !cause.status || cause.status >= 500));
+    } finally { setPending(false); }
   }
-  async function reload() {
-    setPending(true);
-    try {
-      await onReload();
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setPending(false);
-    }
-  }
-  return (
-    <Dialog
-      title={`${existing ? '编辑' : '添加'}${serviceLabels[serviceType]}`}
-      className="model-config-dialog"
-      onClose={requestClose}
-      canClose={!pending}
-    >
-      <form className="studio-form ai-config-form" onSubmit={submit}>
-        <fieldset disabled={pending}>
-          <label>
-            配置名称
-            <input
-              autoFocus
-              value={form.name}
-              onChange={(e) => change({ name: e.target.value })}
-              required
-              maxLength={120}
-              placeholder="例如：故事创作模型"
-            />
-          </label>
-          <label>
-            快速填入厂商设置
-            <select
-              value=""
-              onChange={(event) => {
-                const preset = providerPresets[form.serviceType].find((item) => item.id === event.target.value);
-                if (preset) change(applyPreset(preset));
-              }}
-            >
-              <option value="">选择后填入服务地址和模型标识</option>
-              {providerPresets[form.serviceType].map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            厂商名称
-            <input
-              value={form.provider}
-              onChange={(e) => change({ provider: e.target.value })}
-              required
-              maxLength={120}
-              placeholder="选择预设或输入自定义厂商"
-            />
-          </label>
-          <label>
-            服务地址（Base URL）
-            <input
-              value={form.baseUrl}
-              onChange={(e) => change({ baseUrl: e.target.value })}
-              type="url"
-              maxLength={2048}
-              placeholder="选填，例如 https://api.example.com/v1"
-            />
-          </label>
-          <label>
-            API 密钥
-            <input
-              type="password"
-              value={form.apiKey}
-              disabled={form.clearApiKey}
-              onChange={(e) => change({ apiKey: e.target.value })}
-              autoComplete="new-password"
-              placeholder={existing?.hasApiKey ? '已保存密钥；留空保留原密钥' : '选填，输入后保存到服务端'}
-            />
-          </label>
-          {existing?.hasApiKey && (
-            <label className="form-check">
-              <input
-                type="checkbox"
-                checked={form.clearApiKey}
-                onChange={(e) => change({ clearApiKey: e.target.checked, apiKey: '' })}
-              />
-              清除已保存的密钥
-            </label>
-          )}
-          <label>
-            Secret Key（第二密钥）
-            <input
-              type="password"
-              value={form.secretKey}
-              disabled={form.clearSecretKey}
-              onChange={(event) => change({ secretKey: event.target.value })}
-              autoComplete="new-password"
-              placeholder={existing?.hasSecretKey ? '已保存第二密钥；留空保留' : '按服务商要求填写，选填'}
-            />
-          </label>
-          <p className="config-default-hint">
-            {runningHub
-              ? 'API 密钥用于 RunningHub 积分查询、提交与轮询；第二密钥作为企业级参考素材上传 API Key。'
-              : '模型列表使用 API 密钥与请求头；第二密钥按所选协议使用。'}
-          </p>
-          {existing?.hasSecretKey && (
-            <label className="form-check">
-              <input
-                type="checkbox"
-                checked={form.clearSecretKey}
-                onChange={(event) =>
-                  change({
-                    clearSecretKey: event.target.checked,
-                    secretKey: '',
-                  })
-                }
-              />
-              清除已保存的第二密钥
-            </label>
-          )}
-          <details className="config-advanced">
-            <summary>
-              自定义请求头
-              {form.headers.length ? ` · ${form.headers.length} 项` : ''}
-            </summary>
-            <div className="config-advanced-body">
-              <p className="config-default-hint">
-                已保存的值不会回显；同名留空保留原值，删除条目后保存会清除。认证和传输字段由服务端管理。
-              </p>
-              {form.headers.map((header, index) => (
-                <div className="config-header-row" key={index}>
-                  <label>
-                    请求头 {index + 1} 名称
-                    <input
-                      value={header.name}
-                      onChange={(event) =>
-                        change({
-                          headersChanged: true,
-                          headers: form.headers.map((item, at) =>
-                            at === index
-                              ? {
-                                  ...item,
-                                  name: event.target.value,
-                                  hasValue: false,
-                                }
-                              : item,
-                          ),
-                        })
-                      }
-                      autoComplete="off"
-                    />
-                  </label>
-                  <label>
-                    请求头 {index + 1} 值
-                    <input
-                      type="password"
-                      value={header.value}
-                      placeholder={header.hasValue ? '已保存；留空保留' : '请求头值'}
-                      autoComplete="new-password"
-                      onChange={(event) =>
-                        change({
-                          headersChanged: true,
-                          headers: form.headers.map((item, at) =>
-                            at === index ? { ...item, value: event.target.value } : item,
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    aria-label={`删除请求头 ${index + 1}`}
-                    onClick={() =>
-                      change({
-                        headersChanged: true,
-                        headers: form.headers.filter((_, at) => at !== index),
-                      })
-                    }
-                  >
-                    删除
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                disabled={form.headers.length >= 32}
-                onClick={() =>
-                  change({
-                    headersChanged: true,
-                    headers: [...form.headers, { name: '', value: '', hasValue: false }],
-                  })
-                }
-              >
-                添加请求头
-              </button>
-            </div>
-          </details>
-          <ModelIdentifierField
-            form={form}
-            existing={existing}
-            disabled={pending}
-            onChange={(modelKey) => change({ modelKey })}
-          />
-          <RuntimeConfigFields
-            value={form.runtime}
-            serviceType={serviceType}
-            readOnly={false}
-            onChange={(runtime) => change({ runtime })}
-            saved={existing}
-            onBusy={setPending}
-            connectionSaved={
-              !!existing &&
-              form.baseUrl === existing.baseUrl &&
-              form.modelKey === existing.modelKey &&
-              !form.apiKey &&
-              !form.clearApiKey &&
-              !form.secretKey &&
-              !form.clearSecretKey &&
-              !form.headersChanged
-            }
-          />
-          <div className="config-form-toggles">
-            <label className="form-check">
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={(e) => {
-                  change({ enabled: e.target.checked });
-                  setMakeDefault(e.target.checked && !!existing?.isDefault);
-                }}
-              />
-              启用此配置
-            </label>
-            <label className="form-check">
-              <input
-                type="checkbox"
-                checked={form.enabled && makeDefault}
-                disabled={!form.enabled || existing?.isDefault}
-                onChange={(e) => setMakeDefault(e.target.checked)}
-              />
-              设为默认配置
-            </label>
-          </div>
-          {existing?.isDefault && form.enabled ? (
-            <p className="config-default-hint">当前为默认配置；可在其他配置中设置新的默认配置。</p>
-          ) : null}
-        </fieldset>
-        {error && (
-          <div role="alert" className="form-error">
-            <p>{error}</p>
-            {fields.map((field) => (
-              <p key={field}>{field}</p>
-            ))}
-          </div>
-        )}
-        {conflict && (
-          <div className="config-conflict">
-            <p>重新加载会替换当前填写内容，请先保留需要的修改。</p>
-            <button type="button" onClick={reload} disabled={pending}>
-              重新加载最新配置
-            </button>
-          </div>
-        )}
-        <div className="dialog-actions">
-          <button type="button" onClick={requestClose} disabled={pending}>
-            取消
-          </button>
-          <button className="studio-primary" type="submit" disabled={pending || conflict}>
-            {pending ? '处理中…' : '保存配置'}
-          </button>
+  return <Dialog title={`${existing ? '编辑' : '新增'}${serviceLabels[serviceType]}`} className="model-config-dialog" onClose={() => void close()} canClose={!pending && !uncertain}>
+    <form className="studio-form ai-config-form" onSubmit={submit}>
+      <fieldset disabled={pending || uncertain || !options}>
+        <div className="config-field-pair">
+          <label>服务商<select aria-label="服务商" value={form.provider} required onChange={event => {
+            const preset = options!.providers.find(item => item.id === event.target.value);
+            change({ provider: event.target.value, ...(preset ? { baseUrl: preset.base_url, runtime: { protocol: preset.interface_type, apiFormat: options!.interfaces.find(item => item.id === preset.interface_type)!.api_format } } : {}) });
+          }}><option value="" disabled>选择服务商</option>{options?.providers.map(item => <option value={item.id} key={item.id}>{item.label}</option>)}
+            {form.provider && !options?.providers.some(item => item.id === form.provider) && form.provider !== 'custom' && <option value={form.provider}>{form.provider}</option>}
+            <option value="custom">自定义</option></select></label>
+          <label>接口类型<select aria-label="接口类型" value={form.runtime.protocol} onChange={event => {
+            const selected = options!.interfaces.find(item => item.id === event.target.value)!;
+            change({ runtime: { protocol: selected.id, apiFormat: selected.api_format } });
+          }}>{options?.interfaces.map(item => <option value={item.id} key={item.id}>{item.label}</option>)}
+            {options && existing && !options.interfaces.some(item => item.id === form.runtime.protocol) &&
+              <option value={form.runtime.protocol}>{form.runtime.protocol}</option>}
+          </select></label>
         </div>
-      </form>
-    </Dialog>
-  );
+        <label>服务地址<input aria-label="服务地址" type="url" value={form.baseUrl} required maxLength={2048} placeholder="https://" onChange={event => change({ baseUrl: event.target.value })} /></label>
+        <div className={dualKey ? 'config-field-pair' : ''}>
+          <CredentialField label={dualKey ? 'Access Key' : 'API 密钥'} value={form.apiKey} stored={existing?.hasApiKey ?? false} cleared={form.clearApiKey} disabled={pending || uncertain}
+            onChange={(apiKey, clearApiKey) => change({ apiKey, clearApiKey })} />
+          {dualKey && <CredentialField label="Secret Key" value={form.secretKey} stored={existing?.hasSecretKey ?? false} cleared={form.clearSecretKey} disabled={pending || uncertain}
+            onChange={(secretKey, clearSecretKey) => change({ secretKey, clearSecretKey })} />}
+        </div>
+        <ModelIdentifierField form={form} existing={existing} disabled={pending || uncertain} onChange={modelKey => change({ modelKey })} />
+        <label><span>显示名称 <span className="muted">（选填）</span></span><input aria-label="显示名称" value={form.name} maxLength={120} placeholder="默认使用模型标识" onChange={event => change({ name: event.target.value })} /></label>
+        <div className="config-form-toggles"><label>启用模型<Switch aria-label="启用模型" checked={form.enabled} onChange={enabled => change({ enabled })} /></label>
+          <label>设为默认<Tooltip title={existing?.isDefault ? '当前默认模型，选择其他模型可更改' : undefined}>
+            <span><Switch aria-label="设为默认" checked={makeDefault} disabled={!form.enabled || existing?.isDefault} onChange={setMakeDefault} /></span>
+          </Tooltip></label></div>
+      </fieldset>
+      {optionsError && <StudioFeedback type="error" message={optionsError} noticeKey="model-options" actions={<Button onClick={() => setOptionsRevision(value => value + 1)}>重试</Button>} />}
+      {error && <StudioFeedback persistent type="error" message={error} noticeKey="model-save" />}
+      <footer className="dialog-actions"><Button disabled={pending || uncertain} onClick={() => void close()}>取消</Button>
+        {conflict ? <Button loading={pending} onClick={() => void onReload()}>读取最新配置</Button> : <Button type="primary" htmlType="submit" aria-label={uncertain ? '核对保存结果' : '保存'} loading={pending} disabled={!options}>{uncertain ? '核对保存结果' : '保存'}</Button>}
+      </footer>
+    </form>
+  </Dialog>;
 }

@@ -35,16 +35,12 @@ Memories = Annotated[AgentMemoryService, Depends(service)]
 @router.get("", response_model=PageResponse[MemoryRead])
 def list_memories(
     service: Memories,
-    conversation_id: Identifier | None = None,
-    project_id: Identifier | None = None,
     query: Annotated[str | None, Query(max_length=120)] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
     include_forgotten: bool = False,
 ):
     return service.list_items(
-        conversation_id=conversation_id,
-        project_id=project_id,
         query=query,
         offset=offset,
         limit=limit,

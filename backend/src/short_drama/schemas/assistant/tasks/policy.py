@@ -2,21 +2,16 @@
 
 from typing import Literal
 
-from pydantic import StrictBool
-
 from short_drama.schemas.base import InputModel, NonnegativeVersion, ReadModel
 
 MediaKind = Literal["image", "video", "audio"]
 
 
-class GenerationPolicyPatch(InputModel):
-    media_generation_enabled: StrictBool
-    policy_version: NonnegativeVersion
-
-
 class GenerationPolicyRead(ReadModel):
+    workbench_enabled: bool
+    long_term_memory_enabled: bool
     media_generation_enabled: bool
-    policy_version: NonnegativeVersion
+    settings_version: NonnegativeVersion
     configured_media: list[MediaKind]
     available_media: list[MediaKind]
 

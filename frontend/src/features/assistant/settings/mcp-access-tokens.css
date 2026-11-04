@@ -1,0 +1,41 @@
+.mcp-settings { min-width: 0; }
+.mcp-endpoint { display: grid; gap: 8px; max-width: 620px; }
+.mcp-endpoint > span { color: var(--sub); font-size: 12px; }
+.mcp-endpoint-box, .mcp-secret-line { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--surface-muted); border-radius: 7px; }
+.mcp-endpoint-box .ant-input, .mcp-secret-line .ant-input { padding-inline: 4px; border: 0; background: transparent; box-shadow: none; }
+.mcp-endpoint-box .ant-input { color: var(--sub); }
+.mcp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 32px 0 14px; }
+.mcp-toolbar > span { color: var(--sub); font-size: 12px; }
+.mcp-toolbar > div, .mcp-token-actions { display: flex; align-items: center; gap: 8px; }
+.mcp-table-wrap { overflow-x: auto; }
+.mcp-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+.mcp-table th, .mcp-table td { padding: 16px 14px; text-align: left; border-bottom: 1px solid var(--hair); }
+.mcp-table th { padding-block: 12px; color: var(--sub); font-size: 12px; font-weight: 400; }
+.mcp-table th:nth-child(1) { width: 19%; }
+.mcp-table th:nth-child(2) { width: 20%; }
+.mcp-table th:nth-child(3) { width: 23%; }
+.mcp-table th:nth-child(4) { width: 15%; }
+.mcp-table th:nth-child(5) { width: 10%; }
+.mcp-table th:nth-child(6) { width: 13%; }
+.mcp-table strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.mcp-token-hint { color: var(--sub); font-family: Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.mcp-state { color: var(--sub); font-size: 12px; }
+.mcp-state.active { color: var(--success); }
+.mcp-token-actions { gap: 2px; }
+.mcp-empty { padding: 72px 24px; text-align: center; color: var(--sub); }
+.mcp-dialog { width: min(600px, calc(100vw - 48px)); }
+.mcp-token-form { display: grid; gap: 24px; }
+.mcp-field { display: grid; gap: 8px; font-size: 12px; }
+.mcp-expiry { width: 180px; }
+.mcp-permissions > p { margin: 0 0 8px; color: var(--sub); font-size: 12px; }
+.mcp-source-limit summary { width: fit-content; cursor: pointer; color: var(--sub); font-size: 12px; }
+.mcp-source-limit[open] summary { margin-bottom: 16px; }
+.mcp-detail { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 14px 20px; margin: 0; font-size: 13px; }
+.mcp-detail dt { color: var(--sub); }
+.mcp-detail dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mcp-detail ul { margin: 0; padding-left: 16px; }
+.mcp-detail li + li { margin-top: 4px; }
+.mcp-connection-info { margin: 20px 0; padding: 16px; border-radius: 7px; background: var(--surface-muted); color: var(--sub); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.8; }
+.mcp-recovery { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 12px; color: var(--warning); }
+.mcp-dialog .ant-input:focus, .mcp-dialog .ant-input-affix-wrapper:focus-within, .mcp-dialog .ant-select-focused .ant-select-selector { border-color: transparent !important; outline: none; box-shadow: none !important; background-color: var(--surface-hover) !important; }
+.mcp-dialog .ant-input:focus-visible { outline: none; }

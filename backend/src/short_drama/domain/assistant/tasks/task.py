@@ -27,11 +27,9 @@ class AgentTask(Base):
     applied_control_seq: Mapped[int] = _number(0)
     control_state: Mapped[str] = mapped_column(VARCHAR(24), server_default=text("'none'"))
     execution_target: Mapped[dict | None] = _json(nullable=True)
-    memory_project_ids: Mapped[list] = _json(array=True)
     context_snapshot: Mapped[dict | None] = _json(nullable=True)
     selected_skills: Mapped[list] = _json(array=True)
     effective_state: Mapped[dict] = _json()
-    media_limits: Mapped[dict] = _json()
     media_usage: Mapped[dict] = _json()
     error: Mapped[dict | None] = _json(nullable=True)
     created_at: Mapped[datetime] = _time()
@@ -62,8 +60,7 @@ class AgentTask(Base):
         ),
         CheckConstraint("CHAR_LENGTH(TRIM(goal)) > 0", name="ck_agent_tasks_goal"),
         CheckConstraint(
-            "JSON_TYPE(memory_project_ids) = 'ARRAY' AND JSON_TYPE(selected_skills) = 'ARRAY' "
-            "AND JSON_TYPE(effective_state) = 'OBJECT' AND JSON_TYPE(media_limits) = 'OBJECT' "
+            "JSON_TYPE(selected_skills) = 'ARRAY' AND JSON_TYPE(effective_state) = 'OBJECT' "
             "AND JSON_TYPE(media_usage) = 'OBJECT'",
             name="ck_agent_tasks_objects",
         ),

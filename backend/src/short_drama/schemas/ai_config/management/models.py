@@ -31,25 +31,27 @@ RuntimeSecret = Annotated[SecretStr | None, AfterValidator(validate_runtime_secr
 
 class AIModelConfigCreate(InputModel):
     service_type: Literal["text", "image", "video", "audio"]
-    name: Annotated[str, Field(max_length=120), AfterValidator(nonblank)]
+    name: Annotated[str, Field(max_length=120)] = ""
     model_key: Annotated[str, Field(max_length=255), AfterValidator(nonblank)]
     provider: Annotated[str, Field(max_length=120), AfterValidator(nonblank)]
     base_url: Annotated[str, Field(max_length=2048)] = ""
     apikey: SecretStr | None = None
     enabled: Literal[0, 1] = 1
     runtime_profile: ModelRuntimeProfile | None = None
+    interface_type: Annotated[str, Field(min_length=1, max_length=120)] | None = None
     secret_key: RuntimeSecret = None
     headers: list[CanvasChannelHeader] | None = None
 
     @model_validator(mode="after")
     def validate_runtime_secrets(self):
+        self.name = self.name.strip() or self.model_key
         if self.headers is not None:
             validate_channel_headers(self.headers)
         return self
 
 
 class AIModelConfigUpdate(InputModel):
-    name: Annotated[str, Field(max_length=120), AfterValidator(nonblank)] = None
+    name: Annotated[str, Field(max_length=120)] = None
     model_key: Annotated[str, Field(max_length=255), AfterValidator(nonblank)] = None
     provider: Annotated[str, Field(max_length=120), AfterValidator(nonblank)] = None
     base_url: Annotated[str, Field(max_length=2048)] = None
@@ -57,6 +59,7 @@ class AIModelConfigUpdate(InputModel):
     enabled: Literal[0, 1] = None
     row_version: Identifier
     runtime_profile: ModelRuntimeProfile | None = None
+    interface_type: Annotated[str, Field(min_length=1, max_length=120)] = None
     secret_key: RuntimeSecret = None
     headers: list[CanvasChannelHeader] | None = None
 
@@ -86,6 +89,8 @@ class AIModelConfigRead(ReadModel):
     default_service_type: Annotated[str, Field(max_length=16)] | None = None
     has_api_key: bool = False
     runtime_profile: ModelRuntimeProfile | None = None
+    interface_type: str = "auto"
+    create_key: str | None = None
     has_secret_key: bool = False
     headers: list[ModelRuntimeHeaderRead] = Field(default_factory=list)
     credential_source: Literal["manual", "beefapi"] = "manual"
@@ -93,3 +98,28 @@ class AIModelConfigRead(ReadModel):
 
 class AIModelConfigDefault(InputModel):
     row_version: Identifier
+
+
+class ModelInterfaceOption(ReadModel):
+    id: str
+    label: str
+    api_format: str
+    requires_secret_key: bool
+
+
+class ModelProviderOption(ReadModel):
+    id: str
+    label: str
+    base_url: str
+    interface_type: str
+
+
+class OfficialModelOption(ReadModel):
+    id: str
+    interface_type: str
+
+
+class AIModelConfigOptions(ReadModel):
+    interfaces: list[ModelInterfaceOption]
+    providers: list[ModelProviderOption]
+    models: list[OfficialModelOption]

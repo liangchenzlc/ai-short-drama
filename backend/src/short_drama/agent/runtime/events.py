@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 from copy import deepcopy
 from typing import TYPE_CHECKING
+
+from sqlalchemy import select
 
 from short_drama.agent.core.access import LeaseLost, lock_run
 from short_drama.agent.core.events import append_event
@@ -18,10 +21,14 @@ from short_drama.agent.runtime.trace_content import (
     reasoning_texts,
     utf8_preview,
 )
-from short_drama.agent.tools.presentation import visibility
+from short_drama.agent.tools.presentation import tool_trace_kind
+from short_drama.agent.tools.trace_visibility import tool_trace_visibility
+from short_drama.core.exceptions import StorageUnavailable
 from short_drama.core.time import utcnow
 from short_drama.dao.assistant.execution.model_ledger import AgentModelLedgerDAO
 from short_drama.dao.assistant.execution.trace import AssistantTraceDAO
+from short_drama.domain.assistant.conversations.models import AgentEvent
+from short_drama.domain.assistant.execution.models import AgentToolCall
 from short_drama.domain.assistant.execution.scope import AgentExecutionScope
 from short_drama.domain.assistant.tasks.task import AgentOperation
 from short_drama.schemas.assistant.operations.trace import TRACE_PREVIEW_BYTES, TraceBlock
@@ -33,6 +40,7 @@ if TYPE_CHECKING:
 
 TERMINAL_TRACE = frozenset({"succeeded", "failed", "interrupted", "unknown", "cancelled"})
 ARCHIVE_MAX_BYTES = 4 * 1024**2
+logger = logging.getLogger(__name__)
 
 
 def channel(text: str) -> dict:
@@ -44,6 +52,43 @@ def channel(text: str) -> dict:
     }
 
 
+def text_parts_for_turn(session, conversation, run, turn_id, content):
+    if not turn_id or not content:
+        return []
+    rows = session.execute(
+        select(AgentEvent.seq, AgentEvent.payload)
+        .where(
+            AgentEvent.conversation_id == conversation.id,
+            AgentEvent.run_id == run.id,
+            AgentEvent.event_type == "assistant.delta",
+            AgentEvent.payload["turn_id"].as_string() == str(turn_id),
+        )
+        .order_by(AgentEvent.seq)
+    ).all()
+    chunks = {}
+    for seq, payload in rows:
+        offset, delta = payload.get("offset"), payload.get("delta")
+        if isinstance(offset, int) and isinstance(delta, str):
+            chunks.setdefault(offset, (seq, delta))
+    expected_offset = 0
+    text_chunks = []
+    for offset, (seq, delta) in sorted(chunks.items()):
+        if offset != expected_offset:
+            return []
+        text_chunks.append((seq, delta))
+        expected_offset += len(delta.encode("utf-8"))
+    text = "".join(delta for _, delta in text_chunks)
+    if text != content:
+        return []
+    return [
+        {
+            "turn_id": str(turn_id),
+            "event_seq": min(seq for seq, _ in text_chunks),
+            "content": text,
+        }
+    ]
+
+
 def save_block_locked(session, conversation, run, block, *, bindings=()):
     dao = AssistantTraceDAO(session)
     prior = dao.latest(conversation.id, run.id, block["block_id"], conversation.next_event_seq - 1)
@@ -51,8 +96,13 @@ def save_block_locked(session, conversation, run, block, *, bindings=()):
     if previous.get("status") in TERMINAL_TRACE and block["status"] not in TERMINAL_TRACE:
         return previous
     block = deepcopy(block)
+    event_seq = conversation.next_event_seq
     block["block_version"] = int(previous.get("block_version", 0)) + 1
-    block["started_seq"] = previous.get("started_seq", conversation.next_event_seq)
+    block["started_seq"] = previous.get("started_seq", event_seq)
+    block["updated_seq"] = event_seq
+    block["result_seq"] = previous.get("result_seq")
+    if block["result_seq"] is None and block["status"] in TERMINAL_TRACE:
+        block["result_seq"] = event_seq
     saved_bindings = deepcopy(block.get("_resources", previous.get("_resources", [])))
     for binding in bindings:
         if not any(
@@ -98,12 +148,13 @@ def operation_block_locked(session, conversation, run, operation, *, spec=None, 
         )
         result = {
             **result,
-            "_display": display.model_dump(mode="json"),
+            "_display": display.model_dump(mode="json", exclude={"summary"}),
             "_trace_bindings": bindings,
         }
         operation.result = result
     display = result["_display"]
     scope = session.get(AgentExecutionScope, operation.scope_id)
+    tool_call = session.get(AgentToolCall, operation.tool_call_id)
     prior = AssistantTraceDAO(session).latest(
         conversation.id, run.id, operation.id, conversation.next_event_seq - 1
     )
@@ -120,20 +171,7 @@ def operation_block_locked(session, conversation, run, operation, *, spec=None, 
             )
         )
     now = utcnow()
-    kind = (
-        "subtask"
-        if operation.tool_name == "task"
-        else "skill"
-        if "skill" in operation.tool_name
-        else (
-            "sandbox"
-            if operation.tool_name
-            in {"execute", "ls", "read_file", "write_file", "edit_file", "glob", "grep"}
-            else "wait"
-            if operation.tool_name in {"runtime__ask_user", "runtime__wait_generation"}
-            else "tool"
-        )
-    )
+    kind = spec.trace_kind if spec is not None else tool_trace_kind(operation.tool_name)
     return save_block_locked(
         session,
         conversation,
@@ -147,10 +185,15 @@ def operation_block_locked(session, conversation, run, operation, *, spec=None, 
             "tool_call_id": str(operation.tool_call_id),
             "operation_id": str(operation.id),
             "subtask_id": str(operation.tool_call_id) if kind == "subtask" else None,
+            "turn_id": str(tool_call.turn_id) if tool_call is not None else None,
             "tool_name": operation.tool_name,
             "kind": kind,
             "source": spec.source if spec is not None else prior.payload["source"],
-            "visibility": visibility(operation.tool_name),
+            "trace_visibility": (
+                spec.trace_visibility
+                if spec is not None
+                else tool_trace_visibility(operation.tool_name)
+            ),
             "status": operation.status,
             "started_at": operation.created_at,
             "updated_at": now,
@@ -353,13 +396,19 @@ class AgentEventAdapter:
             if turn is None or turn.usage["source"] != event["source"]:
                 raise LeaseLost()
             scope = session.get(AgentExecutionScope, turn.scope_id)
-            for start in range(0, len(text), 2048):
-                piece = text[start : start + 2048]
-                if (
-                    name == "text"
-                    and event["source"] == "assistant"
-                    and turn.scope_id == self.context.root_scope_id
-                ):
+            if name == "reasoning":
+                self._model_block(session, conversation, run, turn, scope, text, offset)
+                accumulated = self.model_content.setdefault(call_id, bytearray())
+                accumulated.extend(
+                    text.encode("utf-8")[: max(0, ARCHIVE_MAX_BYTES - len(accumulated))]
+                )
+            elif (
+                name == "text"
+                and event["source"] == "assistant"
+                and turn.scope_id == self.context.root_scope_id
+            ):
+                for start in range(0, len(text), 2048):
+                    piece = text[start : start + 2048]
                     append_event(
                         session,
                         conversation,
@@ -372,14 +421,7 @@ class AgentEventAdapter:
                         },
                         run_id=run.id,
                     )
-                elif name == "reasoning":
-                    self._model_block(session, conversation, run, turn, scope, piece, offset)
-                offset += len(piece.encode("utf-8"))
-            if name == "reasoning":
-                accumulated = self.model_content.setdefault(call_id, bytearray())
-                accumulated.extend(
-                    text.encode("utf-8")[: max(0, ARCHIVE_MAX_BYTES - len(accumulated))]
-                )
+                    offset += len(piece.encode("utf-8"))
         return "ok"
 
     def _model_block(self, session, conversation, run, turn, scope, text, offset):
@@ -393,6 +435,7 @@ class AgentEventAdapter:
                 {
                     "block_id": str(turn.id),
                     "run_id": str(run.id),
+                    "turn_id": str(turn.id),
                     "model_call_id": str(turn.id),
                     "execution_scope_id": str(turn.scope_id),
                     "parent_call_id": str(scope.parent_tool_call_id)
@@ -424,23 +467,26 @@ class AgentEventAdapter:
             current["preview"] = utf8_preview(current["preview"] + text)
         current["total_bytes"] = offset + len(text.encode("utf-8"))
         current["truncated"] = current["total_bytes"] > len(current["preview"].encode("utf-8"))
-        append_event(
-            session,
-            conversation,
-            "trace.delta",
-            {
-                "block_id": block["block_id"],
-                "block_version": str(int(block["block_version"]) + 1),
-                "execution_scope_id": block["execution_scope_id"],
-                "parent_call_id": block.get("parent_call_id"),
-                "source": block["source"],
-                "channel": "reasoning",
-                "offset": offset,
-                "delta": text,
-                "created_at": utcnow().isoformat() + "Z",
-            },
-            run_id=run.id,
-        )
+        for start in range(0, len(text), 2048):
+            piece = text[start : start + 2048]
+            append_event(
+                session,
+                conversation,
+                "trace.delta",
+                {
+                    "block_id": block["block_id"],
+                    "block_version": str(int(block["block_version"]) + 1),
+                    "execution_scope_id": block["execution_scope_id"],
+                    "parent_call_id": block.get("parent_call_id"),
+                    "source": block["source"],
+                    "channel": "reasoning",
+                    "offset": offset,
+                    "delta": piece,
+                    "created_at": utcnow().isoformat() + "Z",
+                },
+                run_id=run.id,
+            )
+            offset += len(piece.encode("utf-8"))
         block["updated_at"] = utcnow()
         save_block_locked(session, conversation, run, block)
         session.flush()
@@ -517,7 +563,20 @@ class AgentEventAdapter:
                     conversation.id, run.id, block_id, conversation.next_event_seq - 1
                 )
                 save_block_locked(session, conversation, run, prior.payload, bindings=[binding])
-            storage.freeze_agent_resource(data, invocation_id=invocation, content_type="text/plain")
+            try:
+                storage.freeze_agent_resource(
+                    data, invocation_id=invocation, content_type="text/plain"
+                )
+            except StorageUnavailable:
+                logger.exception(
+                    "agent_trace_archive_unavailable",
+                    extra={
+                        "run_id": self.context.run_id,
+                        "block_id": block_id,
+                        "channel": name,
+                    },
+                )
+                return
             # 丢租约时保留 pending 引用交 purge；同哈希对象可能已被恢复 Worker 复用。
             with self.context.factory.begin() as session:
                 conversation, run = self._bound(session)

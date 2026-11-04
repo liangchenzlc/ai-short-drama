@@ -3,7 +3,7 @@
 import hashlib
 from copy import deepcopy
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, tuple_
 
 from short_drama.agent.memory.sources import restricted_messages
 from short_drama.agent.resources.contracts import HydrationIntent, ResourceRef
@@ -48,15 +48,26 @@ def freeze_catalog_locked(session, owner, settings, *, tool_lookup, selected=())
     result, offset = [], 0
     while True:
         page = service._list_locked(owner, offset, 100, enabled=True)
+        versions = (
+            dict(
+                session.execute(
+                    select(AgentSkillVersion.skill_key, AgentSkillVersion.id).where(
+                        tuple_(AgentSkillVersion.skill_key, AgentSkillVersion.content_version).in_(
+                            [(str(item.id), int(item.content_version)) for item in page.items]
+                        ),
+                        or_(
+                            AgentSkillVersion.owner_user_id == owner,
+                            AgentSkillVersion.owner_user_id.is_(None),
+                        ),
+                    )
+                ).all()
+            )
+            if page.items
+            else {}
+        )
         for summary in page.items:
             item = skill_index(summary.model_dump(mode="json"))
-            version_id = session.scalar(
-                select(AgentSkillVersion.id).where(
-                    AgentSkillVersion.skill_key == item["id"],
-                    AgentSkillVersion.content_version == int(item["content_version"]),
-                )
-            )
-            item["version_id"] = str(version_id)
+            item["version_id"] = str(versions[item["id"]])
             item["issues"] = summary.issues
             result.append(item)
         offset += len(page.items)
@@ -248,6 +259,7 @@ def load_locked(
         raise Conflict("当前范围缺少方法所需工具：" + "、".join(sorted(missing)))
     cost = (len(skill["instructions"].encode()) + 2) // 3
     active = [item for item in records if item["active"]]
+    committed_active = active[:]
     if manual:
         for item in reversed(active[:]):
             if (
@@ -262,7 +274,27 @@ def load_locked(
         len(active) >= 8
         or sum(item.get("body_tokens", 0) for item in active) + cost > ACTIVE_SKILL_TOKENS
     ):
-        raise WorkflowError("assistant_skill_budget", "活动方法正文超过独立保留配额", 409)
+        raise WorkflowError(
+            "assistant_skill_budget",
+            "活动方法已达配额，请先释放可释放的自动方法再加载",
+            409,
+            details={
+                "active_count": len(committed_active),
+                "max_active": 8,
+                "body_tokens": sum(item.get("body_tokens", 0) for item in committed_active),
+                "max_body_tokens": ACTIVE_SKILL_TOKENS,
+                "requested_body_tokens": cost,
+                "releasable": [
+                    {
+                        "activation_id": item["id"],
+                        "source": item["source"],
+                        "body_tokens": item["body_tokens"],
+                    }
+                    for item in committed_active
+                    if item["source"] == "auto"
+                ],
+            },
+        )
     reference = ResourceRef(
         kind="skill",
         ref_id=f"skill:{skill['id']}:{skill['content_version']}",

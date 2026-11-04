@@ -117,9 +117,7 @@ export function AssistantHistory({
       const result = await assistantApi.deleteGlobalConversation(
         request.targetId,
         request.body.row_version,
-        request.body.clear_derived_memory,
         request.key,
-        request.body.memory_selections,
       );
       const cleared = clearAssistantPendingAction(accountId, deletionScope, 'delete', request.key, storage);
       if (cleared) clearAttempt(scope, attemptStorage());

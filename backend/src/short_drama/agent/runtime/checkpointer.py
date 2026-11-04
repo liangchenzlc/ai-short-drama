@@ -78,11 +78,16 @@ class MySQLCheckpointSaver(BaseCheckpointSaver):
     def _decode(self, codec, payload):
         try:
             return self.serde.loads_typed((codec, payload))
-        except Exception:
-            logger.exception(
-                "agent_graph_serializer_version_mismatch", extra={"run_id": self.service.run_id}
+        except Exception as error:
+            code = (
+                "agent_checkpoint_codec_unsupported"
+                if codec not in {"null", "bytes", "bytearray", "json", "msgpack"}
+                else "agent_checkpoint_corrupt"
             )
-            raise Conflict("执行图序列化版本不匹配") from None
+            logger.exception(code, extra={"run_id": self.service.run_id})
+            raise WorkflowError(
+                code, "执行图数据无法读取，请新建任务并联系维护人员排查", 409
+            ) from error
 
     def _tuple(self, row):
         namespace = row["namespace"]

@@ -1,18 +1,15 @@
-"""All retrieval predicates include the trusted owner and explicitly permitted scopes."""
+"""Account ownership is the sole boundary of persistent memory."""
 
 from dataclasses import dataclass
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, select
 
-from short_drama.domain.assistant.conversations.models import AgentConversation
 from short_drama.domain.assistant.memory.memory import AgentMemoryItem, AgentMemorySource
 
 
 @dataclass(frozen=True)
 class MemoryScopeContext:
     owner_user_id: int
-    conversation_id: int | None = None
-    project_ids: tuple[int, ...] = ()
 
 
 class AgentMemoryDAO:
@@ -20,24 +17,8 @@ class AgentMemoryDAO:
         self.session = session
 
     def permitted(self, scope, *, active=True):
-        clauses = [AgentMemoryItem.scope_type == "user"]
-        if scope.conversation_id is not None:
-            clauses.append(
-                and_(
-                    AgentMemoryItem.scope_type == "conversation",
-                    AgentMemoryItem.conversation_id == scope.conversation_id,
-                )
-            )
-        if scope.project_ids:
-            clauses.append(
-                and_(
-                    AgentMemoryItem.scope_type == "project",
-                    AgentMemoryItem.project_id.in_(scope.project_ids),
-                )
-            )
         return and_(
             AgentMemoryItem.owner_user_id == scope.owner_user_id,
-            or_(*clauses),
             AgentMemoryItem.state == "active" if active else True,
         )
 
@@ -48,16 +29,6 @@ class AgentMemoryDAO:
         query = select(AgentMemoryItem).where(
             AgentMemoryItem.id == identifier,
             AgentMemoryItem.owner_user_id == owner,
-            or_(
-                AgentMemoryItem.conversation_id.is_(None),
-                select(AgentConversation.id)
-                .where(
-                    AgentConversation.id == AgentMemoryItem.conversation_id,
-                    AgentConversation.owner_user_id == owner,
-                    AgentConversation.status == "active",
-                )
-                .exists(),
-            ),
         )
         if lock:
             query = query.with_for_update().execution_options(populate_existing=True)
@@ -76,7 +47,7 @@ class AgentMemoryDAO:
     def catalog_rows(self, scope, *, offset=0, limit=50, active=True):
         return self.session.scalars(
             self.rows(scope, active=active)
-            .order_by(AgentMemoryItem.pinned.desc(), AgentMemoryItem.id)
+            .order_by(AgentMemoryItem.updated_at.desc(), AgentMemoryItem.id.desc())
             .offset(offset)
             .limit(limit)
             .with_for_update(read=True)

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
@@ -31,6 +31,47 @@ class RunProjection:
 class AgentRunDAO:
     def __init__(self, session: Session):
         self.session = session
+
+    def execution_active(self, claim):
+        from short_drama.domain.assistant.conversations.models import AgentConversation
+        from short_drama.domain.assistant.tasks.task import AgentTask
+
+        return (
+            self.session.scalar(
+                select(AgentRun.id)
+                .join(AgentConversation, AgentConversation.id == AgentRun.conversation_id)
+                .join(AgentTask, AgentTask.id == AgentRun.task_id)
+                .where(
+                    AgentRun.id == claim.run_id,
+                    AgentRun.message_version == claim.version,
+                    AgentRun.lease_token == claim.token,
+                    AgentRun.cancel_requested == 0,
+                    AgentRun.status == "running",
+                    AgentConversation.status == "active",
+                    AgentTask.control_state.not_in(("stop_pending", "delete_pending")),
+                )
+            )
+            is not None
+        )
+
+    def stopping(self, run_ids):
+        from short_drama.domain.assistant.conversations.models import AgentConversation
+        from short_drama.domain.assistant.tasks.task import AgentTask
+
+        return set(
+            self.session.scalars(
+                select(AgentRun.id)
+                .join(AgentConversation, AgentConversation.id == AgentRun.conversation_id)
+                .outerjoin(AgentTask, AgentTask.id == AgentRun.task_id)
+                .where(
+                    AgentRun.id.in_(run_ids),
+                    AgentRun.status == "running",
+                    (AgentRun.cancel_requested == 1)
+                    | (AgentConversation.status == "deleting")
+                    | AgentTask.control_state.in_(("stop_pending", "delete_pending")),
+                )
+            )
+        )
 
     def latest_model(self, run_id, scope_id):
         return self.session.scalar(
@@ -119,8 +160,18 @@ class AgentRunDAO:
         )
 
     def queue(self, conversation_ids: set[int]):
+        from short_drama.domain.assistant.tasks.task import AgentTask
+
         return self.session.execute(
-            select(AgentRun.id, AgentRun.conversation_id, AgentRun.status).where(
+            select(
+                AgentRun.id,
+                AgentRun.conversation_id,
+                AgentRun.status,
+                AgentRun.task_id,
+                func.left(AgentTask.goal, 120).label("goal"),
+            )
+            .outerjoin(AgentTask, AgentTask.id == AgentRun.task_id)
+            .where(
                 AgentRun.conversation_id.in_(conversation_ids),
                 AgentRun.status.in_(("queued", "running", "waiting_generation", "waiting_input")),
             )

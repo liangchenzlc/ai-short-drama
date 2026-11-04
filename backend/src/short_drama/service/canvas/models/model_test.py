@@ -52,6 +52,8 @@ class CanvasModelTestService(BaseService):
 
     def _hash(self, payload: CanvasModelTestCreate) -> str:
         body = payload.model_dump(mode="json", by_alias=True)
+        if payload.config_id is not None:
+            return self.generation._hash("saved", body, "canvas.model-test")
         channel = body["channel"]
         for name, alias in (("api_key", "apiKey"), ("secret_key", "secretKey")):
             value = getattr(payload.channel, name)
@@ -63,6 +65,10 @@ class CanvasModelTestService(BaseService):
         return self.generation._hash(payload.mode, body, "canvas.model-test")
 
     def _draft_locked(self, payload: CanvasModelTestCreate) -> tuple[AIModelConfig, str, dict]:
+        if payload.config_id is not None:
+            saved = self._require(AIModelConfig, payload.config_id, for_update=False)
+            saved = self.generation._config(saved.service_type, saved.id)
+            return self._saved_host_test_locked(saved)
         channel = payload.channel
         if channel.source_key.startswith("host-"):
             identifier = channel.source_key.removeprefix("host-")
@@ -152,9 +158,11 @@ class CanvasModelTestService(BaseService):
         except GenerationError as error:
             raise GenerationRequestError(error.code) from None
         runtime = saved.runtime_profile or {}
-        protocol = runtime.get("protocol") or next(
-            (key for key, value in PROTOCOL_ADAPTERS.items() if value == adapter), None
-        )
+        protocol = runtime.get("protocol")
+        if protocol in {None, "auto"}:
+            protocol = next(
+                (key for key, value in PROTOCOL_ADAPTERS.items() if value == adapter), None
+            )
         if protocol is None:
             raise WorkflowError(
                 "canvas_generation_protocol_unsupported", "该模型测试协议尚未接通", 422
@@ -188,7 +196,13 @@ class CanvasModelTestService(BaseService):
             "id": channel_key,
             "baseUrl": saved.base_url,
             "enabled": True,
-            "apiFormat": runtime.get("api_format", "openai"),
+            "apiFormat": (
+                "claude"
+                if adapter == "claude_messages.v1"
+                else "gemini"
+                if adapter in {"gemini_images.v1", "gemini_generate_content.v1"}
+                else "openai"
+            ),
         }
         test = self.catalog._update_model(channel, profile, secret, None)
         if adapter in RUNNINGHUB_ADAPTERS:
@@ -198,7 +212,6 @@ class CanvasModelTestService(BaseService):
         return test, adapter, secret
 
     def create(self, payload: CanvasModelTestCreate, key: str) -> tuple[dict, bool]:
-        payload = CanvasModelTestCreate.model_validate(payload.model_dump())
         if key != payload.client_operation_id:
             raise WorkflowError("canvas_operation_key_mismatch", "测试操作身份与请求键不一致", 422)
         key = "canvas-model-test:" + hashlib.sha256(key.encode()).hexdigest()
@@ -208,17 +221,26 @@ class CanvasModelTestService(BaseService):
             if existing:
                 return self._project_locked(int(existing[0]["generation_id"])), False
             config, adapter, secret = self._draft_locked(payload)
+            mode = config.service_type
+            prompt = payload.prompt
+            if payload.config_id is not None and "prompt" not in payload.model_fields_set:
+                prompt = {
+                    "text": "请回复：连接成功",
+                    "image": "A small white ceramic cup on a wooden table",
+                    "video": "A small white ceramic cup on a wooden table, slow camera movement",
+                    "audio": "你好，欢迎使用创作工作台。",
+                }[mode]
             self.session.flush()
             canvas_request = CanvasRuntimeTaskCreate.model_validate(
                 {
                     "projectId": "model-connection-test",
-                    "type": f"canvas_{payload.mode}",
-                    "operation": "text_to_video" if payload.mode == "video" else payload.mode,
-                    "prompt": payload.prompt,
+                    "type": f"canvas_{mode}",
+                    "operation": "text_to_video" if mode == "video" else mode,
+                    "prompt": prompt,
                     "logicalModelId": str(config.id),
                     "input": {
-                        "mode": payload.mode,
-                        "prompt": payload.prompt,
+                        "mode": mode,
+                        "prompt": prompt,
                         "config": payload.config,
                         "textOptions": payload.text_options.model_dump(by_alias=True),
                         "metadata": {
@@ -238,7 +260,9 @@ class CanvasModelTestService(BaseService):
             def freeze(prepared):
                 prepared["source"] = {
                     "scene": "canvas_model_test",
-                    "channel_key": payload.channel.source_key,
+                    "channel_key": payload.channel.source_key
+                    if payload.channel
+                    else f"host-{payload.config_id}",
                 }
                 prepared["canvas_request"] = canvas_request.model_dump(mode="json", by_alias=True)
                 if adapter in RUNNINGHUB_ADAPTERS:
@@ -256,7 +280,7 @@ class CanvasModelTestService(BaseService):
                 return prepared
 
             summary, fresh = self.generation.create_locked(
-                payload.mode, request, key, request_hash=digest, prepare_transform=freeze
+                mode, request, key, request_hash=digest, prepare_transform=freeze
             )
             record = self.generation.record_dao.for_task(int(summary["generation_id"]))[0]
             record.config_snapshot = {**record.config_snapshot, "canvas_model_test": True}

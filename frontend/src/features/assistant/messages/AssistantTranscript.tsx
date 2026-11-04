@@ -1,12 +1,10 @@
 import { Bubble, Prompts, Welcome } from '@ant-design/x';
-import { timelineBubbles, traceOperationResults } from '@host/features/assistant/messages/AgentTimeline';
+import { timelineBubbles } from '@host/features/assistant/messages/AgentTimeline';
 import { AssistantLoading } from '@host/features/assistant/messages/AssistantLoading';
-import { AssistantReply } from '@host/features/assistant/messages/AssistantMessage';
-import { AssistantTraceBlock } from '@host/features/assistant/messages/AssistantTraceBlock';
 import type { AssistantTranscriptProps } from '@host/types/assistant/messages/transcript';
 import { Button, Skeleton } from 'antd';
 import { ArrowUpRight, Clapperboard } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 export function AssistantTranscript({
   conversationId,
   pinned,
@@ -36,8 +34,20 @@ export function AssistantTranscript({
       setQueuedStalled(false);
     };
   }, [queuedRunId]);
+  const [expandedItems, setExpandedItems] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => setExpandedItems(new Set()), [conversationId, runtime.accessEnded]);
+  const onExpandedChange = useCallback((ids: readonly string[], expanded: boolean) => {
+    setExpandedItems(old => {
+      if (ids.every(id => old.has(id) === expanded)) return old;
+      const next = new Set(old);
+      for (const id of ids) {
+        if (expanded) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
   const [newContent, setNewContent] = useState(false);
-  const renderResults = traceOperationResults({ operations: runtime.operations, layout, onUndo: setUndoRequest, undoDisabled: contextDisabled || runtime.accessEnded });
   const transcript = useRef<HTMLDivElement>(null);
   const prepend = useRef<{ height: number; top: number } | null>(null);
   useLayoutEffect(() => {
@@ -48,7 +58,7 @@ export function AssistantTranscript({
       prepend.current = null;
     } else if (pinned.current) node.scrollTop = node.scrollHeight;
     else setNewContent(true);
-  }, [runtime.messages, runtime.delta, runtime.traceBlocks, runtime.pendingQuestions, runtime.run?.status]);
+  }, [runtime.messages, runtime.streamingParts, runtime.traceBlocks, runtime.pendingQuestions, runtime.run?.status]);
   const queuedRuns = runtime.queuedRuns.filter((run) => run.id !== runtime.run?.id);
   // 会话连接仍监听其他标签页，但终态任务不再显示持续加载，避免误示成果尚未完成。
   const reconnecting =
@@ -96,7 +106,7 @@ export function AssistantTranscript({
               variant="borderless"
               icon={<Clapperboard size={26} aria-hidden="true" />}
               title={runtime.accessEnded ? '对话暂不可访问' : '把想法聊清楚'}
-              description={runtime.accessEnded ? '恢复登录和项目访问后可重新读取。' : '一起梳理故事、画面和创作方向。'}
+              description={runtime.accessEnded ? '当前无法读取，历史仍在服务端。恢复登录和项目访问后可重新读取。' : '一起梳理故事、画面和创作方向。'}
             />
             {!runtime.accessEnded ? (
               <Prompts
@@ -129,9 +139,13 @@ export function AssistantTranscript({
             items={[
               ...timelineBubbles({
                 messages: runtime.messages,
+                expandedItems,
+                onExpandedChange,
                 operations: runtime.operations,
                 traceBlocks: runtime.traceBlocks,
                 runs: runtime.runs,
+                streamingParts: runtime.streamingParts,
+                streamingRunId: runtime.run?.id,
                 conversationId,
                 layout,
                 onUndo: setUndoRequest,
@@ -143,33 +157,10 @@ export function AssistantTranscript({
                         if (message.task_id) setHistoryRequest({ message, mode });
                       }
                     : undefined,
-              }, renderResults),
-              ...(active && runtime.run && runtime.run.status !== 'waiting_input' && (runtime.delta || (!reconnecting && !stopping))
-                ? [
-                    {
-                      key: `stream:${runtime.run.id}`,
-                      role: 'assistant',
-                      placement: 'start' as const,
-                      variant: 'borderless' as const,
-                      className: 'ai-assistant-bubble-reply',
-                      content: (
-                        <article className="ai-assistant-turn ai-assistant-streaming" data-run-id={runtime.run.id}>
-                          {runtime.delta ? (
-                            <AssistantReply text={runtime.delta} />
-                          ) : (
-                            <AssistantLoading label={runtime.run.status === 'queued' ? '等待回复' : '正在回复'} />
-                          )}
-                        </article>
-                      ),
-                    },
-                  ]
-                : []),
+              }),
             ]}
           />
         ) : null}
-        {runtime.traceBlocks.some(block => block.parent_call_id && !runtime.traceBlocks.some(parent => parent.run_id === block.run_id && parent.tool_call_id === block.parent_call_id)) && <section className="assistant-subtask-children" aria-label="子任务轨迹（父步骤在更早记录中）">
-          {runtime.traceBlocks.filter(block => block.parent_call_id && !runtime.traceBlocks.some(parent => parent.run_id === block.run_id && parent.tool_call_id === block.parent_call_id)).map(block => <AssistantTraceBlock key={block.block_id} block={block} blocks={runtime.traceBlocks} conversationId={conversationId} renderResults={renderResults} />)}
-        </section>}
         {queuedStalled && runtime.connection === 'live' && (
           <div className="ai-assistant-connection ai-assistant-stalled" role="status">
             <span>消息已提交，但迟迟未被调度。请确认后端调度进程正在运行。</span>
@@ -183,7 +174,10 @@ export function AssistantTranscript({
             {runtime.run.error?.message || '本次任务尚未完成，已有成果和消息已保留。请根据上方提示处理后继续。'}
           </p>
         ) : null}
-        {stopping && <AssistantLoading label="正在停止执行，已提交的生成任务将继续保存结果" />}
+        {runtime.run?.wait_summary ? (
+          <p className="ai-assistant-meta" role="status">{runtime.run.wait_summary.message} · 已等待 {Math.floor(runtime.run.wait_summary.elapsed_seconds)} 秒</p>
+        ) : runtime.run?.waiting_reason ? <p className="ai-assistant-meta" role="status">{runtime.run.waiting_reason}</p> : null}
+        {stopping && <AssistantLoading label="正在收尾，已提交的生成任务将继续保存结果" />}
         {reconnecting && (
           <div className="ai-assistant-connection">
             <AssistantLoading label="正在恢复连接" />
@@ -196,7 +190,7 @@ export function AssistantTranscript({
           <div className="ai-assistant-queued" aria-label="排队消息">
             {queuedRuns.map((run) => (
               <div key={run.id}>
-                <span>排队位置 {run.queue_position || '等待中'}</span>
+                <span>排队位置 {run.queue_position ?? '等待中'}{run.waiting_reason ? ` · ${run.waiting_reason}` : ''}</span>
                 <Button type="text" size="small" disabled={readOnly || !!busy} onClick={() => void stop(run.id)}>
                   取消排队
                 </Button>

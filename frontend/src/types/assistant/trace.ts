@@ -12,6 +12,7 @@ export interface AssistantExecutionDisplay {
   action: string;
   target: AssistantExecutionTarget;
   title: string;
+  summary?: string;
 }
 
 export interface AssistantTraceChannel {
@@ -31,6 +32,11 @@ export interface AssistantTraceResource {
   available: boolean;
 }
 
+export enum ToolTraceVisibility {
+  VISIBLE = 'visible',
+  HIDDEN = 'hidden',
+}
+
 export interface AssistantTraceBlock extends AssistantExecutionDisplay {
   block_id: string;
   block_version: string;
@@ -40,13 +46,16 @@ export interface AssistantTraceBlock extends AssistantExecutionDisplay {
   tool_call_id?: string | null;
   subtask_id?: string | null;
   model_call_id?: string | null;
+  turn_id?: string | null;
   operation_id?: string | null;
   tool_name?: string | null;
   kind: 'reasoning' | 'tool' | 'skill' | 'subtask' | 'sandbox' | 'wait';
   source: string;
-  visibility: 'silent' | 'step' | 'artifact';
+  trace_visibility: ToolTraceVisibility;
   status: string;
   started_seq: number;
+  updated_seq?: number;
+  result_seq?: number | null;
   started_at: string;
   updated_at: string;
   finished_at: string | null;

@@ -18,9 +18,7 @@ from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint, A
 from short_drama.domain.assistant.execution.models import AgentRun, AgentToolCall, AgentTurn
 from short_drama.domain.assistant.memory.memory import (
     AgentConversationSummary,
-    AgentMemoryItem,
     AgentMemoryJob,
-    AgentMemoryRevision,
 )
 from short_drama.domain.assistant.operations.invocation import BusinessToolInvocation
 from short_drama.domain.assistant.operations.media import AgentMediaRequest
@@ -100,7 +98,7 @@ def _scrub_locked(session, conversation):
     task_ids, run_ids = [row.id for row in tasks], [row.id for row in runs]
     for row in tasks:
         row.goal, row.context_snapshot, row.selected_skills = DELETED, None, []
-        row.effective_state, row.memory_project_ids = {}, []
+        row.effective_state = {}
         row.error = _error_code(row.error)
     for row in _rows(session, AgentTaskInput, AgentTaskInput.task_id.in_(task_ids)):
         row.payload = {}
@@ -183,40 +181,6 @@ def _scrub_locked(session, conversation):
     for row in _rows(session, AgentMemoryJob, AgentMemoryJob.conversation_id == conversation.id):
         if row.kind != "purge":
             row.source_snapshot, row.raw_result, row.error = {}, None, _error_code(row.error)
-    selected = {
-        int(item["id"]): int(item["content_version"]) + 1
-        for item in conversation.fixed_requirements.get("deletion", {}).get("memory_selections", [])
-    }
-    memories = _rows(
-        session,
-        AgentMemoryItem,
-        or_(
-            AgentMemoryItem.conversation_id == conversation.id,
-            AgentMemoryItem.id.in_(selected),
-        ),
-    )
-    for row in memories:
-        if row.conversation_id != conversation.id and (
-            row.state != "forgotten" or row.content_version != selected[row.id]
-        ):
-            continue
-        row.content, row.title, row.search_text, row.aliases, row.tags = (
-            DELETED,
-            DELETED,
-            "",
-            [],
-            [],
-        )
-        for revision in _rows(
-            session, AgentMemoryRevision, AgentMemoryRevision.memory_id == row.id
-        ):
-            revision.snapshot = {
-                **revision.snapshot,
-                "content": DELETED,
-                "title": DELETED,
-                "aliases": [],
-                "tags": [],
-            }
     for attachment in _rows(
         session, AgentAttachment, AgentAttachment.conversation_id == conversation.id
     ):

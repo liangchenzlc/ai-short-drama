@@ -67,7 +67,7 @@ async function safetyFixture(page: Page) {
     if (path === '/assistant/conversations/301/messages') {
       if (method === 'POST') {
         state.sends.push(body);
-        const task = { id: '501', conversation_id: '301', goal: body.content, status: 'succeeded', phase: 'terminal', row_version: '1', plan_revision: '1', input_revision: '1', applied_input_revision: '1', control_seq: '0', applied_control_seq: '0', control_state: 'none', execution_target: body.execution_target, memory_project_ids: ['10'], source_context: null, selected_subjects: [], skills: [], task_attachments: [], media_limits: { images: null, videos: null, audio: null }, media_usage: {}, active_operation: null, error: null, created_at: time, updated_at: time };
+        const task = { id: '501', conversation_id: '301', goal: body.content, status: 'succeeded', phase: 'terminal', row_version: '1', plan_revision: '1', input_revision: '1', applied_input_revision: '1', control_seq: '0', applied_control_seq: '0', control_state: 'none', execution_target: body.execution_target, source_context: null, selected_subjects: [], skills: [], task_attachments: [], media_usage: {}, active_operation: null, error: null, created_at: time, updated_at: time };
         return reply({
           message: { id: '2001', task_id: '501', seq: 1, role: 'user', content: body.content, references: [], artifacts: [], created_at: time },
           task,

@@ -109,6 +109,22 @@ def failure_message(code, *, accepted_unknown=False):
         return "请求可能已经提交，但结果暂时无法确认。请先核对当前任务，避免重复生成和计费。"
     messages = {
         "assistant_engine_updated": "执行引擎已更新，请重新发送继续",
+        "agent_execution_error": (
+            "执行过程中发生系统错误，本次任务已停止。你的输入和已保存成果仍然保留，请联系维护人员排查。"
+        ),
+        "invalid_agent_tool_selection": (
+            "模型选择了不可用的工具，本次任务已停止。已有输入和成果仍然保留，请调整要求或更换模型。"
+        ),
+        "agent_summary_empty": (
+            "模型未能完成必要的上下文整理，本次任务已停止。原输入和已有成果仍然保留。"
+        ),
+        "agent_checkpoint_codec_unsupported": (
+            "执行状态的存储格式暂不支持，请新建任务并联系维护人员排查。"
+        ),
+        "agent_checkpoint_corrupt": "执行状态数据无法读取，请新建任务并联系维护人员排查。",
+        "agent_checkpoint_version_mismatch": (
+            "执行引擎版本已变化，请新建任务后继续。已有成果仍然保留。"
+        ),
         "agent_progress_stalled": (
             "连续尝试仍未取得新进展，已有成果和回执已保留。请补充缺少的资料或调整要求后继续。"
         ),
@@ -149,6 +165,15 @@ def failure_message(code, *, accepted_unknown=False):
         "agent_context_budget_exhausted": (
             "任务输入、历史、方法或工具结果超过了本次上下文预算。"
             "原输入和完整回执已保留，请查看整理详情、缩小范围或拆分新任务后明确继续。"
+        ),
+        "agent_memory_waiting": ("会话历史正在后台整理，请稍后重新发送。原输入已保留。"),
+        "agent_memory_maintenance_required": (
+            "会话历史的后台整理尚未完成。请核对模型配置后再决定是否重试整理；"
+            "若原模型已变化，请使用可用模型新建任务以恢复整理。原输入和来源已保留。"
+        ),
+        "agent_memory_acceptance_unknown": (
+            "会话记忆整理的供应商受理结果不明。请先核对原调用，"
+            "系统不会自动重复发送。原来源和输入已保留。"
         ),
         "agent_attachment_unavailable": (
             "当前任务的附件无法读取，请检查附件后继续。你的输入已保留。"
@@ -355,6 +380,8 @@ def finish_locked(session, conversation, run, status, error=None):
     charge_active(run, now)
     run.status = status
     run.error = safe_error(error.get("code")) if error else None
+    if run.error and error.get("accepted_unknown") is True:
+        run.error["accepted_unknown"] = True
     if run.error and run.error["code"] == "agent_context_budget_exhausted":
         facts = _safe_context_budget(error.get("context_budget"))
         if facts:

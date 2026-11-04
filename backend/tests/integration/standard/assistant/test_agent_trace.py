@@ -100,7 +100,7 @@ def resources(task_workspace, monkeypatch):
     return factory, settings, model, storage
 
 
-def test_formal_runtime_streams_root_text_and_keeps_silent_tool_trace(task_workspace):
+def test_formal_runtime_streams_root_text_and_keeps_hidden_tool_trace(task_workspace):
     conversation, accepted = new_task(task_workspace)
     factory, settings, _ = task_workspace
     runtime_for(
@@ -122,7 +122,7 @@ def test_formal_runtime_streams_root_text_and_keeps_silent_tool_trace(task_works
         deltas = [row.payload["delta"] for row in events if row.event_type == "assistant.delta"]
         assert "".join(deltas) == "雨🙂声"
         blocks = [row.payload for row in events if row.event_type == "trace.block"]
-        assert any(block["visibility"] == "silent" for block in blocks)
+        assert any(block["trace_visibility"] == "hidden" for block in blocks)
         assert not any(block["kind"] == "reasoning" for block in blocks)
         assert [
             row.content
@@ -140,8 +140,324 @@ def freeze_responses(factory, run_id):
         run.config_snapshot = {
             **run.config_snapshot,
             "runtime_profile": {"api_format": "openai", "protocol": "openai-response"},
+            "assistant_settings": {
+                **run.config_snapshot["assistant_settings"],
+                "tool_descriptions": {},
+            },
         }
         run.checkpoint = {**run.checkpoint, "permitted_tool_names": []}
+
+
+def test_reasoning_flush_writes_one_latest_block_with_contiguous_utf8_replay(
+    resources, monkeypatch
+):
+    from short_drama.agent.runtime.events import AgentEventAdapter
+    from short_drama.dao.assistant.execution.trace import AssistantTraceDAO
+
+    factory, settings, model, _storage = resources
+    conversation, accepted = new_task((factory, settings, model))
+    freeze_responses(factory, accepted.run.id)
+    text = "雨🙂" * 6000
+    batches, original = [], AgentEventAdapter.save_delta
+
+    def capture(adapter, event, content, offset):
+        result = original(adapter, event, content, offset)
+        if event["channel"] == "reasoning":
+            batches.append((offset, len(content.encode())))
+        return result
+
+    monkeypatch.setattr(AgentEventAdapter, "save_delta", capture)
+    runtime_for(factory, settings, TraceWireTransport(thoughts=(text,), texts=("完成",))).execute(
+        accepted.run.id, 1
+    )
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        assert run.status == "succeeded", run.error
+        rows = session.scalars(
+            select(AgentEvent).where(AgentEvent.run_id == run.id).order_by(AgentEvent.seq)
+        ).all()
+        deltas = [row for row in rows if row.event_type == "trace.delta"]
+        blocks = [
+            row
+            for row in rows
+            if row.event_type == "trace.block" and row.payload["kind"] == "reasoning"
+        ]
+        assert len(blocks) == len(batches) + 4  # empty start, completed, archive pending/available
+        assert "".join(row.payload["delta"] for row in deltas) == text
+        offset = 0
+        for row in deltas:
+            assert row.payload["offset"] == offset and len(row.payload["delta"]) <= 2048
+            offset += len(row.payload["delta"].encode())
+            following = next(block for block in blocks if block.seq > row.seq)
+            assert row.payload["block_version"] == following.payload["block_version"]
+        assert offset == len(text.encode())
+        assert [int(row.payload["block_version"]) for row in blocks] == list(
+            range(1, len(blocks) + 1)
+        )
+        final = AssistantTraceDAO(session).page(conversation.id, run.id, rows[-1].seq).items[0]
+        assert final.status == "succeeded" and final.channels["reasoning"].total_bytes == offset
+        assert "\ufffd" not in final.channels["reasoning"].preview
+        # A disconnect after any delta must resume from the same byte watermark.
+        for row in deltas:
+            before = [block for block in blocks if block.seq < row.seq][-1]
+            trailing = [item for item in deltas if before.seq < item.seq <= row.seq]
+            replay = AssistantTraceDAO(session).block(before, trailing)
+            assert replay.channels["reasoning"].total_bytes == row.payload["offset"] + len(
+                row.payload["delta"].encode()
+            )
+            assert "\ufffd" not in replay.channels["reasoning"].preview
+
+
+@pytest.mark.parametrize("channel", ["reasoning", "output"])
+def test_reasoning_archive_outage_preserves_successful_model_receipt(
+    resources, monkeypatch, channel
+):
+    from short_drama.core.exceptions import StorageUnavailable
+    from short_drama.domain.assistant.execution.models import AgentTurn
+
+    factory, settings, model, storage = resources
+    skill = (
+        create_skill(resources, instructions="大正文雨🙂" * 1400) if channel == "output" else None
+    )
+    conversation, accepted = new_task((factory, settings, model))
+    if channel == "reasoning":
+        freeze_responses(factory, accepted.run.id)
+        transport = TraceWireTransport(thoughts=("思考🙂" * 5000,), texts=("完整正文",))
+    else:
+        transport = RuntimeTransport(
+            [
+                calls(
+                    (
+                        "large",
+                        "runtime__load_skill",
+                        {"name": skill.name, "content_version": "1", "purpose": "归档故障核对"},
+                    )
+                ),
+                {"text": "正文正常交付"},
+            ]
+        )
+
+    def unavailable(*_args, **_kwargs):
+        raise StorageUnavailable("controlled object storage outage")
+
+    monkeypatch.setattr(storage, "put", unavailable)
+    runtime_for(factory, settings, transport).execute(accepted.run.id, 1)
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        turns = session.scalars(select(AgentTurn).where(AgentTurn.run_id == run.id)).all()
+        assert run.status == "succeeded", run.error
+        assert turns and all(turn.status == "succeeded" and turn.error is None for turn in turns)
+        assert all(turn.response["raw"] and turn.usage["settled"] for turn in turns)
+        assert run.usage["output_tokens"] > 0 and run.usage["reserved_output_tokens"] == 0
+        session.rollback()
+        page = trace_service(session, settings, storage).page(conversation.id, accepted.run.id)
+        archive = next(
+            item for block in page.items for item in block.resources if item.kind == "archive"
+        )
+        assert archive.available is False
+
+
+@pytest.mark.parametrize("control", ["stop", "delete"])
+def test_cancelled_formal_stream_restores_complete_interrupted_text(
+    task_workspace, control, monkeypatch
+):
+    from short_drama.agent.runtime.model_ledger import RunModelLedger
+    from short_drama.domain.assistant.execution.graph import AgentGraphCheckpoint
+
+    factory, settings, _ = task_workspace
+    conversation, accepted = new_task(task_workspace)
+    freeze_responses(factory, accepted.run.id)
+    settings.agent_lease_seconds = 180
+    shown, release, cancelled = Event(), Event(), Event()
+    original = RunModelLedger.save_error
+
+    def record(self, payload):
+        original(self, payload)
+        if payload.get("code") == "agent_model_cancelled":
+            cancelled.set()
+
+    monkeypatch.setattr(RunModelLedger, "save_error", record)
+    text = "长正文雨🙂" * 1500
+
+    class PartialTransport(TraceWireTransport):
+        def request(self, _method, _url, *, body, on_send, on_headers, on_chunk, **_kwargs):
+            on_send()
+            self.requests.append(body)
+            on_headers(200, {"Content-Type": "text/event-stream"})
+            for data in self.parts:
+                if b"response.output_item.done" in data and b"message" in data:
+                    shown.set()
+                    assert release.wait(12)
+                on_chunk(data)
+            return 200, {"Content-Type": "text/event-stream"}, b"".join(self.parts)
+
+    transport = PartialTransport(thoughts=(), texts=(text,))
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(runtime_for(factory, settings, transport).execute, accepted.run.id, 1)
+        try:
+            assert shown.wait(10)
+            deadline = time.monotonic() + 5
+            while True:
+                with factory() as session:
+                    visible = session.scalars(
+                        select(AgentEvent)
+                        .where(
+                            AgentEvent.run_id == accepted.run.id,
+                            AgentEvent.event_type == "assistant.delta",
+                        )
+                        .order_by(AgentEvent.seq)
+                    ).all()
+                displayed = "".join(row.payload["delta"] for row in visible)
+                if displayed == text:
+                    break
+                assert time.monotonic() < deadline
+                time.sleep(0.02)
+            with factory() as session:
+                service = task_service(session, settings)
+                if control == "stop":
+                    result = service.control_task(accepted.task.id, {"kind": "stop"}, uuid4().hex)
+                    assert result.run.status == "running"
+                    assert result.run.stopping is True
+                else:
+                    version = service._conversation(conversation.id).row_version
+                    session.rollback()
+                    service.delete_global_conversation(
+                        conversation.id, {"row_version": version}, uuid4().hex
+                    )
+            assert cancelled.wait(4), "default lease must cancel model within four seconds"
+        finally:
+            release.set()
+        future.result(timeout=15)
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        assert run.status == "cancelled"
+        assert (
+            session.scalar(
+                select(AgentGraphCheckpoint).where(AgentGraphCheckpoint.run_id == run.id)
+            )
+            is not None
+        )
+        if control == "stop":
+            session.rollback()
+            snapshot = task_service(session, settings).task_runtime_state(conversation.id)
+            interrupted = [m for m in snapshot.messages.items if m.role == "assistant"]
+            assert len(interrupted) == 1 and interrupted[0].content == text
+            assert interrupted[0].interrupted is True
+            assert interrupted[0].text_parts[0].content == text
+            assert len(interrupted[0].text_parts) == 1
+            from short_drama.agent.memory.sources import message_sources
+
+            source = next(
+                item
+                for item in message_sources(session, conversation.id, 1, 1000)
+                if item["id"] == str(interrupted[0].id)
+            )
+            assert source["interrupted"] is True and text not in source["content"]
+            from short_drama.agent.memory.context import enqueue_job_locked
+
+            current = session.get(AgentRun, accepted.run.id)
+            conv = task_service(session, settings)._conversation(conversation.id)
+            summary = enqueue_job_locked(session, conv, current, "summary", [source])
+            assert summary.source_snapshot["messages"][0]["interrupted"] is True
+            assert text not in json.dumps(summary.source_snapshot, ensure_ascii=False)
+        else:
+            messages = session.scalars(
+                select(AgentMessage).where(
+                    AgentMessage.task_id == accepted.task.id, AgentMessage.role == "assistant"
+                )
+            ).all()
+            assert len(messages) == 1 and messages[0].content == text
+    if control == "stop":
+        with factory() as session:
+            newer = task_service(session, settings).send_task_message(
+                conversation.id,
+                {"task_id": accepted.task.id, "content": "仅回复当前状态"},
+                uuid4().hex,
+            )
+        next_transport = RuntimeTransport([{"text": "新轮次完成"}])
+        runtime_for(factory, settings, next_transport).execute(newer.run.id, 1)
+        assert next_transport.requests and text not in json.dumps(
+            next_transport.requests, ensure_ascii=False
+        )
+
+
+def test_failure_after_display_keeps_full_text_and_existing_narration_is_not_duplicated(
+    task_workspace, monkeypatch
+):
+    from short_drama.service.assistant.execution.tools import AgentToolExecutionService
+
+    conversation, accepted = new_task(task_workspace)
+    factory, settings, _ = task_workspace
+    original = AgentToolExecutionService.model_result
+    text = "中断正文雨🙂" * 1200
+
+    def fail_final(self, signature, message):
+        if not message.tool_calls:
+            raise ValueError("controlled failure after display")
+        return original(self, signature, message)
+
+    monkeypatch.setattr(AgentToolExecutionService, "model_result", fail_final)
+    runtime_for(
+        factory,
+        settings,
+        RuntimeTransport(
+            [
+                {**calls(("policy", "runtime__get_generation_policy", {})), "text": "已核对🙂"},
+                {"text": text},
+            ]
+        ),
+    ).execute(accepted.run.id, 1)
+    with factory() as session:
+        snapshot = task_service(session, settings).task_runtime_state(conversation.id)
+        messages = [m for m in snapshot.messages.items if m.role == "assistant"]
+        assert [m.content for m in messages if m.kind == "narration"] == ["已核对🙂", text]
+        assert [m.interrupted for m in messages if m.kind == "narration"] == [False, True]
+        assert next(run for run in snapshot.runs if run.id == accepted.run.id).status == "failed"
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "invalid_agent_configuration",
+        "agent_budget_exhausted",
+        "agent_execution_error",
+        "invalid_agent_tool_selection",
+        "agent_acceptance_unknown",
+        "agent_summary_empty",
+    ],
+)
+def test_public_run_errors_use_safe_distinct_messages(task_workspace, code):
+    from short_drama.agent.core.state import failure_message
+
+    _, accepted = new_task(task_workspace)
+    factory, settings, _ = task_workspace
+    with factory.begin() as session:
+        session.get(AgentRun, accepted.run.id).error = {
+            "code": code,
+            "message": "SQL and provider-private-text",
+        }
+    with factory() as session:
+        error = task_service(session, settings).get_run(accepted.run.id).error
+    assert error == {"code": code, "message": failure_message(code)}
+    assert "provider-private-text" not in str(error)
+
+
+def test_public_timeout_error_retains_unknown_acceptance_warning(task_workspace):
+    from short_drama.ai.types import GenerationError
+
+    _, accepted = new_task(task_workspace)
+    factory, settings, _ = task_workspace
+
+    def timeout(_body, _number):
+        raise GenerationError("timeout", accepted_unknown=True)
+
+    runtime_for(
+        factory, settings, RuntimeTransport([{"text": "unused"}], before_reply=timeout)
+    ).execute(accepted.run.id, 1)
+    with factory() as session:
+        error = task_service(session, settings).get_run(accepted.run.id).error
+    assert error["code"] == "timeout" and error["accepted_unknown"] is True
+    assert "重复生成和计费" in error["message"]
 
 
 def test_running_refresh_replay_and_utf8_reasoning_use_same_watermark(task_workspace):
