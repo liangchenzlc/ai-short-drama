@@ -46,6 +46,17 @@ class SubtaskTransport(RuntimeTransport):
         self.parent_rounds = 0
         super().__init__([self.route] * 80)
 
+    def request(self, method, url, *, body, on_send, **kwargs):
+        if (
+            not body.get("tools")
+            and body.get("max_tokens", body.get("max_completion_tokens")) == 64
+        ):
+            title = RuntimeTransport([{"text": "子任务验收"}])
+            result = title.request(method, url, body=body, on_send=on_send, **kwargs)
+            self.requests.extend(title.requests)
+            return result
+        return super().request(method, url, body=body, on_send=on_send, **kwargs)
+
     def route(self, body):
         name = child_name(body)
         if name is not None:

@@ -4,7 +4,6 @@ from deepagents.middleware.subagents import SubAgentMiddleware
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     LLMToolSelectorMiddleware,
-    ModelCallLimitMiddleware,
     ModelRetryMiddleware,
 )
 
@@ -15,6 +14,7 @@ from short_drama.agent.runtime.middleware import (
     SkillSummarizationMiddleware,
     SkillToolsMiddleware,
 )
+from short_drama.agent.runtime.output_recovery import OutputRecoveryMiddleware
 
 FIXED_TOOLS = {
     "runtime__ask_user",
@@ -106,6 +106,7 @@ def assistant_middleware(*, model, tools, snapshot):
     limits = snapshot["assistant_settings"]
     return [
         ContextMiddleware(),
+        OutputRecoveryMiddleware(snapshot),
         SkillSummarizationMiddleware(
             model=model,
             trim_tokens_to_summarize=None,
@@ -123,6 +124,4 @@ def assistant_middleware(*, model, tools, snapshot):
             always_include=sorted(FIXED_TOOLS & names),
         ),
         SkillToolsMiddleware(tools),
-        # 图线程固定对应产品 Run；同 Run 的输入交接不能重置框架额度。
-        ModelCallLimitMiddleware(thread_limit=limits["model_call_limit"], exit_behavior="error"),
     ]

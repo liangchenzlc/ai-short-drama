@@ -5,7 +5,7 @@ import type {
   AssistantTaskSnapshot,
   AssistantUndoReceipt,
 } from '@host/types/assistant/api';
-import type { AgentEvent, AgentMessage } from '@host/types/assistant/engine';
+import type { AgentEvent, AgentMessage, AgentRun, AgentRunRecoveryState } from '@host/types/assistant/engine';
 import { ToolTraceVisibility } from '@host/types/assistant/trace';
 import type { OperationPagination, TaskProjection } from '@host/types/assistant/runtime/assistant-task-state';
 import { applyTraceEvent, mergeTraceBlocks } from '@host/features/assistant/runtime/assistant-trace';
@@ -21,6 +21,28 @@ export const emptyTaskProjection = (conversationId: string): TaskProjection => (
   traceDeltas: {},
 });
 const version = (value: string) => (/^\d+$/.test(value) ? BigInt(value) : -1n);
+const finishedRun = (run: AgentRun) => ['succeeded', 'failed', 'cancelled'].includes(run.status);
+export function applyRunRecoveryEvent(run: AgentRun, event: AgentEvent): AgentRun {
+  if (run.id !== event.run_id || finishedRun(run)) return run;
+  if (event.event_type === 'run.finished' && ['succeeded', 'failed', 'cancelled'].includes(String(event.payload.status)))
+    return { ...run, status: event.payload.status as AgentRun['status'], recovery_states: [] };
+  if (event.event_type !== 'run.recovery' || run.status !== 'running') return run;
+  const states = event.payload.recovery_states;
+  if (!Array.isArray(states) || !states.every((value): value is AgentRunRecoveryState => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const state = value as Record<string, unknown>;
+    return typeof state.scope_id === 'string' && typeof state.model_call_id === 'string' &&
+      (state.kind === 'output_continuation' || state.kind === 'context_compaction');
+  })) return run;
+  return { ...run, recovery_states: [...new Map(states.map(state => [state.scope_id, state])).values()] };
+}
+export function mergeAssistantRun(old: AgentRun | null, item: AgentRun, snapshotCursor: number, event?: AgentEvent): AgentRun {
+  const run = old?.id === item.id &&
+    (version(old.row_version) > version(item.row_version) || (finishedRun(old) && !finishedRun(item))) ? old : item;
+  if (finishedRun(run)) return run.recovery_states.length ? { ...run, recovery_states: [] } : run;
+  // 快照尚未覆盖已收到的恢复事件时，保留事件状态；覆盖后以服务端快照为准。
+  return event && event.seq > snapshotCursor ? applyRunRecoveryEvent(run, event) : run;
+}
 export function operationPageStart(snapshot: AssistantTaskSnapshot, taskId: string, cached?: OperationPagination): OperationPagination | null {
   if (!snapshot.has_more_operations) return null;
   const prefix = snapshot.operations.filter((item) => item.task_id === taskId).at(-1)?.id;

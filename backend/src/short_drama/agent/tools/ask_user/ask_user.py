@@ -9,6 +9,7 @@ from langchain_core.messages import ToolMessage
 from langchain_core.tools import StructuredTool
 from langgraph.types import interrupt
 
+from short_drama.agent.tools.ask_user.ask_user_description import DESCRIPTION
 from short_drama.agent.tools.contracts import ToolSpec
 from short_drama.schemas.assistant.operations.questions import AskUserRequest
 
@@ -42,11 +43,7 @@ async def ask_user(runtime: ToolRuntime, **kwargs: Any):
 runtime__ask_user = StructuredTool.from_function(
     coroutine=ask_user,
     name="runtime__ask_user",
-    description=(
-        "缺少关键输入或必要选择时向用户提问，可一次提出多个单选或多选问题。"
-        "每题提供2–4个具体选项，根据任务推荐选项；界面自动提供其他回答，不要将其他写入选项。"
-        "不要用它发送普通工作说明。"
-    ),
+    description=DESCRIPTION,
     args_schema=AskUserRequest.model_json_schema(),
 )
 SPEC = ToolSpec(

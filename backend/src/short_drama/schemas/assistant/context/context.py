@@ -44,6 +44,7 @@ class ModelInputsPatch(InputModel):
     image: bool
     audio: bool
     context_window_tokens: Annotated[int, Field(strict=True, ge=16384, le=1048576)] | None = None
+    max_output_tokens: Annotated[int, Field(strict=True, ge=1, le=1048576)] | None = None
 
 
 class ModelInputCapabilities(ReadModel):
@@ -53,4 +54,10 @@ class ModelInputCapabilities(ReadModel):
     video: Literal["sampled_frames", "unsupported"] = "unsupported"
     evidence: Literal["declared", "model_family", "text_only", "runtime"] = "runtime"
     context_window_tokens: int = 65536
-    context_window_evidence: Literal["declared", "platform_default"] = "platform_default"
+    context_window_evidence: Literal["declared", "official_profile", "platform_default"] = (
+        "platform_default"
+    )
+    max_output_tokens: int = 8192
+    output_capacity_evidence: Literal["declared", "official_profile", "platform_default"] = (
+        "platform_default"
+    )

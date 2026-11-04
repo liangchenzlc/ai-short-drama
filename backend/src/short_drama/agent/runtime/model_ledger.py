@@ -5,7 +5,8 @@ import logging
 from copy import deepcopy
 
 from short_drama.agent.context.budget import provider_budget
-from short_drama.agent.context.capabilities import context_profile
+from short_drama.agent.context.capabilities import context_profile, request_output_tokens
+from short_drama.agent.core import ENGINE_VERSION
 from short_drama.agent.core.access import lock_run, may_decide, model_unchanged
 from short_drama.agent.core.events import append_event, initial_usage
 from short_drama.agent.core.fence import owns_execution
@@ -25,7 +26,7 @@ class RunModelLedger:
     def __init__(self, context):
         self.context = context
 
-    def callbacks(self, *, stream=True, max_output_tokens=8192, **kwargs):
+    def callbacks(self, *, stream=True, max_output_tokens=None, **kwargs):
         async def admit(payload):
             try:
                 await asyncio.to_thread(self.before_send, payload)
@@ -47,7 +48,13 @@ class RunModelLedger:
             await asyncio.to_thread(self.save_error, payload)
 
         async def content(payload):
-            if payload.get("channel") == "end" and payload.get("status") == "succeeded":
+            if payload.get("channel") == "connection":
+                await asyncio.to_thread(self.connection_state, payload)
+                return
+            if payload.get("channel") == "end" and payload.get("status") in {
+                "succeeded",
+                "interrupted",
+            }:
                 await asyncio.to_thread(self.complete_response, payload)
             if self.context.events is not None:
                 from short_drama.agent.core.access import LeaseLost
@@ -70,6 +77,65 @@ class RunModelLedger:
             timeout_seconds=getattr(self.context.settings, "agent_model_timeout_seconds", 120),
             **kwargs,
         )
+
+    def connection_state(self, payload):
+        with self.context.factory.begin() as session:
+            conversation, run = self._bound(session, admission=True)
+            if payload["status"] != "retrying":
+                return
+            checkpoint = deepcopy(run.checkpoint)
+            connections = checkpoint.setdefault("model_connections", {})
+            connections[payload["model_call_id"]] = {
+                key: payload[key]
+                for key in ("model_call_id", "retry_no", "max_retries", "timeout_seconds")
+            }
+            run.checkpoint, run.updated_at = checkpoint, utcnow()
+            run.row_version += 1
+            append_event(
+                session,
+                conversation,
+                "model.connection",
+                connections[payload["model_call_id"]],
+                run_id=run.id,
+            )
+
+    def recovery_state(self, kind, model_call_id=None, *, expected_call_id=None):
+        with self.context.factory.begin() as session:
+            conversation, run = self._bound(session, admission=True)
+            checkpoint = deepcopy(run.checkpoint)
+            states = checkpoint.setdefault("recovery_states", {})
+            key = str(self.context.scope_id)
+            previous = states.get(key)
+            if (
+                expected_call_id is not None
+                and (states.get(key) or {}).get("model_call_id") != expected_call_id
+            ):
+                return
+            if kind is None:
+                if key not in states:
+                    return
+                states.pop(key)
+            else:
+                value = {"scope_id": key, "kind": kind, "model_call_id": model_call_id}
+                if previous == value:
+                    return previous
+                states[key] = value
+            run.checkpoint, run.updated_at = checkpoint, utcnow()
+            run.row_version += 1
+            append_event(
+                session,
+                conversation,
+                "run.recovery",
+                {"recovery_states": list(states.values())},
+                run_id=run.id,
+            )
+            return previous
+
+    @staticmethod
+    def clear_connection(run, call_id):
+        checkpoint = deepcopy(run.checkpoint)
+        checkpoint.get("model_connections", {}).pop(call_id, None)
+        run.checkpoint = checkpoint
 
     def _bound(self, session, *, admission=False):
         context = self.context
@@ -107,8 +173,9 @@ class RunModelLedger:
     def before_send(self, request):
         with self.context.factory.begin() as session:
             conversation, run = self._bound(session, admission=True)
+            self.clear_connection(run, request["model_call_id"])
             dao = AgentModelLedgerDAO(session, run.id)
-            if dao.unresolved(self.context.scope_id) is not None:
+            if dao.unresolved(self.context.scope_id, source=request["source"]) is not None:
                 raise AgentGatewayError("agent_acceptance_unknown")
             budget = checked_budget(run)
             usage = {**initial_usage(), **run.usage}
@@ -116,9 +183,17 @@ class RunModelLedger:
             amount = body.get(
                 "max_completion_tokens", body.get("max_tokens", body.get("max_output_tokens"))
             )
-            if type(amount) is not int or amount <= 0 or amount > budget["output_tokens_per_call"]:
+            formal = run.checkpoint.get("engine") == ENGINE_VERSION
+            if type(amount) is not int or amount <= 0:
                 raise AgentGatewayError("invalid_agent_budget")
-            if (
+            maximum = (
+                request_output_tokens(run.config_snapshot, request["source"], amount)
+                if formal
+                else budget["output_tokens_per_call"]
+            )
+            if amount > maximum:
+                raise AgentGatewayError("invalid_agent_budget")
+            if not formal and (
                 usage["decision_calls"] >= budget_limit(budget, "decision_calls")
                 or usage["output_tokens"] + usage["reserved_output_tokens"] + amount
                 > budget_limit(budget, "output_tokens")
@@ -170,6 +245,7 @@ class RunModelLedger:
     def save_raw(self, payload):
         with self.context.factory.begin() as session:
             _conversation, run = self._bound(session)
+            self.clear_connection(run, payload["model_call_id"])
             turn = AgentModelLedgerDAO(session, run.id).call(payload["model_call_id"])
             if turn is None:
                 raise AgentGatewayError("agent_response_not_durable", accepted_unknown=True)
@@ -220,6 +296,7 @@ class RunModelLedger:
     def save_error(self, payload):
         with self.context.factory.begin() as session:
             _conversation, run = self._bound(session)
+            self.clear_connection(run, payload["model_call_id"])
             turn = AgentModelLedgerDAO(session, run.id).call(payload["model_call_id"])
             if turn is None:
                 return

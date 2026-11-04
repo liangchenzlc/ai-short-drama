@@ -78,8 +78,10 @@ def skill_path(scope_id: str, activation_id: str, path: str, checksum: str) -> s
 
 class ImportEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    resource: ResourceRef
-    path: str
+    resource: ResourceRef = Field(
+        description="父任务/资源目录明确交接的完整 ResourceRef；不能手工构造。"
+    )
+    path: str = Field(description="复制到当前工作区的相对目标路径；不得使用绝对路径或 ..。")
 
     @field_validator("path")
     @classmethod
@@ -90,12 +92,16 @@ class ImportEntry(BaseModel):
 
 class ImportResources(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    resources: list[ImportEntry] = Field(min_length=1, max_length=32)
+    resources: list[ImportEntry] = Field(
+        min_length=1, max_length=32, description="要导入的授权资源及其工作区相对路径。"
+    )
 
 
 class ExportArtifacts(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    paths: list[str] = Field(min_length=1, max_length=32)
+    paths: list[str] = Field(
+        min_length=1, max_length=32, description="当前工作区内要归档的相对路径清单；每项必须存在。"
+    )
 
     @field_validator("paths")
     @classmethod
@@ -107,8 +113,12 @@ class ExportArtifacts(BaseModel):
 
 class MaterializeSkillResource(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    activation_id: str = Field(min_length=1, max_length=160)
-    path: str = Field(min_length=1, max_length=1024)
+    activation_id: str = Field(
+        min_length=1, max_length=160, description="当前 scope 的活动 Skill activation_id。"
+    )
+    path: str = Field(
+        min_length=1, max_length=1024, description="该活动 Skill 冻结 manifest 中的相对资源路径。"
+    )
 
     @field_validator("path")
     @classmethod

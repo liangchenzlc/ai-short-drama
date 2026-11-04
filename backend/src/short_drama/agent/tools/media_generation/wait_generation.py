@@ -9,11 +9,21 @@ from langgraph.types import interrupt
 from pydantic import Field, model_validator
 
 from short_drama.agent.tools.contracts import ToolSpec
+from short_drama.agent.tools.media_generation.wait_generation_description import DESCRIPTION
 from short_drama.schemas.base import Identifier, InputModel
 
 
 class WaitGenerationRequest(InputModel):
-    task_ids: Annotated[list[Identifier], Field(min_length=1, max_length=16)]
+    task_ids: Annotated[
+        list[Identifier],
+        Field(
+            min_length=1,
+            max_length=16,
+            description=(
+                "已受理生成回执中的原生 async task_id；不是 generation_id，且不自动提交任务。"
+            ),
+        ),
+    ]
 
     @model_validator(mode="after")
     def unique_ids(self):
@@ -44,7 +54,7 @@ async def wait_generation(runtime: ToolRuntime, **kwargs: Any):
 runtime__wait_generation = StructuredTool.from_function(
     coroutine=wait_generation,
     name="runtime__wait_generation",
-    description="下一步需要生成结果时等待；已完成任务立即返回，不重新提交。",
+    description=DESCRIPTION,
     args_schema=WaitGenerationRequest.model_json_schema(),
 )
 SPEC = ToolSpec(

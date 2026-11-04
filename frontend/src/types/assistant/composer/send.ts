@@ -12,6 +12,7 @@ export interface PrepareAssistantSendInput {
   submitted: string;
   layout?: 'standard';
   modelId?: string;
+  confirmUnknown?: boolean;
   projectId: string;
   executionTarget?: TaskExecutionTarget;
   skillsDirty: boolean;

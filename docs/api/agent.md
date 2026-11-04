@@ -190,7 +190,7 @@ Skill 包的资源 `kind` 支持 `reference/template/script/image`。文本和�
 
 模型行版本输出十进制字符串，输入兼容正整数与十进制字符串；前端始终保留字符串。声明绑定配置版本、地址、模型标识和凭据身份；更新声明会增加模型版本，并保留未变更的已验证工具协议证据。配置发生变化后，旧声明失效。声明本身不调用模型，也不代表真实供应商验证。
 
-`PATCH /agent/models/{id}/inputs` 可选 `context_window_tokens` 为 16384–1048576 的整数。省略时保留仍有效的原容量声明，显式 `null` 清除；无有效声明使用平台默认 65536，平台有效上限 262144。返回的 `context_window_tokens` 是实际参与预算的值，`context_window_evidence` 为 `declared/platform_default`，与图像／音频的 `evidence` 分开。当前前端仅同步 DTO 与请求函数，不提供容量配置界面；声明不是供应商窗口探测或视觉语义验收。
+`PATCH /agent/models/{id}/inputs` 支持context_window_tokens（16384–1048576）及max_output_tokens（1–1048576），省略保留有效旧声明，null清除；声明绑定模型版本、地址、模型键与凭据身份。有效声明优先，精确官方api.deepseek.com的deepseek-flash／deepseek-v4-pro采用1000000窗口及393216输出；其它默认65536／8192，无262144截顶。DTO增加max_output_tokens、output_capacity_evidence，两个capacity evidence为declared／official_profile／platform_default。未新增配置界面，声明不是语义能力实测。
 
 当前 SDK 适配中，Chat 协议允许图片和 MP3/WAV 音频内联；Responses 协议允许图片，不能编码音频输入；视频由图片采样与可选音轨组合输入。协议或供应商明确拒绝所选组合时，运行在对话内给出安全中文反馈。用户决定更换模型、减少附件或对视频明确选择仅画面，系统不自动降级。
 

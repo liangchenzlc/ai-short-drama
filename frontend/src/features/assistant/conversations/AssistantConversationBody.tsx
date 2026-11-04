@@ -12,9 +12,9 @@ import { skillToken } from '@host/features/assistant/skills/assistant-skill-toke
 import { StudioFeedback } from '@host/shared/ui/StudioFeedback';
 import type { AssistantComposerToolsController } from '@host/types/assistant/composer/tools';
 import type { AssistantConversationProps } from '@host/types/assistant/conversations/AssistantConversationBody';
-import { Button, Select, Tooltip } from 'antd';
+import { Button, Checkbox, Select, Tooltip } from 'antd';
 import { LockKeyhole } from 'lucide-react';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 export function AssistantConversationBody(props: AssistantConversationProps) {
   const {
     conversation,
@@ -95,9 +95,21 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
     stopping,
     blocked,
     taskModelName,
+    canChangeModel,
+    needsUnknownConfirmation,
+    confirmUnknown,
+    setConfirmUnknown,
   } = useAssistantComposer(props);
-  const modelControl = task ? (
-    <Tooltip title="当前任务沿用此模型，任务结束后可切换。" trigger={['hover', 'focus', 'click']}>
+  useEffect(() => {
+    if (runtime.conversationTitle) {
+      props.onConversationTitleChange?.(
+        runtime.conversationTitle.title,
+        runtime.conversationTitle.row_version,
+      );
+    }
+  }, [props.onConversationTitleChange, runtime.conversationTitle]);
+  const modelControl = task && !canChangeModel ? (
+    <Tooltip title="当前任务执行期间固定使用此模型，暂停或停止并结算后可切换。" trigger={['hover', 'focus', 'click']}>
       <Button
         type="text"
         size="small"
@@ -314,6 +326,12 @@ export function AssistantConversationBody(props: AssistantConversationProps) {
             {contextBlockReason}
           </p>
         ) : null}
+        {needsUnknownConfirmation && (
+          <Checkbox checked={confirmUnknown} onChange={(event) => setConfirmUnknown(event.target.checked)}
+            disabled={readOnly || runtime.accessEnded || !!busy}>
+            原请求结果不明。我已核对原调用，确认继续可能产生新的模型费用。
+          </Checkbox>
+        )}
         <AssistantQuestionDock key={conversation.id} accountId={accountId} conversationId={conversation.id}
           questions={runtime.pendingQuestions} runs={runtime.runs} tasks={runtime.tasks}
           disabled={readOnly || runtime.accessEnded || stopping} refresh={runtime.refreshQuestion} />

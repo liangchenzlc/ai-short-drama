@@ -208,6 +208,7 @@ class TaskAttachmentMetadata(ReadModel):
 
 
 class AssistantTaskMessage(AssistantMessageCreate):
+    confirm_unknown: bool = False
     task_id: Identifier | None = None
     new_task: bool = False
     script_reference: ScriptReference | None = None
@@ -267,6 +268,7 @@ class OperationRead(ReadModel):
 
 
 class TaskRead(ReadModel):
+    can_change_model: bool = False
     id: Identifier
     conversation_id: Identifier
     goal: str

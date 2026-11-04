@@ -1682,8 +1682,9 @@ def test_live_settings_freeze_and_realtime_media_permission(live_case, repetitio
         run = session.get(AgentRun, newer.run.id)
         frozen = run.config_snapshot["assistant_settings"]
         assert frozen["instructions"] == "SETTINGS_NEW_钟楼"
-        assert frozen["model_call_limit"] == case.settings.agent_run_decision_cap
-        assert run.budget["output_tokens"] == case.settings.agent_run_output_token_cap
+        assert "model_call_limit" not in frozen and "output_token_limit" not in frozen
+        assert run.budget["decision_calls"] is None
+        assert run.budget["output_tokens"] is None
     trace_roundtrip(case, conversation, accepted)
     case.facts.update(
         old_run_settings_frozen=True,

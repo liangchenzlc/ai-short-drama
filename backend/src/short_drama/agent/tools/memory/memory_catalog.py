@@ -1,4 +1,5 @@
 from short_drama.agent.tools.contracts import ToolSpec
+from short_drama.agent.tools.memory.memory_catalog_description import DESCRIPTION
 from short_drama.agent.tools.runtime import create_runtime_tool
 from short_drama.schemas.assistant.operations.tool_inputs import MemoryCatalog
 from short_drama.service.assistant.memory.memory_store import (
@@ -18,7 +19,7 @@ def invoke_locked(
 
 TOOL = create_runtime_tool(
     "runtime__memory_catalog",
-    "分页查看获准记忆目录及真实版本，不读取正文。",
+    DESCRIPTION,
     MemoryCatalog,
     invoke_locked,
 )

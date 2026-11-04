@@ -81,8 +81,6 @@ class Settings(BaseSettings):
     agent_model_timeout_seconds: int = Field(default=120, ge=1, le=600)
     agent_lease_seconds: int = Field(default=180, ge=150, le=3600)
     agent_poll_seconds: int = Field(default=5, ge=3, le=60)
-    agent_run_decision_cap: int = Field(default=240, ge=20, le=2000)
-    agent_run_output_token_cap: int = Field(default=2_000_000, ge=100_000, le=20_000_000)
     agent_stop_at_boundary: bool = True
     agent_sandbox_domain: str = ""
     agent_sandbox_protocol: Literal["http", "https"] = "http"

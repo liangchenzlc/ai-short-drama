@@ -554,9 +554,7 @@ def controlled_case(task_workspace, tmp_path):
 def live_case(task_workspace, monkeypatch, request):
     factory, _fixture_settings, model_id = task_workspace
     root, model, secret = live_text_config()
-    settings = Settings(
-        _env_file=None, auth_enabled=True, agent_enabled=True, agent_run_decision_cap=1000
-    )
+    settings = Settings(_env_file=None, auth_enabled=True, agent_enabled=True)
     assert settings.minio_endpoint and settings.agent_sandbox_domain
     assert settings.agent_sandbox_api_key, "live需要已验证的专用OpenSandbox服务"
     settings.model_discovery_allowed_hosts = [urlsplit(root).hostname]

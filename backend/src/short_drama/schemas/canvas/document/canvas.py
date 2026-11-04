@@ -19,8 +19,8 @@ class SourceModel(BaseModel):
 
 
 class CanvasPosition(SourceModel):
-    x: Finite
-    y: Finite
+    x: Finite = Field(description="画布工作区中的横向坐标。")
+    y: Finite = Field(description="画布工作区中的纵向坐标。")
 
 
 class CanvasViewport(CanvasPosition):

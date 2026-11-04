@@ -224,7 +224,7 @@ async function lifecycle(first) {
             const visible = page.locator('.ai-assistant-turn[data-message-id="' + failure.id + '"]').locator(".ai-assistant-reply");
             await visible.waitFor({ state: "visible" });
             assert.ok((await visible.innerText()).includes(config.unknownMessage));
-            await page.locator(".ai-assistant-failed").waitFor({ state: "visible" });
+            assert.equal(await page.locator(".ai-assistant-failed").count(), 0);
             assert.equal(await page.locator(".ai-assistant-turn").count(), 1);
             assert.equal(await page.locator(".ai-assistant-log .ai-assistant-reply").count(), 1);
         }

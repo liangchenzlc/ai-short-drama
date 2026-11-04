@@ -11,7 +11,7 @@ from short_drama.agent.tools.contracts import ToolSpec
 from short_drama.core.exceptions import WorkflowError
 
 
-def resource_spec(name, description, schema, method, argument, *, skill_state=False):
+def resource_spec(name, description: str, schema, method, argument, *, skill_state=False):
     async def invoke(runtime: ToolRuntime, **kwargs):
         values = schema.model_validate(kwargs)
         state = deepcopy(runtime.state) if skill_state else None
@@ -29,7 +29,10 @@ def resource_spec(name, description, schema, method, argument, *, skill_state=Fa
             raise
 
     tool = StructuredTool.from_function(
-        coroutine=invoke, name=name, description=description, args_schema=schema.model_json_schema()
+        coroutine=invoke,
+        name=name,
+        description=description,
+        args_schema=schema.model_json_schema(),
     )
     return ToolSpec(
         name=name,

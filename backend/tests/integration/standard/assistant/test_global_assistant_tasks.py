@@ -10,7 +10,11 @@ from sqlalchemy.orm import sessionmaker
 from short_drama.agent.tools.registry import get_spec
 from short_drama.core.exceptions import Conflict, NotFound, WorkflowError
 from short_drama.core.identity import SessionActorContext
-from short_drama.domain.assistant.conversations.models import AgentConversation, AgentMessage
+from short_drama.domain.assistant.conversations.models import (
+    AgentConversation,
+    AgentEvent,
+    AgentMessage,
+)
 from short_drama.domain.assistant.execution.models import AgentRun
 from short_drama.domain.assistant.tasks.task import AgentOperation, AgentTask, AgentTaskControl
 from short_drama.domain.identity.accounts.user import User
@@ -47,8 +51,6 @@ def _workspace(db_session):
     factory = sessionmaker(db_session.get_bind(), expire_on_commit=False, autoflush=False)
     settings = SimpleNamespace(
         agent_enabled=True,
-        agent_run_decision_cap=240,
-        agent_run_output_token_cap=2_000_000,
         agent_lease_seconds=180,
         generation_publish_lease_seconds=15,
         encryption_key=None,
@@ -85,6 +87,98 @@ def new_task(workspace):
             "message",
         )
     return conversation, accepted
+
+
+@pytest.mark.parametrize("status", ["paused_error", "paused_budget", "stopped"])
+def test_paused_task_can_change_model_in_a_new_attempt(task_workspace, status):
+    factory, settings, _ = task_workspace
+    conversation, accepted = new_task(task_workspace)
+    with factory() as session:
+        service = task_service(session, settings)
+        other = AIModelConfigService(session).create(
+            {
+                "service_type": "text",
+                "name": "Replacement",
+                "model_key": "replacement",
+                "provider": "compatible",
+                "base_url": "https://model.invalid/v1",
+            }
+        )
+        previous = session.get(AgentRun, accepted.run.id)
+        original_snapshot = dict(previous.config_snapshot)
+        previous.status, previous.error = "failed", {"code": "agent_tools_unsupported"}
+        previous.finished_at = utcnow()
+        task = session.get(AgentTask, accepted.task.id)
+        task.status, task.phase = status, "terminal"
+        session.commit()
+        state = service.task_runtime_state(conversation.id)
+        assert state.tasks[0].can_change_model
+        session.commit()
+        resumed = service.send_task_message(
+            conversation.id,
+            {
+                "task_id": str(task.id),
+                "content": "保留已有成果，换模型继续",
+                "model_config_id": str(other.id),
+            },
+            "changed-model",
+        )
+        assert resumed.task.id == task.id and resumed.run.id != previous.id
+        assert resumed.run.model_config_id == other.id
+        assert resumed.task.status == "queued" and not resumed.task.can_change_model
+        session.refresh(previous)
+        assert previous.config_snapshot == original_snapshot
+        assert previous.status == "failed"
+        new_run = session.get(AgentRun, resumed.run.id)
+        assert new_run.checkpoint["resume_history"] is True
+        assert new_run.config_snapshot["model_key"] == "replacement"
+
+
+def test_unknown_attempt_requires_explicit_confirmation_before_continuing(task_workspace):
+    factory, settings, _ = task_workspace
+    conversation, accepted = new_task(task_workspace)
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        run.status, run.error = (
+            "failed",
+            {"code": "agent_response_timeout", "accepted_unknown": True},
+        )
+        run.finished_at = utcnow()
+        task = session.get(AgentTask, accepted.task.id)
+        task.status, task.phase = "paused_error", "terminal"
+        session.commit()
+        service = task_service(session, settings)
+        body = {"task_id": str(task.id), "content": "继续创作"}
+        with pytest.raises(WorkflowError) as caught:
+            service.send_task_message(conversation.id, body, "unknown-continue")
+        assert caught.value.code == "assistant_acceptance_check_required"
+        resumed = service.send_task_message(
+            conversation.id,
+            {
+                **body,
+                "confirm_unknown": True,
+            },
+            "confirmed-continue",
+        )
+        assert resumed.run.id != run.id
+
+
+def test_running_task_still_rejects_model_switch(task_workspace):
+    factory, settings, _ = task_workspace
+    conversation, accepted = new_task(task_workspace)
+    with factory() as session:
+        service = task_service(session, settings)
+        with pytest.raises(WorkflowError) as caught:
+            service.send_task_message(
+                conversation.id,
+                {
+                    "task_id": str(accepted.task.id),
+                    "content": "更换模型",
+                    "model_config_id": "999",
+                },
+                "cannot-change-active-model",
+            )
+        assert caught.value.code == "assistant_model_frozen"
 
 
 def test_state_projects_large_checkpoints_without_mysql_filesort(task_workspace):
@@ -203,6 +297,193 @@ def execute_reply(workspace, accepted, *, text="讨论结果", requests=()):
         version = session.get(AgentRun, accepted.run.id).message_version
     AgentRuntime(factory, settings, transport=transport).execute(accepted.run.id, version)
     return transport
+
+
+def execute_title_run(workspace, accepted, replies):
+    from short_drama.agent.runtime.executor import AgentRuntime
+    from tests.support.assistant_runtime import RuntimeTransport
+
+    factory, settings, _model = workspace
+    with factory() as session:
+        version = session.get(AgentRun, accepted.run.id).message_version
+    transport = RuntimeTransport(replies)
+    AgentRuntime(factory, settings, transport=transport).execute(accepted.run.id, version)
+    return transport
+
+
+def test_first_user_message_generates_one_persistent_conversation_title(task_workspace):
+    from itertools import repeat
+
+    conversation, accepted = new_task(task_workspace)
+    transport = execute_title_run(
+        task_workspace,
+        accepted,
+        repeat(lambda body: {"text": "首轮回复" if body.get("tools") else "短剧镜头节奏"}),
+    )
+
+    assert len(transport.main_requests) == 2
+    title_body = next(body for body in transport.main_requests if not body.get("tools"))
+    title_request = " ".join(str(message.get("content", "")) for message in title_body["messages"])
+    assert "讨论镜头节奏" in title_request
+
+    factory, settings, model = task_workspace
+    with factory() as session:
+        service = task_service(session, settings)
+        titled = service.get_conversation(conversation.id)
+        assert titled.title == "短剧镜头节奏"
+        assert titled.row_version == 2
+        title_events = session.scalars(
+            select(AgentEvent).where(
+                AgentEvent.conversation_id == conversation.id,
+                AgentEvent.event_type == "conversation.title.updated",
+            )
+        ).all()
+        assert len(title_events) == 1
+        assert title_events[0].payload == {"title": titled.title, "row_version": "2"}
+        session.rollback()
+        next_message = service.send_task_message(
+            conversation.id,
+            {"content": "继续完善方案", "model_config_id": model, "new_task": True},
+            "title-second-message",
+        )
+
+    second = execute_title_run(task_workspace, next_message, [{"text": "第二轮回复"}])
+    assert len(second.main_requests) == 1
+    with factory() as session:
+        titled = task_service(session, settings).get_conversation(conversation.id)
+        assert titled.title == "短剧镜头节奏"
+
+
+def test_manual_conversation_rename_skips_automatic_title(task_workspace):
+    factory, settings, model = task_workspace
+    with factory() as session:
+        service = task_service(session, settings)
+        conversation = service.create_global_conversation({}, "manual-title-conversation")
+        accepted = service.send_task_message(
+            conversation.id,
+            {"content": "讨论人物关系", "model_config_id": model},
+            "manual-title-message",
+        )
+        service.rename_global_conversation(
+            conversation.id,
+            {"row_version": conversation.row_version, "title": "用户指定标题"},
+        )
+
+    transport = execute_title_run(task_workspace, accepted, [{"text": "首轮回复"}])
+    assert len(transport.main_requests) == 1
+    with factory() as session:
+        titled = task_service(session, settings).get_conversation(conversation.id)
+        assert titled.title == "用户指定标题"
+
+
+def test_conversation_title_is_requested_while_the_first_reply_is_running(task_workspace):
+    from concurrent.futures import ThreadPoolExecutor
+    from itertools import repeat
+    from threading import Event
+
+    from short_drama.agent.runtime.executor import AgentRuntime
+    from tests.support.assistant_runtime import RuntimeTransport
+
+    conversation, accepted = new_task(task_workspace)
+    factory, settings, _model = task_workspace
+    main_started, allow_main, title_started = Event(), Event(), Event()
+
+    def reply(body):
+        if not body.get("tools"):
+            title_started.set()
+            return {"text": "镜头节奏"}
+        main_started.set()
+        assert allow_main.wait(20)
+        return {"text": "讨论完成"}
+
+    transport = RuntimeTransport(repeat(reply))
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            AgentRuntime(factory, settings, transport=transport).execute, accepted.run.id, 1
+        )
+        try:
+            assert main_started.wait(20)
+            assert title_started.wait(4), "标题请求不应等待首轮助手任务完成"
+        finally:
+            allow_main.set()
+            future.result(timeout=30)
+    with factory() as session:
+        assert task_service(session, settings).get_conversation(conversation.id).title == "镜头节奏"
+
+
+def test_uncertain_title_request_does_not_stop_the_main_conversation(task_workspace):
+    from threading import Event
+
+    from short_drama.agent.gateway.contracts import AgentGatewayError
+    from short_drama.agent.runtime.executor import AgentRuntime
+    from short_drama.domain.assistant.execution.models import AgentTurn
+    from tests.support.assistant_runtime import RuntimeTransport, calls
+
+    conversation, accepted = new_task(task_workspace)
+    factory, settings, _model = task_workspace
+    title_sent = Event()
+
+    class UncertainTitleTransport(RuntimeTransport):
+        def request(self, method, url, *, body, on_send, **kwargs):
+            if not body.get("tools"):
+                on_send()
+                title_sent.set()
+                raise AgentGatewayError("agent_provider_unknown", requests=1, accepted_unknown=True)
+            return super().request(method, url, body=body, on_send=on_send, **kwargs)
+
+    def wait_for_title(_body, number):
+        if number == 1:
+            assert title_sent.wait(15), "标题请求应与主任务同时执行"
+
+    transport = UncertainTitleTransport(
+        [
+            calls(("policy", "runtime__get_generation_policy", {})),
+            {"text": "任务继续完成"},
+        ],
+        before_reply=wait_for_title,
+    )
+    AgentRuntime(factory, settings, transport=transport).execute(accepted.run.id, 1)
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        turns = session.scalars(select(AgentTurn).where(AgentTurn.run_id == run.id)).all()
+        assert run.status == "succeeded", run.error
+        title = next(turn for turn in turns if turn.usage["source"] == "conversation_title")
+        assert title.status == "unknown"
+        assert session.get(AgentConversation, conversation.id).title == "讨论镜头节奏"
+
+
+def test_title_request_interrupted_by_worker_loss_is_not_resent(task_workspace):
+    from datetime import timedelta
+
+    from short_drama.agent.coordinator.recovery import recover
+    from short_drama.agent.runtime.executor import AgentRuntime
+    from short_drama.agent.runtime.model_ledger import RunModelLedger
+    from short_drama.domain.assistant.execution.models import AgentTurn
+    from tests.integration.standard.assistant.test_agent_context_compaction import runtime
+    from tests.support.assistant_runtime import RuntimeTransport
+
+    conversation, accepted = new_task(task_workspace)
+    factory, settings, _model = task_workspace
+    _saver, context = runtime(task_workspace, accepted)
+    RunModelLedger(context).before_send(
+        {"model_call_id": "title-sent", "source": "conversation_title", "body": {"max_tokens": 64}}
+    )
+    with factory.begin() as session:
+        session.get(AgentRun, accepted.run.id).lease_until = utcnow() - timedelta(seconds=1)
+    assert recover(factory, settings) == 1
+    with factory() as session:
+        run = session.get(AgentRun, accepted.run.id)
+        turn = session.scalar(select(AgentTurn).where(AgentTurn.run_id == run.id))
+        assert turn.status == "unknown"
+        assert run.status == "queued"
+        version = run.message_version
+
+    transport = RuntimeTransport([{"text": "恢复后的答复"}])
+    AgentRuntime(factory, settings, transport=transport).execute(accepted.run.id, version)
+    assert len(transport.main_requests) == 1
+    with factory() as session:
+        assert session.get(AgentRun, accepted.run.id).status == "succeeded"
+        assert session.get(AgentConversation, conversation.id).title == "讨论镜头节奏"
 
 
 def test_discussion_revision_replaces_only_the_reply_and_preserves_versions(task_workspace):

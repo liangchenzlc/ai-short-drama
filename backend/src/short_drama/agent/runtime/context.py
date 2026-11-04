@@ -55,6 +55,8 @@ class AssistantState(AgentState, total=False):
     permitted_tool_names: list[str]
     skill_body_operations: list[str]
     memory_epoch: int
+    output_recovery: dict
+    tool_failure_streak: dict
 
 
 @dataclass(frozen=True, kw_only=True, repr=False)

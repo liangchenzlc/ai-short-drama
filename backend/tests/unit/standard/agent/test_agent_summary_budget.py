@@ -841,6 +841,8 @@ def test_metadata_only_skill_groups_can_enter_real_summary(force_summary, same_g
     assert admissions[-1][0] == "assistant"
     assert all(facts["estimated_input_tokens"] <= 18432 for _, facts in admissions)
     if force_summary:
+        assert fragments
+    if fragments:
         source = "".join(fragments)
         assert source and body not in source
         assert "正文已在当前上下文中" in source and "核对重复引用" in source

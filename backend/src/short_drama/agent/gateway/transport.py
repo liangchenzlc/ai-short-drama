@@ -66,7 +66,7 @@ def _usage_evidence(raw, protocol):
                         chat_finished = True
                     if chat_finished and isinstance(data.get("usage"), dict):
                         usage = data["usage"]
-                elif data.get("type") == "response.completed":
+                elif data.get("type") in {"response.completed", "response.incomplete"}:
                     terminal = True
                     completed = data.get("response")
                     usage = completed.get("usage") if isinstance(completed, dict) else None
@@ -187,6 +187,9 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
         max_response_bytes,
         on_request,
         on_response,
+        timeout_seconds=120,
+        on_connection_state=None,
+        retry_connections=True,
     ):
         self.safe = safe
         self.url = url
@@ -197,6 +200,9 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
         self.protocol = protocol
         self.on_request = on_request
         self.on_response = on_response
+        self.timeout_seconds = timeout_seconds
+        self.on_connection_state = on_connection_state
+        self.retry_connections = retry_connections
         self.attempts = 0
         self.requests = 0
         self.last_error = None
@@ -291,6 +297,78 @@ class _ProtectedHTTPTransport(httpx2.AsyncBaseTransport):
                 self.last_error = AgentGatewayError("timeout")
                 raise self.last_error
             self.requests = 0 if isinstance(self.safe, _ReplaySafeTransport) else 1
+
+        from short_drama.agent.gateway.http import AgentHTTPTransport
+
+        if isinstance(self.safe, AgentHTTPTransport):
+
+            async def emit_async(kind, value):
+                await self.queue.put((kind, value))
+
+            async def send_async():
+                async def admitted():
+                    # 异步HTTP在连接成功后才登记实际发送，连接重试不重复占用模型额度。
+                    self.deadline = time.monotonic() + self.timeout_seconds
+                    await admit()
+
+                return await self.safe.request(
+                    "POST",
+                    self.url,
+                    headers=headers,
+                    body=body,
+                    max_bytes=self.max_response_bytes,
+                    on_send=admitted,
+                    on_headers=(lambda status, values: emit_async("headers", (status, values)))
+                    if body.get("stream")
+                    else None,
+                    on_chunk=(lambda chunk: emit_async("chunk", chunk))
+                    if body.get("stream")
+                    else None,
+                    on_state=self.on_connection_state,
+                    timeout_seconds=self.timeout_seconds,
+                    retry_connections=self.retry_connections,
+                )
+
+            if not body.get("stream"):
+                try:
+                    status, response_headers, content = await send_async()
+                except GenerationError as error:
+                    self.last_error = error
+                    raise
+                await self.save_response(status, response_headers, content)
+                return httpx2.Response(
+                    status,
+                    headers={"Content-Type": self.raw_response["content_type"]},
+                    content=content,
+                    request=request,
+                )
+
+            self.queue = asyncio.Queue(maxsize=8)
+
+            async def feed_async():
+                try:
+                    status, response_headers, content = await send_async()
+                    await self.save_response(status, response_headers, content)
+                    await self.queue.put(("done", None))
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    self.last_error = error
+                    await self.queue.put(("error", error))
+
+            self.feed_task = asyncio.create_task(feed_async())
+            kind, value = await self.queue.get()
+            if kind == "error":
+                raise value
+            status, response_headers = value
+            return httpx2.Response(
+                status,
+                headers={
+                    "Content-Type": _raw_response(status, response_headers, b"")["content_type"]
+                },
+                stream=_CapturedStream(self),
+                request=request,
+            )
 
         def before_send():
             future = asyncio.run_coroutine_threadsafe(admit(), loop)

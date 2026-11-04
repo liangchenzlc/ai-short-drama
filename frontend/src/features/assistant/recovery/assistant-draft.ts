@@ -173,6 +173,7 @@ function pendingBody(value: unknown): value is AssistantTaskSendInput {
       'video_audio',
       'task_id',
       'new_task',
+      'confirm_unknown',
       'execution_target',
       'subject_selection',
       'attachment_selection',
@@ -185,6 +186,7 @@ function pendingBody(value: unknown): value is AssistantTaskSendInput {
     (value.model_config_id !== undefined && !identifier(value.model_config_id)) ||
     (value.task_id !== undefined && !identifier(value.task_id)) ||
     (value.new_task !== undefined && typeof value.new_task !== 'boolean') ||
+    (value.confirm_unknown !== undefined && typeof value.confirm_unknown !== 'boolean') ||
     (value.new_task === true && value.task_id !== undefined) ||
     (value.execution_target !== undefined && value.execution_target !== null && !validTarget(value.execution_target))
   )

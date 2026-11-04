@@ -81,6 +81,18 @@ export function useAssistantComposer({
     ? null
     : (runtime.tasks.find((item) => item.id === taskId && item.status !== 'succeeded') ?? runtime.task);
   const selectedSkills = skillsDirty ? skills : (task?.skills ?? []);
+  const taskRun = task
+    ? [...(runtime.run ? [runtime.run] : []), ...runtime.queuedRuns, ...runtime.runs]
+        .filter((run) => run.task_id === task.id)
+        .sort((a, b) => (BigInt(a.id) > BigInt(b.id) ? -1 : BigInt(a.id) < BigInt(b.id) ? 1 : 0))[0]
+    : undefined;
+  const canChangeModel = task?.can_change_model === true;
+  const [confirmedUnknownRun, setConfirmedUnknownRun] = useState('');
+  const needsUnknownConfirmation = canChangeModel && taskRun?.error?.accepted_unknown === true;
+  const confirmUnknown = confirmedUnknownRun === taskRun?.id;
+  useEffect(() => {
+    if (canChangeModel && taskRun) setModelId(taskRun.model_config_id);
+  }, [canChangeModel, taskRun?.id, taskRun?.model_config_id, setModelId]);
   const [composerVersion, setComposerVersion] = useState(0);
   const [pendingControl, setPendingControl] = useState<Extract<AssistantPendingAction, { kind: 'control' }> | null>(
     restoredControl.pending?.kind === 'control' ? restoredControl.pending : null,
@@ -237,7 +249,7 @@ export function useAssistantComposer({
       restoredSend.error ||
       restoredControl.error ||
       (!retry &&
-        (stopping ||
+        ((needsUnknownConfirmation && !confirmUnknown) || stopping ||
           contextBlockReason ||
           (!task && !model) ||
           !current.current.draft.trim() ||
@@ -266,6 +278,7 @@ export function useAssistantComposer({
         submitted,
         layout,
         modelId,
+        confirmUnknown,
         projectId,
         executionTarget,
             skillsDirty,
@@ -518,9 +531,10 @@ export function useAssistantComposer({
     !!restoredSend.error ||
     !!restoredControl.error ||
     stopping ||
+    (needsUnknownConfirmation && !confirmUnknown) ||
+    (canChangeModel && !model) ||
     (!task && !model) ||
     !draft.trim();
-  const taskRun = task ? [runtime.run, ...runtime.queuedRuns].find((run) => run?.task_id === task.id) : undefined;
   const taskModelName = taskRun?.model_name || '沿用当前任务模型';
 
   return {
@@ -592,5 +606,9 @@ export function useAssistantComposer({
     stopping,
     blocked,
     taskModelName,
+    canChangeModel,
+    needsUnknownConfirmation,
+    confirmUnknown,
+    setConfirmUnknown: (value: boolean) => setConfirmedUnknownRun(value ? taskRun?.id ?? '' : ''),
   };
 }

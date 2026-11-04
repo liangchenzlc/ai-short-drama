@@ -66,7 +66,9 @@ def recover(factory, settings, limit=100):
                         {"code": "agent_acceptance_unknown", "accepted_unknown": True},
                     )
                     turn.updated_at = turn.finished_at = now
-                unknown |= turn.status == "unknown"
+                unknown |= (
+                    turn.status == "unknown" and turn.usage.get("source") != "conversation_title"
+                )
             stopped = run.cancel_requested or not may_decide(session, project, conversation, run)
             if stopped or unknown:
                 code = "agent_stopped" if stopped else "agent_acceptance_unknown"
@@ -87,6 +89,11 @@ def recover(factory, settings, limit=100):
                 finalize_deletion_locked(session, conversation)
             else:
                 # 故障恢复从框架 checkpoint 继续；普通工具结算不会经过此处投递。
+                run.checkpoint = {
+                    key: value
+                    for key, value in run.checkpoint.items()
+                    if key != "model_connections"
+                }
                 mark_scheduled(run, phase="model")
             count += 1
     from short_drama.service.assistant.execution.waiting import collect_ready_waits

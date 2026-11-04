@@ -28,8 +28,6 @@ DEFAULT_INSTRUCTIONS = (
 
 def deployment_limits(settings) -> AssistantRuntimeLimits:
     return AssistantRuntimeLimits(
-        model_call_limit=settings.agent_run_decision_cap,
-        output_token_limit=settings.agent_run_output_token_cap,
         subagent_max_concurrency=3,
     )
 

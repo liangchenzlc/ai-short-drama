@@ -24,4 +24,5 @@ export interface AssistantConversationProps extends AssistantContextProps {
   readOnly: boolean;
   onOpenModelSettings: () => void;
   onSendingChange: (sending: boolean) => void;
+  onConversationTitleChange?: (title: string, rowVersion: string) => void;
 }

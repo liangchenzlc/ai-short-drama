@@ -3,6 +3,7 @@
 import asyncio
 import json
 from contextlib import nullcontext
+from uuid import uuid4
 
 from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware, hook_config
 from langchain.agents.middleware.types import ExtendedModelResponse, ModelResponse
@@ -13,7 +14,7 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.types import Command
 
 from short_drama.agent.context.budget import estimate_input_tokens, input_limit, wire_tool_counts
-from short_drama.agent.context.capabilities import context_profile
+from short_drama.agent.context.capabilities import context_profile, request_output_tokens
 from short_drama.agent.context.graph import scope_context
 from short_drama.agent.gateway.contracts import AgentGatewayError
 from short_drama.agent.runtime.context import execution_scope, model_compaction
@@ -234,7 +235,13 @@ class SkillSummarizationMiddleware(AgentMiddleware):
         unpinned = [message for message in messages if message.id not in pinned_ids]
         snapshot = getattr(request.model, "snapshot", {})
         callbacks = getattr(request.model, "model_callbacks", None)
-        output = getattr(callbacks, "max_output_tokens", 8192)
+        output = request_output_tokens(
+            snapshot,
+            "assistant",
+            request.model_settings.get(
+                "agent_output_tokens", getattr(callbacks, "max_output_tokens", None)
+            ),
+        )
         window = context_profile(snapshot)["context_window_tokens"]
         limit = input_limit(output, context_window=window)
         envelope = {
@@ -325,7 +332,7 @@ class SkillSummarizationMiddleware(AgentMiddleware):
             ):
                 summary_input = [*unpinned, boundary]
                 keep = ("messages", 1)
-        helper = BoundedSummary(self.model)
+        helper = BoundedSummary(self.model, context=getattr(request.runtime, "context", None))
         # Native retention counts the same fixed envelope; reserve its cost in both thresholds.
         summarizer = SummarizationMiddleware(
             model=self.model,
@@ -342,6 +349,41 @@ class SkillSummarizationMiddleware(AgentMiddleware):
             if count(unpinned) > limit:
                 raise reject("post_summary", count(unpinned))
             return await handler(request)
+        estimated = count(result["messages"])
+        if estimated > limit:
+            recent = unpinned[last_group:]
+            projected = {"messages": project(recent)}
+            media_group = (
+                recent
+                if estimate_input_tokens(projected, references=True)
+                != estimate_input_tokens(projected)
+                else []
+            )
+            media_ids = {item.id for item in media_group}
+            retry_messages = [
+                item
+                for item in retained_messages(result["messages"])
+                if item.id not in pinned_ids | media_ids
+            ]
+            try:
+                summary = await helper.summarize(
+                    retry_messages, {"metadata": {"lc_source": "summarization"}}
+                )
+            except AgentGatewayError as error:
+                if error.code == "agent_context_budget_exhausted":
+                    raise reject("post_summary", estimated) from None
+                raise
+            result = {
+                "messages": [
+                    RemoveMessage(id=REMOVE_ALL_MESSAGES),
+                    HumanMessage(
+                        content=summary,
+                        id=f"summary-retry:{uuid4().hex}",
+                        additional_kwargs={"lc_source": "summarization"},
+                    ),
+                    *media_group,
+                ]
+            }
         kept = {
             message.id for message in result["messages"] if not isinstance(message, RemoveMessage)
         }

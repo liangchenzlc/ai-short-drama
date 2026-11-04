@@ -18,6 +18,64 @@ TOOL_VERSION = 5
 
 
 @dataclass(frozen=True)
+class ToolDescription:
+    purpose: str
+    when_to_use: str
+    avoid: str
+    prerequisites: str
+    effect: str
+    returns: str
+    recovery: str
+    example: str | None = None
+
+    def render(self) -> str:
+        sections = (
+            ("用途", self.purpose),
+            ("调用时机", self.when_to_use),
+            ("避免", self.avoid),
+            ("前置条件", self.prerequisites),
+            ("执行效果", self.effect),
+            ("返回", self.returns),
+            ("失败与续接", self.recovery),
+        )
+        lines = [f"{label}：{value}" for label, value in sections]
+        if self.example:
+            lines.append(f"调用示例：{self.example}")
+        return "\n".join(lines)
+
+
+DESCRIPTION_HEADINGS = (
+    "用途：",
+    "调用时机：",
+    "避免：",
+    "前置条件：",
+    "执行效果：",
+    "返回：",
+    "失败与续接：",
+)
+
+
+def require_tool_description(name: str, description: str) -> None:
+    missing = [heading[:-1] for heading in DESCRIPTION_HEADINGS if heading not in description]
+    if missing:
+        raise ValueError(f"工具 {name} 的描述契约缺少章节：{', '.join(missing)}")
+    empty = [
+        heading[:-1]
+        for heading in DESCRIPTION_HEADINGS
+        if not next(
+            (
+                line.partition("：")[2].strip()
+                for line in description.splitlines()
+                if line.startswith(heading)
+            ),
+            "",
+        )
+    ]
+    if empty:
+        raise ValueError(f"工具 {name} 的描述契约章节不能为空：{', '.join(empty)}")
+
+
+@dataclass(frozen=True)
 class ToolSpec:
     name: str
     description: str

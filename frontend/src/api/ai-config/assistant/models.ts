@@ -9,6 +9,7 @@ export const assistantModelsApi = {
       image: boolean;
       audio: boolean;
       context_window_tokens?: number | null;
+      max_output_tokens?: number | null;
     },
   ) {
     return (await http.patch<AgentModel>(`${root}/models/${encodeURIComponent(id)}/inputs`, body)).data;

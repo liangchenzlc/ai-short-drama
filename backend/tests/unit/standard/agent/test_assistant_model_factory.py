@@ -17,6 +17,314 @@ from pydantic import BaseModel
 from short_drama.agent.gateway.contracts import AgentGatewayError, ModelCallbacks
 
 
+@pytest.mark.parametrize("failures", [1, 5, 6])
+def test_native_connection_retries_only_before_admission(monkeypatch, failures):
+    import httpx2
+
+    from short_drama.agent.gateway import http
+
+    monkeypatch.setattr(
+        http.socket, "getaddrinfo", lambda *a, **kw: [(2, 1, 6, "", ("8.8.8.8", 443))]
+    )
+    attempts, admitted, states = [], [], []
+
+    class Wire(httpx2.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            attempts.append(request.extensions["timeout"]["connect"])
+            assert request.headers["host"] == "fixture.invalid"
+            assert request.headers.get_list("content-type") == ["application/json"]
+            assert request.headers.get_list("accept-encoding") == ["identity"]
+            assert request.extensions["sni_hostname"] == "fixture.invalid"
+            if len(attempts) <= failures:
+                raise httpx2.ConnectTimeout("controlled", request=request)
+            await request.extensions["trace"]("http11.send_request_headers.started", {})
+            return httpx2.Response(200, content=b"ok", request=request)
+
+    monkeypatch.setattr(http.httpx2, "AsyncHTTPTransport", lambda **kw: Wire())
+
+    async def admit():
+        admitted.append(True)
+
+    async def state(value):
+        states.append(value)
+
+    async def invoke():
+        return await http.AgentHTTPTransport(SimpleNamespace()).request(
+            "POST",
+            "https://fixture.invalid/v1/chat/completions",
+            headers={"content-type": "application/json", "accept-encoding": "gzip, deflate"},
+            body={},
+            max_bytes=1024,
+            on_send=admit,
+            on_state=state,
+        )
+
+    if failures == 6:
+        from short_drama.ai.types import GenerationError
+
+        with pytest.raises(GenerationError) as caught:
+            asyncio.run(invoke())
+        assert caught.value.code == "agent_connection_timeout"
+        assert not caught.value.accepted_unknown and admitted == []
+    else:
+        assert asyncio.run(invoke())[2] == b"ok"
+        assert admitted == [True]
+    assert attempts == list(http.CONNECT_TIMEOUTS[: min(failures + 1, 6)])
+    assert [item["retry_no"] for item in states] == list(range(len(attempts)))
+
+
+def test_native_response_timeout_never_retries_sent_request(monkeypatch):
+    import httpx2
+
+    from short_drama.agent.gateway import http
+    from short_drama.ai.types import GenerationError
+
+    monkeypatch.setattr(
+        http.socket, "getaddrinfo", lambda *a, **kw: [(2, 1, 6, "", ("8.8.8.8", 443))]
+    )
+    attempts, admitted = [], []
+
+    class Wire(httpx2.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            attempts.append(request.extensions["timeout"])
+            await request.extensions["trace"]("http11.send_request_headers.started", {})
+            raise httpx2.ReadTimeout("controlled", request=request)
+
+    monkeypatch.setattr(http.httpx2, "AsyncHTTPTransport", lambda **kw: Wire())
+
+    async def admit():
+        admitted.append(True)
+
+    async def invoke():
+        await http.AgentHTTPTransport(SimpleNamespace()).request(
+            "POST",
+            "https://fixture.invalid/v1/chat/completions",
+            headers={},
+            body={},
+            max_bytes=1024,
+            on_send=admit,
+        )
+
+    with pytest.raises(GenerationError) as caught:
+        asyncio.run(invoke())
+    assert caught.value.code == "agent_response_timeout" and caught.value.accepted_unknown
+    assert len(attempts) == len(admitted) == 1
+    assert attempts[0]["read"] == attempts[0]["write"] == 120
+
+
+def test_native_dns_wait_uses_connection_deadline_and_retries_unsent(monkeypatch):
+    from itertools import count
+
+    import httpx2
+
+    from short_drama.agent.gateway import http
+
+    resolutions = count()
+    admitted, attempts = [], []
+
+    def resolve(*args, **kwargs):
+        if next(resolutions) == 0:
+            time.sleep(0.1)
+        return [(2, 1, 6, "", ("8.8.8.8", 443))]
+
+    class Wire(httpx2.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            attempts.append(request)
+            await request.extensions["trace"]("http11.send_request_headers.started", {})
+            return httpx2.Response(200, content=b"ok", request=request)
+
+    monkeypatch.setattr(http.socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(http, "CONNECT_TIMEOUTS", (0.02, 1))
+    monkeypatch.setattr(http.httpx2, "AsyncHTTPTransport", lambda **kw: Wire())
+
+    async def admit():
+        admitted.append(True)
+
+    result = asyncio.run(
+        http.AgentHTTPTransport(SimpleNamespace()).request(
+            "POST",
+            "https://fixture.invalid/v1/chat/completions",
+            headers={},
+            body={},
+            max_bytes=1024,
+            on_send=admit,
+        )
+    )
+    assert result[2] == b"ok" and next(resolutions) == 2
+    assert len(attempts) == len(admitted) == 1
+
+
+def test_custom_official_deepseek_uses_forced_tool_compatibility():
+    from short_drama.agent.gateway.langchain import build_chat_model
+
+    transport = LocalTransport()
+    model = build_chat_model(
+        {**configured(), "provider": "custom", "base_url": "https://api.deepseek.com"},
+        "",
+        callbacks=ModelCallbacks(settings=SimpleNamespace(), stream=False),
+        transport=transport,
+    )
+    asyncio.run(
+        model.bind_tools(
+            [
+                {
+                    "name": "lookup",
+                    "description": "lookup",
+                    "parameters": {"type": "object", "properties": {}},
+                }
+            ],
+            tool_choice="required",
+        ).ainvoke([HumanMessage(content="选择工具")])
+    )
+    assert transport.requests[0]["thinking"] == {"type": "disabled"}
+
+
+def test_thinking_tool_choice_conflict_is_not_missing_tools():
+    from short_drama.agent.gateway.contracts import provider_failure_code
+    from short_drama.agent.gateway.inputs import is_deepseek
+
+    content = b'{"error":{"message":"Thinking mode does not support this tool_choice"}}'
+    assert provider_failure_code(400, content) == "agent_tool_choice_conflict"
+    assert not is_deepseek(
+        {
+            "provider": "custom",
+            "model_key": "deepseek",
+            "base_url": "https://api.deepseek.com.example.test",
+        }
+    )
+
+
+@pytest.mark.parametrize("progress", ["text", "reasoning", "tool", "heartbeat", "empty_tool"])
+def test_native_response_watchdog_requires_effective_stream_progress(monkeypatch, progress):
+    import httpx2
+
+    from short_drama.agent.gateway import http
+    from short_drama.agent.gateway.langchain import build_chat_model
+
+    monkeypatch.setattr(
+        http.socket, "getaddrinfo", lambda *a, **kw: [(2, 1, 6, "", ("8.8.8.8", 443))]
+    )
+    attempts, closed = [], []
+
+    def frame(delta, finish=None):
+        return (
+            "data: "
+            + json.dumps(
+                {
+                    "id": "progress",
+                    "object": "chat.completion.chunk",
+                    "created": 1,
+                    "model": "controlled",
+                    "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+                }
+            )
+            + "\n\n"
+        ).encode()
+
+    class Stream(httpx2.AsyncByteStream):
+        async def __aiter__(self):
+            for index in range(5):
+                await asyncio.sleep(0.15)
+                if progress == "heartbeat":
+                    yield b": heartbeat\n\n"
+                elif progress in {"tool", "empty_tool"}:
+                    yield frame(
+                        {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    **({"id": "tool-1", "type": "function"} if not index else {}),
+                                    "function": {
+                                        **({"name": "lookup"} if not index else {}),
+                                        "arguments": ""
+                                        if progress == "empty_tool"
+                                        else ["{", '"v"', ":", "1", "}"][index],
+                                    },
+                                }
+                            ]
+                        }
+                    )
+                else:
+                    yield frame(
+                        {"reasoning_content" if progress == "reasoning" else "content": str(index)}
+                    )
+            if progress == "reasoning":
+                yield frame({"content": "完成"})
+            yield frame({}, "tool_calls" if progress == "tool" else "stop")
+            yield b"data: [DONE]\n\n"
+
+        async def aclose(self):
+            closed.append(True)
+
+    class Wire(httpx2.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            attempts.append(request)
+            await request.extensions["trace"]("http11.send_request_headers.started", {})
+            return httpx2.Response(
+                200, headers={"Content-Type": "text/event-stream"}, stream=Stream(), request=request
+            )
+
+    monkeypatch.setattr(http.httpx2, "AsyncHTTPTransport", lambda **kw: Wire())
+    callbacks, records = deadline_receipts(0.4)
+    model = build_chat_model({**configured(), "provider": "deepseek"}, "", callbacks=callbacks)
+    if progress in {"heartbeat", "empty_tool"}:
+        with pytest.raises(AgentGatewayError) as caught:
+            asyncio.run(model.ainvoke([HumanMessage(content="等待有效进展")]))
+        assert caught.value.code == "agent_response_timeout" and caught.value.accepted_unknown
+        assert records["errors"][0]["requests"] == 1
+    else:
+        result = asyncio.run(model.ainvoke([HumanMessage(content="等待有效进展")]))
+        assert result.tool_calls[0]["args"] == {"v": 1} if progress == "tool" else result.text
+        assert records["errors"] == []
+    assert len(attempts) == 1 and closed
+
+
+def test_native_stop_cancels_connection_without_starting_a_retry(monkeypatch):
+    import httpx2
+
+    from short_drama.agent.gateway import http
+
+    monkeypatch.setattr(
+        http.socket, "getaddrinfo", lambda *a, **kw: [(2, 1, 6, "", ("8.8.8.8", 443))]
+    )
+    attempts, closed = [], []
+
+    async def invoke():
+        entered = asyncio.Event()
+
+        class Wire(httpx2.AsyncBaseTransport):
+            async def handle_async_request(self, request):
+                attempts.append(request)
+                entered.set()
+                await asyncio.Event().wait()
+
+            async def aclose(self):
+                closed.append(True)
+
+        monkeypatch.setattr(http.httpx2, "AsyncHTTPTransport", lambda **kw: Wire())
+
+        async def admit():
+            pytest.fail("Cancelled connection cannot be admitted")
+
+        task = asyncio.create_task(
+            http.AgentHTTPTransport(SimpleNamespace()).request(
+                "POST",
+                "https://fixture.invalid/v1/chat/completions",
+                headers={},
+                body={},
+                max_bytes=1024,
+                on_send=admit,
+            )
+        )
+        await asyncio.wait_for(entered.wait(), 2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 2)
+
+    asyncio.run(invoke())
+    assert len(attempts) == len(closed) == 1
+
+
 class LocalTransport:
     def __init__(self, status=200):
         self.status, self.requests = status, []
@@ -581,11 +889,17 @@ def test_unusable_response_keeps_usage_and_acceptance_facts(failure, reported):
         ),
         transport=transport,
     )
-    with pytest.raises(AgentGatewayError) as raised:
-        asyncio.run(model.ainvoke([HumanMessage(content="输出仍须计费")]))
-    assert len(transport.requests) == raised.value.requests == 1
-    assert errors[0]["not_accepted"] is (failure == "rejected")
-    assert events == (["raw", "error"] if failure == "rejected" else ["raw", "usage", "error"])
+    if failure == "length":
+        result = asyncio.run(model.ainvoke([HumanMessage(content="输出仍须计费")]))
+        assert result.response_metadata["output_recovery"]
+        assert events == ["raw", "usage"] and not errors
+    else:
+        with pytest.raises(AgentGatewayError) as raised:
+            asyncio.run(model.ainvoke([HumanMessage(content="输出仍须计费")]))
+        assert raised.value.requests == 1
+        assert errors[0]["not_accepted"] is (failure == "rejected")
+        assert events == (["raw", "error"] if failure == "rejected" else ["raw", "usage", "error"])
+    assert len(transport.requests) == 1
     if failure != "rejected":
         assert usage[0]["output_tokens_reported"] is reported
         assert usage[0].get("output_tokens", 0) == (7 if reported else 0)

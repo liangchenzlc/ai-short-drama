@@ -34,38 +34,61 @@ ObjectReference = Annotated[
 
 
 class CreateStandardAsset(InputModel):
-    action: Literal["create_asset"]
-    key: LocalKey
-    values: AssetLibraryCreate
+    action: Literal["create_asset"] = Field(description="动作分支标识；必须是 create_asset。")
+    key: LocalKey = Field(description="本批创建素材的临时键；后续动作使用 $<key> 引用它。")
+    values: AssetLibraryCreate = Field(description="新素材字段；不得传媒体、模型、状态或版本身份。")
 
 
 class UpdateStandardAsset(InputModel):
-    action: Literal["update_asset"]
-    asset: ObjectReference
-    patch: AssetPatch
+    action: Literal["update_asset"] = Field(description="动作分支标识；必须是 update_asset。")
+    asset: ObjectReference = Field(description="已授权素材 ID，或本批更早 create_asset 的 $key。")
+    patch: AssetPatch = Field(description="要修改的素材字段及读取时的 row_version。")
 
 
 class StandardShotValues(InputModel):
-    title: ShotTitle = ""
-    shot_size: ShotSizeEnum | None = None
-    script: ShotScriptText = ""
-    duration_ms: int = Field(default=3000, strict=True, ge=1000, le=10000)
-    image_settings: ShotImageSettings = Field(default_factory=ShotImageSettings)
-    video_prompt: Annotated[str, Field(max_length=16000)] = ""
-    video_settings: ShotVideoSettings = Field(default_factory=ShotVideoSettings)
+    title: ShotTitle = Field(default="", description="新分场/镜头标题；不是素材名称字段 name。")
+    shot_size: ShotSizeEnum | None = Field(default=None, description="可选景别枚举；未指定时为空。")
+    script: ShotScriptText = Field(
+        default="", description="分场（ShotScript）正文；并非 ProjectScript 整篇正文。"
+    )
+    duration_ms: int = Field(
+        default=3000,
+        strict=True,
+        ge=1000,
+        le=10000,
+        description="分场建议时长，单位毫秒；10 秒传 10000。",
+    )
+    image_settings: ShotImageSettings = Field(
+        default_factory=ShotImageSettings, description="该分场下一次图片生成设置。"
+    )
+    video_prompt: Annotated[
+        str, Field(max_length=16000, description="该分场下一次视频生成的补充提示词。")
+    ] = ""
+    video_settings: ShotVideoSettings = Field(
+        default_factory=ShotVideoSettings, description="该分场下一次视频生成设置。"
+    )
 
 
 class CreateStandardShot(InputModel):
-    action: Literal["create_shot"]
-    key: LocalKey
-    values: StandardShotValues
-    assets: Annotated[list[ObjectReference], Field(max_length=100)] = Field(default_factory=list)
+    action: Literal["create_shot"] = Field(
+        description="动作分支标识；必须是 create_shot，不是 type。"
+    )
+    key: LocalKey = Field(description="本批新镜头临时键；后续动作使用 $<key> 引用。")
+    values: StandardShotValues = Field(
+        description="新分场/镜头字段；正文使用 script，标题使用 title，时长使用毫秒 duration_ms。"
+    )
+    assets: Annotated[
+        list[ObjectReference],
+        Field(max_length=100, description="关联素材 ID 或本批较早创建的 $key。"),
+    ] = Field(default_factory=list)
 
 
 class UpdateStandardShot(InputModel):
-    action: Literal["update_shot"]
-    shot: ObjectReference
-    patch: StoryboardUpdate
+    action: Literal["update_shot"] = Field(description="动作分支标识；必须是 update_shot。")
+    shot: ObjectReference = Field(description="已授权镜头 ID，或本批更早 create_shot 的 $key。")
+    patch: StoryboardUpdate = Field(
+        description="镜头变化及读取时 row_version；素材关联需用 set_shot_assets 动作。"
+    )
 
     @model_validator(mode="after")
     def separate_associations(self):
@@ -82,16 +105,30 @@ class UpdateStandardShot(InputModel):
 
 
 class SetStandardShotAssets(InputModel):
-    action: Literal["set_shot_assets"]
-    shot: ObjectReference
-    row_version: Identifier
-    assets: Annotated[list[ObjectReference], Field(max_length=100)]
+    action: Literal["set_shot_assets"] = Field(description="动作分支标识；必须是 set_shot_assets。")
+    shot: ObjectReference = Field(description="已授权镜头 ID，或本批更早创建镜头的 $key。")
+    row_version: Identifier = Field(
+        description="镜头当前 row_version；来自最近一次分镜读取或本批创建回执。"
+    )
+    assets: Annotated[
+        list[ObjectReference],
+        Field(max_length=100, description="要设置的完整素材关联列表；空数组表示明确清空。"),
+    ]
 
 
 class ReorderStandardShots(InputModel):
-    action: Literal["reorder_shots"]
-    shots: Annotated[list[ObjectReference], Field(min_length=2, max_length=500)]
-    versions: dict[ObjectReference, Identifier]
+    action: Literal["reorder_shots"] = Field(description="动作分支标识；必须是 reorder_shots。")
+    shots: Annotated[
+        list[ObjectReference],
+        Field(
+            min_length=2,
+            max_length=500,
+            description="按目标新顺序排列的真实镜头 ID 或本批临时 $key。",
+        ),
+    ]
+    versions: dict[ObjectReference, Identifier] = Field(
+        description="每个 shots 引用对应的预期 row_version；键集合必须与 shots 完全一致。"
+    )
 
     @model_validator(mode="after")
     def exact_versions(self):
@@ -101,37 +138,53 @@ class ReorderStandardShots(InputModel):
 
 
 class DeleteStandardAsset(InputModel):
-    action: Literal["delete_asset"]
-    asset: ObjectReference
-    row_version: Identifier
+    action: Literal["delete_asset"] = Field(description="动作分支标识；必须是 delete_asset。")
+    asset: ObjectReference = Field(description="待删除的已授权素材 ID；不能用名称代替 ID。")
+    row_version: Identifier = Field(description="该素材当前 row_version；来自最近一次素材读取。")
 
 
 class DeleteStandardShot(InputModel):
-    action: Literal["delete_shot"]
-    shot: ObjectReference
-    row_version: Identifier
+    action: Literal["delete_shot"] = Field(description="动作分支标识；必须是 delete_shot。")
+    shot: ObjectReference = Field(description="待归档的已授权镜头 ID；不能用标题代替 ID。")
+    row_version: Identifier = Field(description="该镜头当前 row_version；来自最近一次分镜读取。")
 
 
 class StandardDialogueLine(NativeLine):
-    character_id: ObjectReference
+    character_id: ObjectReference = Field(
+        description="说话角色的已授权素材 ID，或本批较早 create_asset 的 $key。"
+    )
 
 
 class StandardDialogueDocument(NativeDialogueDocument):
-    lines: Annotated[list[StandardDialogueLine], Field(max_length=20)] = Field(default_factory=list)
+    lines: Annotated[
+        list[StandardDialogueLine], Field(max_length=20, description="按说话顺序排列的对白行。")
+    ] = Field(default_factory=list)
 
 
 class EditStandardDialogue(InputModel):
-    action: Literal["edit_dialogue"]
-    shot: ObjectReference
-    row_version: Identifier
-    dialogue_version: NonnegativeVersion
-    document: StandardDialogueDocument
+    action: Literal["edit_dialogue"] = Field(description="动作分支标识；必须是 edit_dialogue。")
+    shot: ObjectReference = Field(description="已授权镜头 ID 或本批新建镜头的临时 $key。")
+    row_version: Identifier = Field(
+        description="镜头当前 row_version；来自最近分镜读取或批内创建结果。"
+    )
+    dialogue_version: NonnegativeVersion = Field(
+        description="该镜头对白文档版本；未建稿时为 0，来自当前目标读取。"
+    )
+    document: StandardDialogueDocument = Field(description="要保存的完整对白文档；最多两位角色。")
 
 
 class StandardSoundRevision(InputModel):
-    row_version: NonnegativeVersion
-    assembly_version: Identifier
-    timeline_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    row_version: NonnegativeVersion = Field(
+        description="声音文档 row_version；未建稿时为 0，来自当前声音读取结果。"
+    )
+    assembly_version: Identifier = Field(description="成片时间线版本；来自最近读取的成片快照。")
+    timeline_hash: Annotated[
+        str,
+        Field(
+            pattern=r"^[a-f0-9]{64}$",
+            description="同一成片快照返回的时间线 SHA-256；不能自行计算替代。",
+        ),
+    ]
 
 
 SoundLineReference = Annotated[
@@ -140,10 +193,16 @@ SoundLineReference = Annotated[
 
 
 class StandardSoundValues(InputModel):
-    character: Annotated[str, Field(min_length=1, max_length=100)] = "旁白"
-    text: Annotated[str, Field(min_length=1, max_length=4096)]
-    voice: Annotated[str, Field(max_length=128)] = ""
-    config_id: Identifier | None = None
+    character: Annotated[
+        str, Field(min_length=1, max_length=100, description="台词说话人名称。")
+    ] = "旁白"
+    text: Annotated[
+        str, Field(min_length=1, max_length=4096, description="要加入声音时间线的台词正文。")
+    ]
+    voice: Annotated[str, Field(max_length=128, description="可选音色名称/说明。")] = ""
+    config_id: Identifier | None = Field(
+        default=None, description="可选本人音频模型配置 ID；必须来自当前可用模型目录。"
+    )
 
     @model_validator(mode="after")
     def valid_content(self):
@@ -154,10 +213,16 @@ class StandardSoundValues(InputModel):
 
 
 class StandardSoundPatch(InputModel):
-    character: Annotated[str, Field(min_length=1, max_length=100)] | None = None
-    text: Annotated[str, Field(min_length=1, max_length=4096)] | None = None
-    voice: Annotated[str, Field(max_length=128)] | None = None
-    config_id: Identifier | None = None
+    character: str | None = Field(
+        default=None, min_length=1, max_length=100, description="要更新的说话人名称。"
+    )
+    text: str | None = Field(
+        default=None, min_length=1, max_length=4096, description="要替换的台词正文。"
+    )
+    voice: str | None = Field(default=None, max_length=128, description="要更新的音色说明。")
+    config_id: Identifier | None = Field(
+        default=None, description="音频模型配置 ID；显式 null 清除模型，省略表示不修改。"
+    )
 
     @model_validator(mode="after")
     def has_changes(self):
@@ -171,15 +236,21 @@ class StandardSoundPatch(InputModel):
 
 
 class CreateStandardSoundLine(InputModel):
-    action: Literal["create_sound_line"]
-    key: LocalKey
-    values: StandardSoundValues
+    action: Literal["create_sound_line"] = Field(
+        description="动作分支标识；必须是 create_sound_line。"
+    )
+    key: LocalKey = Field(description="本批声音台词临时键；后续动作可用 $<key> 引用。")
+    values: StandardSoundValues = Field(description="新增声音时间线台词的内容与可选音色。")
 
 
 class UpdateStandardSoundLine(InputModel):
-    action: Literal["update_sound_line"]
-    line: SoundLineReference
-    patch: StandardSoundPatch
+    action: Literal["update_sound_line"] = Field(
+        description="动作分支标识；必须是 update_sound_line。"
+    )
+    line: SoundLineReference = Field(
+        description="声音时间线中的真实台词行 ID，或本批较早创建的 $key。"
+    )
+    patch: StandardSoundPatch = Field(description="至少提供一个需要更新的台词字段。")
 
 
 StandardAction = Annotated[
@@ -199,9 +270,24 @@ StandardAction = Annotated[
 
 
 class StandardPatch(InputModel):
-    storyboard_version: Identifier | None = None
-    sound_revision: StandardSoundRevision | None = None
-    actions: Annotated[list[StandardAction], Field(min_length=1, max_length=50)]
+    storyboard_version: Identifier | None = Field(
+        default=None,
+        description=(
+            "项目分镜集合 storyboard_version；包含镜头动作时必填，来自 "
+            "runtime__describe_creation_target。"
+        ),
+    )
+    sound_revision: StandardSoundRevision | None = Field(
+        default=None, description="声音动作的文档/成片预期版本；不包含声音动作时省略。"
+    )
+    actions: Annotated[
+        list[StandardAction],
+        Field(
+            min_length=1,
+            max_length=50,
+            description="按顺序原子执行的素材、分镜、对白或声音动作；每项由 action 判别。",
+        ),
+    ]
 
     @model_validator(mode="after")
     def validate_batch(self):
@@ -250,5 +336,5 @@ class StandardPatch(InputModel):
 
 
 class ApplyStandardPatch(InputModel):
-    project_id: Identifier
-    patch: StandardPatch
+    project_id: Identifier = Field(description="当前获准标准项目 ID；使用任务目标中的真实 ID。")
+    patch: StandardPatch = Field(description="包含最新版本和一个或多个结构化动作的原子写入批次。")

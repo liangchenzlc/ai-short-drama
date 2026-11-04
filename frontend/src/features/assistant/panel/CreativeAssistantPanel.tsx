@@ -10,7 +10,7 @@ import type { ProjectAssistantConversation } from '@host/types/assistant/api';
 import type { CreativeAssistantPanelProps } from '@host/types/assistant/panel/CreativeAssistantPanel';
 import { Button, Skeleton, Tooltip } from 'antd';
 import { History, MessageSquarePlus, Plus, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './ai-assistant.css';
 import './standard-assistant.css';
 /** Each account restores its own conversation within the current project. */
@@ -47,6 +47,13 @@ export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
     }
     latest.current.onConversationChange?.(item.id);
   };
+  const updateTitle = useCallback((title: string, rowVersion: string) => {
+    setConversation((current) =>
+      current && BigInt(rowVersion) > BigInt(current.row_version)
+        ? { ...current, title, row_version: rowVersion }
+        : current,
+    );
+  }, []);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -222,6 +229,7 @@ export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
             prepareContext={props.prepareContext}
             onOpenModelSettings={props.onOpenModelSettings}
             onSendingChange={setSending}
+            onConversationTitleChange={updateTitle}
           />
         ) : !error ? (
           <div className="ai-assistant-empty">
@@ -237,6 +245,7 @@ export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
             accountId={accountId}
             projectId={projectId}
             layout={layout}
+            conversation={conversation}
             currentId={conversation?.id ?? ''}
             onNew={create}
             onClose={() => setHistory(false)}

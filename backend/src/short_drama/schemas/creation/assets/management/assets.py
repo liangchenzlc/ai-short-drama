@@ -29,14 +29,22 @@ class AssetImageRead(ReadModel):
 
 
 class AssetCreate(InputModel):
-    kind: Literal["character", "scene", "prop"]
-    name: Name
-    label: Label = ""
-    description: MediumText = ""
-    prompt: MediumText = ""
-    tags: list[Annotated[str, Field(max_length=40)]] = Field(default_factory=list, max_length=20)
-    scene_time: SceneTime = ""
-    media_id: Identifier | None = None
+    kind: Literal["character", "scene", "prop"] = Field(
+        description="素材类型：人物角色 character、场景 scene 或道具 prop。"
+    )
+    name: Name = Field(description="在当前项目内识别该素材的名称。")
+    label: Label = Field(default="", description="可选的短标签/称谓。")
+    description: MediumText = Field(
+        default="", description="素材的稳定设定说明，不是图片生成提示词。"
+    )
+    prompt: MediumText = Field(default="", description="用于后续素材图片生成的视觉提示词。")
+    tags: list[Annotated[str, Field(max_length=40)]] = Field(
+        default_factory=list, max_length=20, description="最多 20 个用于筛选的短标签。"
+    )
+    scene_time: SceneTime = Field(default="", description="场景发生的时间标记；仅 scene 类型使用。")
+    media_id: Identifier | None = Field(
+        default=None, description="媒体身份由生成/采用流程管理；助手创建素材时省略此字段。"
+    )
 
     @field_validator("label", "scene_time")
     @classmethod
@@ -95,14 +103,20 @@ class AssetUpdate(InputModel):
 
 
 class AssetPatch(InputModel):
-    row_version: Identifier
-    kind: Literal["character", "scene", "prop"] = None
-    name: Name = None
-    label: Label = None
-    description: MediumText = None
-    prompt: MediumText = None
-    tags: list[Annotated[str, Field(max_length=40)]] = Field(default=None, max_length=20)
-    scene_time: SceneTime = None
+    row_version: Identifier = Field(description="目标素材当前 row_version；来自最近一次素材读取。")
+    kind: Literal["character", "scene", "prop"] = Field(
+        default=None, description="新的素材类别；仅在明确要改变类别时提供。"
+    )
+    name: Name = Field(default=None, description="要更新的素材名称；省略表示保持原值。")
+    label: Label = Field(default=None, description="要更新的短标签/称谓。")
+    description: MediumText = Field(default=None, description="要更新的稳定素材设定说明。")
+    prompt: MediumText = Field(default=None, description="要更新的后续图片生成视觉提示词。")
+    tags: list[Annotated[str, Field(max_length=40)]] = Field(
+        default=None, max_length=20, description="替换为新的完整标签列表；不是追加语义。"
+    )
+    scene_time: SceneTime = Field(
+        default=None, description="要更新的场景时间标记；仅适用于 scene。"
+    )
 
     @field_validator("label", "scene_time")
     @classmethod

@@ -10,7 +10,7 @@
 
 新主模型、selector、summary、记忆维护和能力 probe 共用 `build_chat_model`，SafeTransport 与临时资源水合只在发送边界执行，SDK／模型 `max_retries=0`。`_ProtectedAnthropic._async_client` 保留私有 SDK 注入：锁定版 LangChain Anthropic 无公开 HTTP client 注入接口；升级 `langchain-anthropic/anthropic` 后必须重验原生 tool_result、受控 HTTP 和回执脱敏。其余新 graph、ToolRuntime、Command、middleware 均走公开 API。当前提示词版本为 `assistant-runtime-v17`（版本来源为 `backend/src/short_drama/ai/prompts/registry.py`），新 Run 已保存完整系统提示词；正式 Worker 已统一调用 `AgentRuntime.execute`，由框架完成连续循环和持久恢复；受控模型、真实基础设施与真实供应商的验收结果须分别记录。
 
-`openai_chat.v1` 且模型快照 `provider=deepseek` 时使用官方 `langchain-deepseek==1.1.1`，复用原受保护异步客户端。`agent/gateway/deepseek.py` 只补 `_get_request_payload`：强制 `tool_choice`（`required` 或指定工具）合入 `thinking.type=disabled`，主助手默认、`auto` 和 `none` 保留原思考配置；已有 AIMessage 的真实 `reasoning_content` 按原消息位置回传，流入解析仍由官方 SDK 完成。模型工厂另对 `metadata.lc_source=summarization` 的 DeepSeek chat 辅助请求显式关闭思考，避免摘要输出额度被思考消耗；其他 provider、协议及来源保持原配置，摘要提示、输出额度和零自动重试不变。思考事件、深层脱敏、typed checkpoint 和原始回执重放沿用原边界；不扩大 `runtime_profile.default_options`。配置必须明确保存 DeepSeek provider，仅换模型名或地址不会启用该适配；真实验收夹具对 `deepseek-flash` 显式设置 provider，其余已授权文本目标保留 compatible。升级相关 LangChain 包时须复验结构化 selector、摘要关闭思考、思考与正文分流、工具续调及无重复 POST 的重放。
+DeepSeek 通过显式 `provider=deepseek` 或精确官方域名 `api.deepseek.com` 识别；官方地址配置为 `custom` 也启用适配，任意自定义端点不按模型名推断。Chat Completions 使用官方 ChatDeepSeek，历史 `reasoning_content` 回填与摘要引用计量共用原投影。Chat 与 Responses 的强制工具选择请求合入 `thinking.type=disabled`，Chat 摘要辅助请求也关闭思考；主模型默认、auto、none 保留思考配置。思考和工具选择冲突使用 `agent_tool_choice_conflict`，不能据此认定模型不支持工具。思考／正文分流、脱敏、typed checkpoint、用量与原始回执重放沿用原路径。 升级LangChain依赖须复验selector、工具续调、思考历史与零重复POST重放。
 
 DeepSeek 历史 reasoning 回填由同一小型纯函数供 SDK 与 GraphResources 引用投影共用，摘要前计量包含实际会发送的字段；不修改原消息或丢弃历史思考。其他 provider／协议保持原投影，最终 SDK 请求仍走原完整 JSON 准入守卫。平台 UTF-8 估算与供应商 token 用量分别记录，不能由字段字节数推断供应商是否把 reasoning 计作输入 tokens。
 
@@ -28,7 +28,7 @@ v17 在 root 每轮规范来源中补可信 current_run 启动身份，排查停
 
 2026-10-26 起新 V3 任务使用 [Harness 运行机制](AI创作助手Harness运行机制.md)：LangGraph 控制工作流、LangChain 单次决策，工具自主选择，图片／方法按需加载。2026-10-27 起新任务另开放边界停止，改向与恢复中断仍不支持；下文旧句式授权和中断流程仅适用于冻结原引擎的历史任务。新增部署须先执行 [图检查点迁移](../database/migrations/2026-10-26-agent-harness/README.md) 与 [交付要求增量](../database/migrations/2026-10-27-agent-contract/README.md)，API、scheduler、Agent Worker 和前端同版升级。
 
-Harness 可靠执行与上下文优化沿用 Task JSON 和既有账本。[交付要求增量](../database/migrations/2026-10-27-agent-contract/README.md)新增 `agent_task_requirements` 一张表，并为 `agent_operations` 增加两列及一个索引；任务创建时冻结 `agent_policy` 中的预算、停滞窗口和停止策略，使用 `AGENT_RUN_*`、`AGENT_PROGRESS_*`、`AGENT_REQUIREMENT_ATTEMPT_CAP`、`AGENT_REVIEWER_MODE`、`AGENT_STOP_AT_BOUNDARY` 环境变量。收尾增加[记忆抽取重试终态约束](../database/migrations/2026-10-26-agent-memory-retry/README.md)，已有库须先升级，允许运行时既有的 `abandoned` 状态。当前请求使用工具 v4、提示词 `assistant-harness-v10`，完成验收统一按需求表和证据包执行。API 与 Agent Worker 必须同版，以支持按需能力组、服务端交付要求 draft、发布守卫、证据包验收、工作笔记、Skill 释放和模型容量字段。候选最终答复在独立检查通过后发布，检查也会产生模型用量。
+Harness 上下文管理沿用既有 Task、Run检查点、Turn和Operation，无新增表。本次删除AGENT_RUN_DECISION_CAP／AGENT_RUN_OUTPUT_TOKEN_CAP，正式Run累计计量不再硬停。API、Agent Worker、scheduler与前端需同版重启，支持max_output_tokens容量声明、长度接续、分页回读和run.recovery状态。故障核对先看finish_reason、实际输出与reasoning／正文／工具参数，勿将预览截断当成上下文满。旧失败Run不自动重投，受理不明保持原核对门。
 
 出现 `agent_progress_stalled` 时查看最近工具错误、重复结果和 progress 提示；出现 `agent_completion_stalled` 时查看 completion_feedback 的具体缺项。两者保留成果并暂停，可补充必要资料后发送“继续”，不能当作任务累计次数耗尽。图片裁剪错误应返回真实宽高及结构化失败，不应显示已看过像素。排查长任务数据库排序错误时，历史查询必须先筛有界 ID、再读 JSON；不要在 ID 排序阶段加入大 JSON 的选择或筛选。容量使用声明／平台默认值，实际 input_tokens、cached_tokens 和估算指标应分别查看，声明不等于供应商实测。
 
@@ -111,7 +111,7 @@ uv run python scripts/publish_builtin_skills.py --apply
 | 设置 | 作用 |
 | --- | --- |
 | `AGENT_ENABLED` | 默认 `true`；启动要求完整二十八张 Agent 表 readiness 为 `ready`，且 `AUTH_ENABLED=true`；显式 `false` 关闭新决策和记忆模型整理，已开始媒体结算及删除清理仍由 scheduler 执行 |
-| `AGENT_MODEL_TIMEOUT_SECONDS` | 正式 Run 整次模型期限，默认120秒、允许1–600秒；可显式部署为300秒，根／子 main、selector、summary 的每次请求独立计时 |
+| `AGENT_MODEL_TIMEOUT_SECONDS` | 正式Run响应空闲期限，默认120秒、允许1–600秒；根／子main、selector、summary每次独立计时，有效内容增量续期 |
 | `AGENT_LEASE_SECONDS` | 默认 180 秒，允许 150–3600；执行与恢复租约 |
 | `AGENT_POLL_SECONDS` | 默认 5 秒，允许 3–60；scheduler 收集原生任务结果的间隔 |
 | `GENERATION_QUEUE_NAMESPACE` | 默认 `short_drama`；所有进程保持一致，不同数据库使用不同 namespace |
@@ -119,7 +119,7 @@ uv run python scripts/publish_builtin_skills.py --apply
 
 设置在进程启动时读取。完成结构迁移后准备 Agent Worker，确认 `AGENT_ENABLED` 未被显式关闭（或设置为 `true`），并重启 API、scheduler 及所有已配置 Worker；不能只刷新页面或只重启 API。显式关闭时原生模式不要求 Agent 表；若结构完整，scheduler 仍归档旧结果和执行删除清理。默认开启不会自动验证模型或发出生成任务。
 
-例如设置 `AGENT_MODEL_TIMEOUT_SECONDS=300` 后须重启上述相关进程；这是部署配置，不提供账号或 Run 动态修改接口，不调整后台记忆整理与能力 probe。每次绝对期限包含流式生成及 SDK／HTTP 收尾，收到新片段不续期。本地期限到期返回 `timeout`；主动停止仍及时取消，取消清理可能耗时，因此设置值不是严格的墙钟完成承诺。300秒是否足够须由新配置下的真实供应商验收证明，不能覆盖旧120秒批次的失败事实。
+正式 Run 的模型连接首次等待30秒，仅在未发送请求字节的连接超时后重试5次，连接等待依次为60、90、120、150、180秒。SDK与HTTP库自动重试关闭。重试状态持久化，刷新后仍显示“连接超时，正在重试 1/5”；连接成功或结算后清除。响应等待使用 `AGENT_MODEL_TIMEOUT_SECONDS`（默认120秒、范围1–600秒），从发送前开始，流式正文、思考和工具参数进展刷新空闲期限，HTTP头与心跳不续期。响应超时返回 `agent_response_timeout` 并直接结束，不重发已发送请求；受理不明保留unknown与输出预留。主动停止取消异步HTTP。配置启动读取、重启生效；标题辅助调用使用独立短期限且不作连接重试。 执行中的任务显示实际模型并锁定；错误暂停、预算暂停或停止且控制与操作已结算后，`can_change_model=true`，可选择模型并在同一Task创建新Run继续，旧Run、业务收据与已保存成果保留。原调用受理不明时，须先核对并明确确认继续可能产生新费用。会话失败只展示后端保存的消息。 历史绝对期限批次的失败事实保留，不作新版验收结论。
 
 ## 启动 Agent Worker
 

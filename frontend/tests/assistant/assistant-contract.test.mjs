@@ -38,6 +38,40 @@ const projection = await import(`data:text/javascript;base64,${Buffer.from(compi
 const receiptCode = readFileSync(new URL('../../src/features/assistant/runtime/assistant-receipt.ts', import.meta.url), 'utf8');
 const receipts = await import(`data:text/javascript;base64,${Buffer.from(compile(receiptCode)).toString('base64')}`);
 
+test('run recovery replaces the full scope list without losing parallel scopes', () => {
+  const run = { id: '21', status: 'running', row_version: '3', recovery_states: [] };
+  const states = [
+    { scope_id: 'main', model_call_id: '31', kind: 'output_continuation' },
+    { scope_id: 'child:1', model_call_id: '32', kind: 'context_compaction' },
+  ];
+  const event = { seq: 9, event_type: 'run.recovery', run_id: '21', payload: { recovery_states: [...states, states[0]] } };
+  const recovering = projection.applyRunRecoveryEvent(run, event);
+  assert.deepEqual(recovering.recovery_states, states);
+  assert.deepEqual(projection.applyRunRecoveryEvent(recovering, { ...event, seq: 10, payload: { recovery_states: [states[1]] } }).recovery_states, [states[1]]);
+  assert.deepEqual(projection.applyRunRecoveryEvent(recovering, { ...event, seq: 11, payload: { recovery_states: [] } }).recovery_states, []);
+  assert.equal(projection.applyRunRecoveryEvent(run, { ...event, run_id: '22' }), run);
+});
+
+test('run recovery ends immediately and late events cannot revive a terminal run', () => {
+  const state = { scope_id: 'main', model_call_id: '31', kind: 'output_continuation' };
+  const run = { id: '21', status: 'running', row_version: '3', recovery_states: [state] };
+  const finished = projection.applyRunRecoveryEvent(run, { seq: 10, event_type: 'run.finished', run_id: '21', payload: { status: 'failed' } });
+  assert.equal(finished.status, 'failed');
+  assert.deepEqual(finished.recovery_states, []);
+  assert.equal(projection.applyRunRecoveryEvent(finished, { seq: 11, event_type: 'run.recovery', run_id: '21', payload: { recovery_states: [state] } }), finished);
+});
+
+test('run recovery survives an older snapshot and yields to a covering snapshot', () => {
+  const run = { id: '21', status: 'running', row_version: '3', recovery_states: [] };
+  const state = { scope_id: 'main', model_call_id: '31', kind: 'output_continuation' };
+  const event = { seq: 12, event_type: 'run.recovery', run_id: '21', payload: { recovery_states: [state] } };
+  const recovering = projection.applyRunRecoveryEvent(run, event);
+  assert.deepEqual(projection.mergeAssistantRun(recovering, run, 11, event).recovery_states, [state]);
+  assert.deepEqual(projection.mergeAssistantRun(recovering, { ...run, row_version: '4' }, 12, event).recovery_states, []);
+  const terminal = { ...run, status: 'failed', row_version: '4' };
+  assert.equal(projection.mergeAssistantRun(terminal, run, 11, event).status, 'failed');
+});
+
 test('only definite admission failures release a frozen send after transport uncertainty', () => {
   for (const [status, code] of [[422, 'validation_error'], [422, 'unsupported_assistant_protocol'], [409, 'assistant_script_changed'], [409, 'assistant_task_stopping'], [409, 'assistant_control_changed']]) {
     assert.equal(receipts.isAssistantAdmissionRejection({ status, code }), true);
@@ -109,6 +143,16 @@ const pending = () => ({ version: 1, key: 'original-request', draft: '分析当�
   subject_selection: { expected_input_revision: '0', retain_keys: [], subjects: [{ project_id: '1', source_kind: 'canvas', source_id: 'canvas-source-key', kind: 'node', id: 'stable-node-uuid', revision: '4' }] },
   attachment_ids: ['301'], skills: [{ id: 'builtin:continuity', content_version: '1' }], video_audio: 'visual_only',
 } });
+
+test('unknown acceptance confirmation and the chosen model survive exact pending-send recovery', () => {
+  const local = storage();
+  const original = pending();
+  original.body.task_id = '501'; original.body.confirm_unknown = true;
+  assert.equal(drafts.saveAssistantPendingSend('1', '20', original, local), true);
+  assert.deepEqual(drafts.readAssistantPendingSend('1', '20', local).pending, original);
+  assert.equal(drafts.saveAssistantPendingSend('1', '20', { ...original, body: { ...original.body, confirm_unknown: false } }, local), false);
+  assert.equal(drafts.saveAssistantPendingSend('1', '21', { ...original, body: { ...original.body, confirm_unknown: 'true' } }, local), false);
+});
 
 test('assistant drafts discard retired script reference settings and never persist mention references or credentials', () => {
   const local = storage();

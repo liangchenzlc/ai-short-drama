@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from short_drama.agent.runtime import executor
 from short_drama.agent.runtime.middleware import ExecutionMiddleware, SkillSummarizationMiddleware
+from short_drama.domain.assistant.conversations.models import AgentConversation
 from short_drama.domain.assistant.execution.models import AgentRun, AgentTurn
 from short_drama.domain.assistant.tasks.task import AgentOperation
 from short_drama.utils.json_digest import digest
@@ -39,6 +40,8 @@ def test_inactive_skill_release_after_summary_reaches_a_fresh_model_task(
         ],
     )
     _, accepted = new_task(task_workspace)
+    with factory.begin() as session:
+        session.get(AgentConversation, accepted.run.conversation_id).title = "模型任务身份验收"
     middleware_factory = executor.assistant_middleware
     original_wrap = ExecutionMiddleware.awrap_model_call
     tasks, activations, mains, summaries = [], {}, [], []
@@ -51,8 +54,13 @@ def test_inactive_skill_release_after_summary_reaches_a_fresh_model_task(
 
     def middleware(**kwargs):
         items = middleware_factory(**kwargs)
-        items[1] = OneSummary(model=kwargs["model"], trigger=("messages", 3), keep=("messages", 1))
-        items[-1] = ModelCallLimitMiddleware(thread_limit=12, exit_behavior="error")
+        items = [
+            OneSummary(model=kwargs["model"], trigger=("messages", 3), keep=("messages", 1))
+            if isinstance(item, SkillSummarizationMiddleware)
+            else item
+            for item in items
+        ]
+        items.append(ModelCallLimitMiddleware(thread_limit=12, exit_behavior="error"))
         return items
 
     async def observe(item, request, handler):
@@ -251,6 +259,8 @@ def test_each_public_model_task_field_is_required_but_invoke_attempt_is_not(
 def test_committed_model_recovers_same_public_task_in_a_new_worker(controlled_case, child):
     case = controlled_case
     _, accepted, _ = case.create("恢复同一步模型回执，再核对一次真实策略")
+    with case.factory.begin() as session:
+        session.get(AgentConversation, accepted.run.conversation_id).title = "Worker恢复验收"
     policy = calls(("policy", "runtime__get_generation_policy", {}))
     first = [policy]
     second = [{"text": "已完成策略核对"}]

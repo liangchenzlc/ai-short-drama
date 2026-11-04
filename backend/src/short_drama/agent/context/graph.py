@@ -94,6 +94,8 @@ def scope_context(context, state, namespace):
         update = _eligible_sources(state, restricted, scope.id, scope_keys)
         update["memory_epoch"] = epoch
         update["scope_id"] = str(scope.id)
+        if invalidated:
+            update.update(output_recovery={}, tool_failure_streak={})
         policy = generation_policy_locked(session, context.owner_id)
         update["permitted_tool_names"] = sorted(
             item["name"]
@@ -173,6 +175,13 @@ def scope_context(context, state, namespace):
             selected_skills=selected,
             excluded_skill_ids=sorted(excluded),
         )
+        if revision != state.get("applied_input_revision", 0):
+            update.update(output_recovery={}, tool_failure_streak={})
+            update["messages"].extend(
+                RemoveMessage(id=message.id)
+                for message in state["messages"]
+                if message.id and message.id.startswith("output-continue:")
+            )
         for activation in update["skill_activations"]:
             if activation.get("skill", {}).get("id") in excluded:
                 activation["active"] = False

@@ -29,13 +29,15 @@ from openai import AsyncOpenAI
 from openai._streaming import SSEDecoder
 from pydantic import Field
 
+from short_drama.agent.context.capabilities import request_output_tokens
 from short_drama.agent.gateway.contracts import (
     AgentCapabilityEvidence,
     AgentGatewayError,
     ModelCallbacks,
 )
 from short_drama.agent.gateway.deepseek import DeepSeekChatModel
-from short_drama.agent.gateway.inputs import _credentials, select_protocol
+from short_drama.agent.gateway.http import AgentHTTPTransport
+from short_drama.agent.gateway.inputs import _credentials, is_deepseek, select_protocol
 from short_drama.agent.gateway.transport import (
     _ProtectedHTTPTransport,
     _ReplaySafeTransport,
@@ -46,7 +48,6 @@ from short_drama.agent.resources.contracts import assert_reference_payload
 from short_drama.agent.resources.resolver import request_template
 from short_drama.agent.runtime.trace_content import reasoning_texts
 from short_drama.ai.gateway.endpoints import endpoint
-from short_drama.ai.gateway.transport import SafeTransport
 from short_drama.ai.types import GenerationError
 
 FRAMEWORK_VERSION = f"langchain-core:{version('langchain-core')}"
@@ -129,6 +130,10 @@ class _HarnessHTTPTransport(_ProtectedHTTPTransport):
                 if any(item.content in combined for item in self.resources):
                     raise AgentGatewayError("agent_media_entity_leak", accepted_unknown=True)
             except (ValueError, TypeError):
+                if payload["status_code"] >= 400:
+                    # 非JSON错误体不进入回执，但明确的HTTP拒绝不能误判为受理不明。
+                    await super().checkpoint(callback, {**payload, "body_b64": ""}, code)
+                    return
                 raise AgentGatewayError(
                     "incomplete_agent_response", accepted_unknown=True
                 ) from None
@@ -178,7 +183,7 @@ class ProtectedChatModel(BaseChatModel):
             "anthropic"
             if protocol == "claude_messages.v1"
             else "deepseek"
-            if protocol == "openai_chat.v1" and self.snapshot.get("provider") == "deepseek"
+            if protocol == "openai_chat.v1" and is_deepseek(self.snapshot)
             else "openai"
         )
         return params
@@ -199,8 +204,29 @@ class ProtectedChatModel(BaseChatModel):
             messages, resources, tool_results = await callbacks.hydrate(messages)
         call_id = uuid4().hex
         source = (getattr(run_manager, "metadata", None) or {}).get("lc_source", "assistant")
+        output_tokens = request_output_tokens(
+            self.snapshot, source, kwargs.pop("agent_output_tokens", callbacks.max_output_tokens)
+        )
+        native_http = isinstance(self.transport, AgentHTTPTransport)
+        model_timeout = asyncio.timeout(callbacks.timeout_seconds)
+
+        async def connection_state(payload):
+            model_timeout.reschedule(None)
+            if callbacks.on_model_content is not None and source != "conversation_title":
+                await callbacks.on_model_content(
+                    {
+                        "model_call_id": call_id,
+                        "source": source,
+                        "channel": "connection",
+                        **payload,
+                    }
+                )
 
         async def before_send(payload):
+            if native_http:
+                model_timeout.reschedule(
+                    asyncio.get_running_loop().time() + callbacks.timeout_seconds
+                )
             if callbacks.before_send is not None:
                 try:
                     await callbacks.before_send(
@@ -245,11 +271,18 @@ class ProtectedChatModel(BaseChatModel):
             on_response=None if replay else save_raw,
             resources=resources,
             tool_results=tool_results,
+            timeout_seconds=callbacks.timeout_seconds,
+            on_connection_state=connection_state,
+            retry_connections=source != "conversation_title",
         )
         redactor = _TextRedactor(secrets)
         reasoning_redactor = _TextRedactor(secrets)
 
         async def visible_content(channel, text, *, final=False):
+            if native_http and text and not replay:
+                model_timeout.reschedule(
+                    asyncio.get_running_loop().time() + callbacks.timeout_seconds
+                )
             cleaner = reasoning_redactor if channel == "reasoning" else redactor
             visible = cleaner.add(text, final=final)
             if visible and callbacks.on_model_content and not replay:
@@ -264,7 +297,6 @@ class ProtectedChatModel(BaseChatModel):
             if visible and channel == "text" and callbacks.on_text_delta and not replay:
                 await callbacks.on_text_delta(visible)
 
-        model_timeout = asyncio.timeout(callbacks.timeout_seconds)
         try:
             async with (
                 model_timeout,
@@ -287,7 +319,7 @@ class ProtectedChatModel(BaseChatModel):
                         model=self.snapshot["model_key"],
                         api_key=secret or "not-configured",
                         base_url=root,
-                        max_tokens=callbacks.max_output_tokens,
+                        max_tokens=output_tokens,
                         max_retries=0,
                         protected_client=provider,
                         timeout=callbacks.timeout_seconds,
@@ -302,8 +334,7 @@ class ProtectedChatModel(BaseChatModel):
                     )
                     model_class = (
                         DeepSeekChatModel
-                        if protocol == "openai_chat.v1"
-                        and self.snapshot.get("provider") == "deepseek"
+                        if protocol == "openai_chat.v1" and is_deepseek(self.snapshot)
                         else ChatOpenAI
                     )
                     model = model_class(
@@ -314,7 +345,7 @@ class ProtectedChatModel(BaseChatModel):
                         async_client=provider.chat.completions,
                         http_async_client=client,
                         max_retries=0,
-                        max_tokens=callbacks.max_output_tokens,
+                        max_tokens=output_tokens,
                         use_responses_api=protocol == "openai_responses.v1",
                         use_previous_response_id=False,
                         store=False,
@@ -322,18 +353,33 @@ class ProtectedChatModel(BaseChatModel):
                     )
                 if (
                     protocol == "openai_chat.v1"
-                    and self.snapshot.get("provider") == "deepseek"
-                    and source == "summarization"
+                    and is_deepseek(self.snapshot)
+                    and source in {"summarization", "conversation_title"}
                 ):
                     kwargs["extra_body"] = {
                         **kwargs.get("extra_body", {}),
                         "thinking": {"type": "disabled"},
                     }
                 tools = kwargs.pop("tools", ())
+                if is_deepseek(self.snapshot) and protocol == "openai_responses.v1":
+                    choice = kwargs.get("tool_choice")
+                    if choice and choice not in ("auto", "none"):
+                        kwargs["extra_body"] = {
+                            **kwargs.get("extra_body", {}),
+                            "thinking": {"type": "disabled"},
+                        }
                 runnable = model.bind_tools(tools, **kwargs) if tools else model.bind(**kwargs)
                 if callbacks.stream:
                     aggregate = None
                     async for chunk in runnable.astream(messages, stop=stop):
+                        if (
+                            native_http
+                            and not replay
+                            and any(call.get("args") for call in chunk.tool_call_chunks)
+                        ):
+                            model_timeout.reschedule(
+                                asyncio.get_running_loop().time() + callbacks.timeout_seconds
+                            )
                         aggregate = chunk if aggregate is None else aggregate + chunk
                         if not replay:
                             for reasoning in reasoning_texts(chunk):
@@ -386,10 +432,39 @@ class ProtectedChatModel(BaseChatModel):
             )
             if protocol == "openai_responses.v1":
                 finish = result.response_metadata.get("status")
-            if finish in {"length", "max_tokens", "incomplete"}:
+            truncated = finish in {"length", "max_tokens"}
+            if protocol == "openai_responses.v1" and finish == "incomplete":
+                reason = (result.response_metadata.get("incomplete_details") or {}).get("reason")
+                truncated = reason == "max_output_tokens"
+                if reason == "content_filter":
+                    raise AgentGatewayError("agent_response_filtered")
+            if truncated and source != "assistant":
                 raise AgentGatewayError("agent_response_truncated")
+            if truncated:
+                kind = (
+                    "tool_arguments"
+                    if result.tool_calls or result.invalid_tool_calls
+                    else "text"
+                    if result.text.strip()
+                    else "reasoning"
+                )
+                result.response_metadata["output_recovery"] = {
+                    "kind": kind,
+                    "max_output_tokens": output_tokens,
+                    "model_call_id": call_id,
+                }
+                result.tool_calls, result.invalid_tool_calls = [], []
+                result.additional_kwargs.pop("tool_calls", None)
+                if isinstance(result.content, list):
+                    result.content = [
+                        part
+                        for part in result.content
+                        if not isinstance(part, dict)
+                        or part.get("type") not in {"tool_use", "function_call"}
+                    ]
             if (
-                finish
+                not truncated
+                and finish
                 not in {
                     "stop",
                     "tool_calls",
@@ -432,7 +507,7 @@ class ProtectedChatModel(BaseChatModel):
                         "model_call_id": call_id,
                         "source": source,
                         "channel": "end",
-                        "status": "succeeded",
+                        "status": "interrupted" if truncated else "succeeded",
                     }
                 )
             return ChatResult(generations=[ChatGeneration(message=result)])
@@ -472,7 +547,9 @@ class ProtectedChatModel(BaseChatModel):
                 )
             elif model_timeout.expired() and isinstance(error, TimeoutError):
                 failure = AgentGatewayError(
-                    "timeout", requests=bridge.requests, accepted_unknown=bool(bridge.requests)
+                    "agent_response_timeout" if native_http else "timeout",
+                    requests=bridge.requests,
+                    accepted_unknown=bool(bridge.requests),
                 )
             else:
                 logger.warning("agent_gateway_sdk_failure (%s)", type(error).__name__)
@@ -522,14 +599,14 @@ def build_chat_model(
         snapshot=snapshot,
         credential=credential,
         model_callbacks=callbacks,
-        transport=transport or SafeTransport(callbacks.settings),
+        transport=transport or AgentHTTPTransport(callbacks.settings),
     )
 
 
 class LangChainGateway:
     def __init__(self, settings, transport=None):
         self.settings = settings
-        self.transport = transport or SafeTransport(settings)
+        self.transport = transport or AgentHTTPTransport(settings)
 
     async def validate_capability(self, snapshot, credential, *, conversation_id, on_request=None):
         from langchain.agents.middleware import ModelCallLimitMiddleware

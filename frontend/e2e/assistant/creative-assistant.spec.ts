@@ -11,6 +11,26 @@ async function openSaveDetails(page: Page) {
 
 const time = '2026-10-06T12:00:00Z';
 
+test('context recovery states survive refresh and clear when a run finishes', async ({ page }) => {
+  const state = await assistantFixture(page);
+  const run = state.beginReply('');
+  Object.assign(run, { recovery_states: [
+    { scope_id: 'root', model_call_id: 'continued', kind: 'output_continuation' },
+    { scope_id: 'child', model_call_id: 'summary', kind: 'context_compaction' },
+  ] });
+  await page.goto(`${root}/source?assistant=open`);
+  const panel = page.getByRole('region', { name: 'AI 创作助手', exact: true });
+  await expect(panel.getByText('正在继续生成', { exact: true })).toBeVisible();
+  await expect(panel.getByText('正在整理上下文', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(panel.getByText('正在继续生成', { exact: true })).toBeVisible();
+  state.finishReply('完整接续结果');
+  state.emit('run.finished', { status: 'succeeded' });
+  await expect(panel.getByText('正在继续生成', { exact: true })).toHaveCount(0);
+  await expect(panel.getByText('正在整理上下文', { exact: true })).toHaveCount(0);
+  expect(state.errors).toEqual([]);
+});
+
 async function expandAssistantProcesses(page: Page) {
   const summaries = page.getByRole('region', { name: '执行步骤', exact: true }).locator('.assistant-process-summary');
   await expect(summaries.first()).toBeVisible();
@@ -96,6 +116,7 @@ test('Task5 interrupted text and safe failed-run message survive refresh with sa
   const state = await assistantFixture(page);
   const run = state.beginReply(''); Object.assign(run, { status: 'failed', error: { code: 'agent_checkpoint_corrupt', message: '运行记录无法恢复，请开启新任务。' } });
   state.messages['301'].push({ id: '5001', run_id: '901', seq: 1, event_seq: 2, role: 'assistant', kind: 'narration', interrupted: true, content: '完整保留的中断正文 [来源](https://example.test/story) [定位](#story)', references: [{ type: 'interrupted_response', turn_id: 'a' }], artifacts: [], created_at: time });
+  state.messages['301'].push({ id: '5002', run_id: '901', seq: 2, event_seq: 3, role: 'assistant', kind: 'notice', content: '运行记录无法恢复，请开启新任务。', references: [], artifacts: [], created_at: time });
   await page.goto(`${root}/source?assistant=open`);
   const log = page.getByLabel('助手消息', { exact: true });
   await expect(log.getByText('已中断', { exact: true })).toBeVisible();
@@ -107,7 +128,7 @@ test('Task5 interrupted text and safe failed-run message survive refresh with sa
   await expect(log.getByRole('link', { name: '定位', exact: true })).not.toHaveAttribute('target', '_blank');
   await page.reload(); await expect(log.getByText('已中断', { exact: true })).toBeVisible();
   const delayed = state.delaySnapshot();
-  state.emit('message.created', { id: '5002', role: 'assistant', seq: 2, kind: 'narration', interrupted: true, content: '增量中断正文', references: [{ type: 'interrupted_response', turn_id: 'b' }], text_parts: [{ turn_id: 'b', event_seq: 2, content: '增量中断正文' }] });
+  state.emit('message.created', { id: '5003', role: 'assistant', seq: 3, kind: 'narration', interrupted: true, content: '增量中断正文', references: [{ type: 'interrupted_response', turn_id: 'b' }], text_parts: [{ turn_id: 'b', event_seq: 4, content: '增量中断正文' }] });
   try { await expect(log.getByText('增量中断正文', { exact: true })).toBeVisible(); await expect(log.getByText('已中断', { exact: true })).toHaveCount(2); }
   finally { delayed.release(); }
 });
@@ -628,11 +649,12 @@ async function assistantFixture(page: Page) {
   let abortRevision = false; let conflictRevision = false; let historyDenied = false;
   let abortSend = false; let abortControl = false; let abortDeletion = false; let holdReply = false; let activeRun: any = null; let latestRun: any = null;
   const queuedRuns: any[] = []; const events: any[] = [];
+  const pastRuns: any[] = [];
   const cursors: number[] = [];
   let nextStreamFrames: string | null = null;
   let nextStreamStatus = 200;
   let snapshotGate: { started: () => void; wait: Promise<void> } | null = null;
-  const run = (id: string, status: string, task_id = '501', queue_position = 0) => ({ id, task_id, conversation_id: '301', status, phase: status === 'succeeded' ? 'finished' : 'model', row_version: '1', mode: 'discuss', model_config_id: '71', model_name: '对话模型', error: null, usage: {}, budget: {}, awaiting_artifact_ids: [], created_at: time, updated_at: time, finished_at: status === 'succeeded' ? time : null, queue_position, waiting_reason: null });
+  const run = (id: string, status: string, task_id = '501', queue_position = 0) => ({ id, task_id, conversation_id: '301', status, phase: status === 'succeeded' ? 'finished' : 'model', row_version: '1', mode: 'discuss', model_config_id: '71', model_name: '对话模型', error: null, usage: {}, budget: {}, recovery_states: [], awaiting_artifact_ids: [], created_at: time, updated_at: time, finished_at: status === 'succeeded' ? time : null, queue_position, waiting_reason: null });
   const task = (id = '501', goal = '讨论故事', status = 'running', conversation_id = '301') => ({ id, conversation_id, goal, status, phase: status === 'succeeded' ? 'terminal' : 'deciding', row_version: '1', plan_revision: '1', input_revision: '1', applied_input_revision: '1', control_seq: '0', applied_control_seq: '0', control_state: 'none', execution_target: { mode: 'standard', project_id: '10' }, source_context: null, selected_subjects: [], skills: [], media_usage: {}, active_operation: null, error: null, created_at: time, updated_at: time });
   const skills = [{ id: 'builtin:continuity', name: '人物连续性', builtin: true, content_version: '1', row_version: null, enabled: true, filename: null, checksum_sha256: 'a'.repeat(64), package_checksum: 'b'.repeat(64), slug: 'continuity', description: '核对人物动机与连续性。', tags: [], modes: ['standard', 'infinite_canvas'], exclusions: '', required_tools: [], source: '', settings_version: '0', compatible: true, issues: [], resource_count: 0, updated_at: time }];
   const emit = (event_type: string, payload: any, run_id = '901') => events.push({ seq: events.length + 1, event_type, run_id, payload, created_at: time });
@@ -712,7 +734,7 @@ async function assistantFixture(page: Page) {
       return route.fulfill({ contentType: 'text/event-stream', body: events.filter(event => event.seq > cursor).map(event => `data: ${JSON.stringify(event)}\n\n`).join('') || ': heartbeat\n\n' });
     }
     if (path.endsWith('/state')) {
-      const all = messages[id] ?? []; const runs = [...new Map([activeRun, ...queuedRuns, latestRun].filter(Boolean).map(value => [value.id, value])).values()];
+      const all = messages[id] ?? []; const runs = [...new Map([...pastRuns, activeRun, ...queuedRuns, latestRun].filter(Boolean).map(value => [value.id, value])).values()];
       const body = JSON.stringify({ conversation_id: id, snapshot_cursor: events.length, resume_cursor: 0, messages: { items: all.slice(-50), total: all.length, offset: 0, limit: 50 }, tasks: tasks.filter(item => item.conversation_id === id).map(item => ({ ...item, active_operation: item.active_operation ? operationView(item.active_operation) : null })), runs, operations: operations.map(operationView), inputs, trace_blocks: traceBlocks, pending_questions: pendingQuestions, has_more_trace: tracePaging.more, trace_before_seq: tracePaging.before, has_more_tasks: false, has_more_operations: false });
       if (snapshotGate) { const gate = snapshotGate; snapshotGate = null; gate.started(); await gate.wait; }
       return route.fulfill({ contentType: 'application/json', body });
@@ -733,7 +755,7 @@ async function assistantFixture(page: Page) {
       if (body.kind !== 'stop') return reply({ error: { code: 'assistant_control_unavailable' } }, 409);
       item.control_seq = String(BigInt(item.control_seq) + 1n); item.row_version = String(BigInt(item.row_version) + 1n);
       const started = operations.find(op => op.task_id === id && ['running', 'waiting_media', 'reconciling'].includes(op.outcome));
-      item.control_state = started ? 'stop_pending' : 'none'; item.status = started ? item.status : 'stopped'; if (!started) { latestRun = run(activeRun?.id ?? '901', 'cancelled', id); activeRun = null; }
+      item.control_state = started ? 'stop_pending' : 'none'; item.status = started ? item.status : 'stopped'; item.can_change_model = !started; if (!started) { latestRun = run(activeRun?.id ?? '901', 'cancelled', id); activeRun = null; }
       const result = { task: item, run: latestRun ?? activeRun, control_id: '1101', cursor: events.length }; receipts.set(key, result);
       if (abortControl) { abortControl = false; return route.abort('failed'); }
       return reply(result);
@@ -766,8 +788,9 @@ async function assistantFixture(page: Page) {
       const message = { id: String(1001 + messages[id].length), task_id: current.id, seq: messages[id].length + 1, role: 'user', content: body.content, references: [], artifacts: [], created_at: time };
       messages[id].push(message); inputs.push({ task_id: current.id, message_id: message.id, input_revision: current.input_revision, applied_plan_revision: activeRun ? null : '1' });
       if (!activeRun && ['stopped', 'paused_error', 'paused_budget'].includes(current.status)) {
-        current.status = 'queued'; current.phase = 'at_boundary';
+        current.status = 'queued'; current.phase = 'at_boundary'; current.can_change_model = false;
         activeRun = run('903', 'queued', current.id); latestRun = activeRun;
+        if (body.model_config_id) activeRun.model_config_id = body.model_config_id;
       }
       if (holdReply && !activeRun) { holdReply = false; activeRun = run('901', 'running', current.id); latestRun = activeRun; }
       if (activeRun) {
@@ -816,6 +839,17 @@ async function assistantFixture(page: Page) {
       messages['301'].push({ id: 'reply-901', task_id: '501', seq: messages['301'].length + 1, role: 'assistant', content: text, references: [], artifacts: [], created_at: time });
       tasks[0].status = 'succeeded'; activeRun = null; latestRun = run('901', 'succeeded');
     },
+    failReply: (acceptedUnknown = false) => {
+      const error = { code: 'agent_response_timeout', message: '模型响应超时，请核对后继续。', accepted_unknown: acceptedUnknown };
+      Object.assign(tasks[0], { status: 'paused_error', phase: 'terminal', can_change_model: true, error });
+      latestRun = { ...run('901', 'failed'), error }; activeRun = null;
+      messages['301'].push({ id: 'failure-901', task_id: '501', seq: messages['301'].length + 1, role: 'assistant', content: error.message, references: [], artifacts: [], created_at: time });
+    },
+    finishIndependentTask: () => {
+      pastRuns.push(latestRun);
+      tasks.push(task('502', '另一项独立讨论', 'succeeded'));
+      activeRun = null; latestRun = run('902', 'succeeded', '502');
+    },
   };
 }
 
@@ -849,26 +883,65 @@ test.describe('assistant UX', () => {
     expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
   });
 
-  test('freezes the real task model through stop and reload, then allows a new task model', async ({ page }) => {
+  test('freezes the running task model and allows switching after stop and reload', async ({ page }) => {
     const state = await assistantFixture(page); state.beginReply('正在讨论人物。');
     await page.route('**/api/v1/agent/models', route => route.fulfill({ json: { items: [{ id: '71', name: '对话模型', model_key: 'a' }, { id: '72', name: '新任务模型 B', model_key: 'b' }], preferred_id: '72' } }));
     await page.goto(`${root}/source?assistant=open`);
     const panel = page.getByRole('region', { name: 'AI 创作助手', exact: true });
     const lockedModel = panel.getByRole('button', { name: '助手模型：对话模型，当前任务已锁定', exact: true });
     await expect(lockedModel).toBeVisible(); await expect(panel.getByRole('combobox', { name: '助手模型' })).toHaveCount(0);
-    await lockedModel.focus(); await expect(page.getByRole('tooltip')).toContainText('任务结束后可切换');
+    await lockedModel.focus(); await expect(page.getByRole('tooltip')).toContainText('暂停或停止并结算后可切换');
     await panel.getByRole('button', { name: '停止', exact: true }).click(); await expect(panel.getByRole('button', { name: '发送', exact: true })).toBeVisible();
-    await page.reload(); await expect(lockedModel).toBeVisible();
+    await page.reload(); await expect(panel.getByRole('combobox', { name: '助手模型' })).toBeVisible();
+    await panel.locator('.ai-assistant-model').click(); await page.getByText('新任务模型 B', { exact: true }).last().click();
     const input = panel.getByRole('textbox', { name: '给助手的消息', exact: true });
     await input.fill('继续完善人物动机'); await panel.getByRole('button', { name: '发送', exact: true }).click(); await expect(input).toHaveValue('');
     const continued = state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!;
-    expect(continued.body.task_id).toBe('501'); expect(continued.body.model_config_id).toBeUndefined();
+    expect(continued.body.task_id).toBe('501'); expect(continued.body.model_config_id).toBe('72');
     state.finishReply('人物动机已完善。'); await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
     await expect(panel.getByRole('combobox', { name: '助手模型' })).toBeVisible();
     await panel.locator('.ai-assistant-model').click(); await page.getByText('新任务模型 B', { exact: true }).last().click();
     await input.fill('开始新的创作任务'); await panel.getByRole('button', { name: '发送', exact: true }).click(); await expect(input).toHaveValue('');
     const next = state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages')).at(-1)!;
     expect(next.body.new_task).toBe(true); expect(next.body.model_config_id).toBe('72');
+    expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  });
+
+  test('restores connection retry status after reload without a connection wait duration', async ({ page }) => {
+    const state = await assistantFixture(page);
+    const run = state.beginReply();
+    run.connection_retries = [{ model_call_id: 'retrying-main', retry_no: 1, max_retries: 5, timeout_seconds: 60 }];
+    await page.goto(`${root}/source?assistant=open`);
+    const retry = page.getByRole('status').filter({ hasText: '连接超时，正在重试 1/5' });
+    await expect(retry).toHaveCount(1); await expect(retry).toHaveText('连接超时，正在重试 1/5');
+    await page.reload(); await expect(retry).toHaveCount(1);
+    await expect(page.getByText(/本次连接最多等待/)).toHaveCount(0);
+    run.connection_retries = [];
+    await page.evaluate(() => window.dispatchEvent(new Event('agent-run-updated')));
+    await expect(retry).toHaveCount(0);
+    expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+  });
+
+  for (const afterIndependent of [false, true]) for (const acceptedUnknown of [false, true]) test(`shows one failure and resumes the same task with another model, unknown=${acceptedUnknown}, history=${afterIndependent}`, async ({ page }) => {
+    const state = await assistantFixture(page); state.beginReply(); state.failReply(acceptedUnknown);
+    if (afterIndependent) state.finishIndependentTask();
+    await page.route('**/api/v1/agent/models', route => route.fulfill({ json: { items: [{ id: '71', name: '对话模型', model_key: 'a' }, { id: '72', name: '替换模型', model_key: 'b' }], preferred_id: '71' } }));
+    await page.goto(`${root}/source?assistant=open`);
+    const panel = page.getByRole('region', { name: 'AI 创作助手', exact: true });
+    await expect(panel.getByText('模型响应超时，请核对后继续。', { exact: true })).toHaveCount(1);
+    await expect(panel.locator('.ai-assistant-failed')).toHaveCount(0);
+    await panel.locator('.ai-assistant-model').click(); await page.getByText('替换模型', { exact: true }).last().click();
+    const input = panel.getByRole('textbox', { name: '给助手的消息', exact: true });
+    await input.fill('保留已有成果继续');
+    const send = panel.getByRole('button', { name: '发送', exact: true });
+    if (acceptedUnknown) {
+      await expect(send).toBeDisabled();
+      await panel.getByRole('checkbox', { name: /原请求结果不明/ }).check();
+    }
+    await send.click(); await expect(input).toHaveValue('');
+    const sent = state.calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))!;
+    expect(sent.body.task_id).toBe('501'); expect(sent.body.model_config_id).toBe('72');
+    expect(sent.body.confirm_unknown).toBe(acceptedUnknown ? true : undefined);
     expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
   });
 
@@ -1669,6 +1742,70 @@ test('global history renames and permanently deletes conversations without archi
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
+test('generated conversation title events update the open history entry', async ({ page }) => {
+  const state = await assistantFixture(page);
+  state.conversations[0].title = '新对话';
+  state.emit('conversation.title.updated', { title: '雨夜车站人物关系', row_version: '2' });
+  await page.goto(`${root}/source?assistant=open`);
+  await page.getByRole('button', { name: '对话记录', exact: true }).click();
+  const history = page.getByRole('dialog', { name: '对话记录', exact: true });
+  await expect(history.getByRole('button', { name: '管理对话雨夜车站人物关系', exact: true })).toBeVisible();
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('an older title event does not overwrite a newer manual rename', async ({ page }) => {
+  const state = await assistantFixture(page);
+  state.conversations[0].title = '新对话';
+  await page.goto(`${root}/source?assistant=open`);
+  await expect(page.getByRole('textbox', { name: '给助手的消息' })).toBeVisible();
+  await expect.poll(() => state.cursors.length).toBeGreaterThan(0);
+  await page.getByRole('button', { name: '对话记录', exact: true }).click();
+  const history = page.getByRole('dialog', { name: '对话记录', exact: true });
+  await history.getByRole('button', { name: '管理对话新对话', exact: true }).click();
+  await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
+  state.conversations[0].row_version = '2';
+  await history.getByRole('textbox', { name: '对话名称' }).fill('用户指定标题');
+  await history.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(history.getByRole('button', { name: '管理对话用户指定标题', exact: true })).toBeVisible();
+  state.emit('conversation.title.updated', { title: '迟到的自动标题', row_version: '2' });
+  await expect.poll(() => state.cursors.some((cursor) => cursor >= 1)).toBe(true);
+  await expect(history.getByRole('button', { name: '管理对话用户指定标题', exact: true })).toBeVisible();
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('conversation title created before the runtime snapshot is visible in the heading', async ({ page }) => {
+  const state = await assistantFixture(page);
+  state.conversations[0].title = '新对话';
+  let emitted = false;
+  await page.route('**/api/v1/assistant/global/conversations/301/state?**', (route) => {
+    if (!emitted) {
+      emitted = true;
+      Object.assign(state.conversations[0], { title: '快照前生成的标题', row_version: '2' });
+      state.emit('conversation.title.updated', { title: '快照前生成的标题', row_version: '2' });
+    }
+    return route.fulfill({ json: {
+      conversation_id: '301', snapshot_cursor: 1, resume_cursor: 1,
+      messages: { items: [], total: 0, offset: 0, limit: 50 },
+      tasks: [], runs: [], operations: [], inputs: [], trace_blocks: [], pending_questions: [],
+      has_more_trace: false, trace_before_seq: null, has_more_tasks: false, has_more_operations: false,
+    } });
+  });
+  await page.goto('/e2e/assistant/fixtures/assistant-presentation-fixture.html');
+  await expect(page.locator('.ai-assistant-heading span')).toHaveText('快照前生成的标题');
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('conversation history keeps a newer server title from another session', async ({ page }) => {
+  const state = await assistantFixture(page);
+  await page.goto(`${root}/source?assistant=open`);
+  await expect(page.getByRole('textbox', { name: '给助手的消息' })).toBeVisible();
+  Object.assign(state.conversations[0], { title: '另一窗口的标题', row_version: '3' });
+  await page.getByRole('button', { name: '对话记录', exact: true }).click();
+  const history = page.getByRole('dialog', { name: '对话记录', exact: true });
+  await expect(history.getByRole('button', { name: '管理对话另一窗口的标题', exact: true })).toBeVisible();
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
 test('current references remain above the composer and new messages preserve the history reading position', async ({ page }) => {
   const state = await assistantFixture(page);
   state.messages['301'].push(...Array.from({ length: 65 }, (_, index) => ({ id: String(2000 + index), seq: index + 1,
@@ -2335,15 +2472,15 @@ test('uncertain deletion survives refresh after the conversation is already hidd
   await expect(history.getByRole('button', { name: '使用原请求核对删除', exact: true })).toHaveCount(0);
   const calls = state.calls.filter(call => call.method === 'DELETE' && call.path === '/global/conversations/301');
   expect(calls).toHaveLength(2); expect(calls[1].body).toEqual(calls[0].body); expect(calls[1].key).toBe(calls[0].key);
-  expect(calls[1].body.clear_derived_memory).toBe(false); expect(state.conversations[0].status).toBe('deleted');
+  expect(calls[1].body).toEqual({ row_version: '1' }); expect(state.conversations[0].status).toBe('deleted');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('a legacy pending deletion keeps its exact original selection without showing memory controls', async ({ page }) => {
+test('a pending deletion in the history scope keeps its exact original version without showing memory controls', async ({ page }) => {
   const state = await assistantFixture(page);
   state.deletionMemories.push({ id: '901', content_version: '3' });
   await page.goto(`${root}/source?assistant=open`);
-  const pending = { version: 1, kind: 'delete', targetId: '301', key: 'legacy-delete-request', body: { row_version: '1', clear_derived_memory: true, memory_selections: [{ id: '901', content_version: '3' }] } };
+  const pending = { version: 1, kind: 'delete', targetId: '301', key: 'history-delete-request', body: { row_version: '1' } };
   const storageKey = 'short-drama:user:9007199254740993:assistant-pending-delete:v1:history';
   await page.evaluate(({ storageKey, pending }) => localStorage.setItem(storageKey, JSON.stringify(pending)), { storageKey, pending });
   await page.getByRole('button', { name: '对话记录', exact: true }).click();
@@ -2373,7 +2510,7 @@ for (const width of [1440, 1280]) test(`memory and task configuration stay invis
   await expect(confirmation).not.toContainText('记忆');
   await confirmation.getByRole('button', { name: '永久删除', exact: true }).click();
   await expect(confirmation).toHaveCount(0);
-  expect(state.calls.find(call => call.method === 'DELETE')!.body).toEqual({ row_version: '1', clear_derived_memory: false });
+  expect(state.calls.find(call => call.method === 'DELETE')!.body).toEqual({ row_version: '1' });
   expect(state.calls.filter(call => call.path.includes('memory'))).toHaveLength(0);
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });

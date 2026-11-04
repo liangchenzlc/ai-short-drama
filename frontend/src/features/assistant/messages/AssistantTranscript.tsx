@@ -58,7 +58,7 @@ export function AssistantTranscript({
       prepend.current = null;
     } else if (pinned.current) node.scrollTop = node.scrollHeight;
     else setNewContent(true);
-  }, [runtime.messages, runtime.streamingParts, runtime.traceBlocks, runtime.pendingQuestions, runtime.run?.status]);
+  }, [runtime.messages, runtime.streamingParts, runtime.traceBlocks, runtime.pendingQuestions, runtime.run?.status, runtime.run?.recovery_states]);
   const queuedRuns = runtime.queuedRuns.filter((run) => run.id !== runtime.run?.id);
   // 会话连接仍监听其他标签页，但终态任务不再显示持续加载，避免误示成果尚未完成。
   const reconnecting =
@@ -169,11 +169,16 @@ export function AssistantTranscript({
             </Button>
           </div>
         )}
-        {runtime.run?.status === 'failed' ? (
-          <p className="ai-assistant-failed" role="status">
-            {runtime.run.error?.message || '本次任务尚未完成，已有成果和消息已保留。请根据上方提示处理后继续。'}
-          </p>
-        ) : null}
+        {runtime.run?.status === 'running' && runtime.run.connection_retries?.map((retry) => (
+          <div className="ai-assistant-meta" role="status" key={retry.model_call_id}>
+            连接超时，正在重试 {retry.retry_no}/{retry.max_retries}
+          </div>
+        ))}
+        {runtime.run?.status === 'running' && runtime.run.recovery_states.map((state) => (
+          <div className="ai-assistant-meta" role="status" key={state.scope_id}>
+            {state.kind === 'output_continuation' ? '正在继续生成' : '正在整理上下文'}
+          </div>
+        ))}
         {runtime.run?.wait_summary ? (
           <p className="ai-assistant-meta" role="status">{runtime.run.wait_summary.message} · 已等待 {Math.floor(runtime.run.wait_summary.elapsed_seconds)} 秒</p>
         ) : runtime.run?.waiting_reason ? <p className="ai-assistant-meta" role="status">{runtime.run.waiting_reason}</p> : null}

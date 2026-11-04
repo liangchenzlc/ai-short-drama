@@ -8,15 +8,28 @@ from short_drama.schemas.creation.storyboard.management.script import ShotSizeEn
 
 
 class ShotImageSettings(InputModel):
-    resolution: Literal["1K", "2K", "4K"] = "2K"
-    aspect: Literal["16:9", "9:16", "1:1", "4:3", "3:4"] | None = None
-    layout: Literal["single", "four", "five", "nine"] = "single"
+    resolution: Literal["1K", "2K", "4K"] = Field(
+        default="2K", description="下一次分镜图片生成的分辨率预设。"
+    )
+    aspect: Literal["16:9", "9:16", "1:1", "4:3", "3:4"] | None = Field(
+        default=None, description="下一次图片生成的画幅比例；null 表示使用模型默认比例。"
+    )
+    layout: Literal["single", "four", "five", "nine"] = Field(
+        default="single", description="生成图片组布局预设；不是分镜正文中的镜头数量。"
+    )
 
 
 class ShotVideoSettings(InputModel):
-    resolution: Literal["480p", "720p", "1080p"] = "720p"
+    resolution: Literal["480p", "720p", "1080p"] = Field(
+        default="720p", description="下一次分镜视频生成的分辨率预设。"
+    )
     duration_ms: int | None = Field(
-        default=None, strict=True, ge=1000, le=3600000, multiple_of=1000
+        default=None,
+        strict=True,
+        ge=1000,
+        le=3600000,
+        multiple_of=1000,
+        description="下一次视频生成时长，单位毫秒且必须整秒；null 表示沿用模型/请求默认值。",
     )
 
 
@@ -57,15 +70,29 @@ class StoryboardCreate(InputModel):
 
 
 class StoryboardUpdate(InputModel):
-    row_version: Identifier
-    title: ShotTitle = None
-    shot_size: ShotSizeEnum | None = None
-    script: ShotScriptText = None
-    duration_ms: int = Field(default=None, strict=True, ge=1000, le=10000)
-    asset_ids: list[Identifier] = Field(default=None, max_length=100)
-    image_settings: ShotImageSettings = None
-    video_prompt: Annotated[str, Field(max_length=16000)] = None
-    video_settings: ShotVideoSettings = None
+    row_version: Identifier = Field(description="目标镜头当前 row_version；来自最近一次分镜读取。")
+    title: ShotTitle = Field(default=None, description="分场/镜头标题；省略表示不修改。")
+    shot_size: ShotSizeEnum | None = Field(
+        default=None, description="镜头景别枚举；显式 null 可清除景别。"
+    )
+    script: ShotScriptText = Field(
+        default=None, description="分镜镜头/分场正文；不是 ProjectScript 整篇剧本。"
+    )
+    duration_ms: int = Field(
+        default=None, strict=True, ge=1000, le=10000, description="镜头建议时长，单位毫秒。"
+    )
+    asset_ids: list[Identifier] = Field(
+        default=None,
+        max_length=100,
+        description="替换完整素材关联集合；助手结构化写入须改用单独 set_shot_assets 动作。",
+    )
+    image_settings: ShotImageSettings = Field(
+        default=None, description="替换下一次图片生成设置，提供时须含完整设置对象。"
+    )
+    video_prompt: Annotated[
+        str, Field(max_length=16000, description="下一次分镜视频生成的补充提示词。")
+    ] = None
+    video_settings: ShotVideoSettings = Field(default=None, description="替换下一次视频生成设置。")
 
     _complete_settings = model_validator(mode="before")(_require_complete_image_settings)
 

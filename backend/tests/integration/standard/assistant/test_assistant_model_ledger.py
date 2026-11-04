@@ -24,6 +24,106 @@ from tests.support.assistant_http import provider as provider
 pytestmark = pytest.mark.integration
 
 
+@pytest.mark.parametrize("termination", ["stop", "worker_loss"])
+def test_interrupted_sent_call_preserves_confirmation_requirement(harness_workspace, termination):
+    from datetime import timedelta
+
+    from short_drama.agent.coordinator.recovery import recover
+    from short_drama.agent.runtime.model_ledger import RunModelLedger
+    from short_drama.core.exceptions import WorkflowError
+    from short_drama.core.time import utcnow
+    from short_drama.service.assistant.execution.run import AgentRunService
+    from tests.integration.standard.assistant.test_global_assistant_tasks import task_service
+
+    conversation, accepted = new_task(harness_workspace)
+    _, context = runtime(harness_workspace, accepted)
+    RunModelLedger(context).before_send(
+        {
+            "model_call_id": "interrupted-call",
+            "source": "assistant",
+            "body": {"max_tokens": 20},
+        }
+    )
+    if termination == "worker_loss":
+        with context.factory.begin() as session:
+            session.get(AgentRun, context.run_id).lease_until = utcnow() - timedelta(seconds=1)
+        assert recover(context.factory, context.settings) == 1
+    else:
+        from types import SimpleNamespace
+
+        with context.factory() as session:
+            assert AgentRunService(session, context.settings).finish(
+                SimpleNamespace(run_id=context.run_id, fence=context.fence),
+                status="cancelled",
+                error={"code": "agent_stopped"},
+            )
+    with context.factory() as session:
+        run = session.get(AgentRun, context.run_id)
+        assert run.error["accepted_unknown"] is True
+        assert run.usage["reserved_output_tokens"] == 20
+    with context.factory() as session:
+        service = task_service(session, context.settings)
+        state = service.task_runtime_state(conversation.id)
+        assert state.runs[-1].error["accepted_unknown"] is True
+        session.commit()
+        with pytest.raises(WorkflowError) as caught:
+            service.send_task_message(
+                conversation.id,
+                {
+                    "task_id": str(accepted.task.id),
+                    "content": "继续核对已保存成果",
+                },
+                "unconfirmed-interrupted-call",
+            )
+        assert caught.value.code == "assistant_acceptance_check_required"
+
+
+def test_connection_retry_is_durable_without_a_sent_turn_or_reserved_tokens(harness_workspace):
+    from short_drama.agent.runtime.model_ledger import RunModelLedger
+    from short_drama.service.assistant.execution.run import read_run
+
+    _, accepted = new_task(harness_workspace)
+    _, context = runtime(harness_workspace, accepted)
+    ledger = RunModelLedger(context)
+    with context.factory.begin() as session:
+        session.get(AgentRun, context.run_id).status = "running"
+    with context.factory() as session:
+        before = dict(session.get(AgentRun, context.run_id).usage)
+    ledger.connection_state(
+        {
+            "model_call_id": "connection-only",
+            "status": "retrying",
+            "retry_no": 2,
+            "max_retries": 5,
+            "timeout_seconds": 90,
+        }
+    )
+    with context.factory() as session:
+        from short_drama.dao.assistant.execution.run import AgentRunDAO
+
+        run = session.get(AgentRun, context.run_id)
+        public = read_run(session, run, queue_position=0, stopping=False)
+        assert public.connection_retries[0].retry_no == 2
+        projected = AgentRunDAO(session).projections(run.conversation_id, run_ids=[run.id])[0]
+        assert (
+            read_run(session, projected, queue_position=0, stopping=False).connection_retries
+            == public.connection_retries
+        )
+        assert run.usage == before
+        assert session.scalars(select(AgentTurn).where(AgentTurn.run_id == run.id)).all() == []
+    ledger.save_error(
+        {
+            "model_call_id": "connection-only",
+            "code": "agent_connection_timeout",
+            "accepted_unknown": False,
+            "not_accepted": True,
+        }
+    )
+    with context.factory() as session:
+        run = session.get(AgentRun, context.run_id)
+        assert read_run(session, run, queue_position=0, stopping=False).connection_retries == []
+
+
 @pytest.mark.parametrize("source", ["assistant", "tool_selection", "summarization"])
 def test_local_context_rejection_creates_no_turn_and_spends_no_parent_usage(
     harness_workspace, source
@@ -309,7 +409,7 @@ def test_selector_summary_and_main_share_durable_parent_budget(
         assert all(turn.response["raw"] for turn in turns)
 
 
-def test_budget_and_cancel_are_checked_before_actual_transport_send(harness_workspace):
+def test_formal_cumulative_budget_does_not_block_but_cancel_still_denies(harness_workspace):
     _, accepted = new_task(harness_workspace)
     _saver, context = runtime(harness_workspace, accepted)
     transport = FrameworkTransport(context.factory)
@@ -318,11 +418,8 @@ def test_budget_and_cancel_are_checked_before_actual_transport_send(harness_work
         run = session.get(AgentRun, context.run_id)
         run.budget = {**run.budget, "decision_calls": 1}
     asyncio.run(model.ainvoke([HumanMessage(content="一次")]))
-    with pytest.raises(AgentGatewayError) as exhausted:
-        asyncio.run(model.ainvoke([HumanMessage(content="超限")]))
-    assert exhausted.value.code == "agent_budget_exhausted"
-    assert not exhausted.value.accepted_unknown
-    assert len(transport.requests) == 1
+    asyncio.run(model.ainvoke([HumanMessage(content="超过旧累计上限仍可继续")]))
+    assert len(transport.requests) == 2
     with context.factory.begin() as session:
         run = session.get(AgentRun, context.run_id)
         run.budget = {**run.budget, "decision_calls": 3}
@@ -330,7 +427,7 @@ def test_budget_and_cancel_are_checked_before_actual_transport_send(harness_work
     with pytest.raises(AgentGatewayError) as cancelled:
         asyncio.run(model.ainvoke([HumanMessage(content="已停止")]))
     assert cancelled.value.code == "agent_admission_denied"
-    assert len(transport.requests) == 1
+    assert len(transport.requests) == 2
 
 
 def test_late_receipts_deduplicate_input_without_reported_output(harness_workspace):
@@ -398,24 +495,37 @@ def test_failed_response_cost_remains_in_shared_run_budget(harness_workspace, fa
         ),
         transport=transport,
     )
-    with pytest.raises(AgentGatewayError):
-        asyncio.run(model.ainvoke([HumanMessage(content="检查持久失败回执")]))
+    if failure == "length":
+        message = asyncio.run(model.ainvoke([HumanMessage(content="检查持久截断回执")]))
+        assert message.response_metadata["output_recovery"]
+    else:
+        with pytest.raises(AgentGatewayError):
+            asyncio.run(model.ainvoke([HumanMessage(content="检查持久失败回执")]))
     with context.factory() as session:
-        turn = session.scalar(select(AgentTurn).where(AgentTurn.status == "failed"))
+        turn = session.scalar(
+            select(AgentTurn)
+            .where(
+                AgentTurn.run_id == context.run_id,
+                AgentTurn.usage["model_call_id"].as_string().is_not(None),
+            )
+            .order_by(AgentTurn.turn_no.desc())
+        )
         usage = session.get(AgentRun, context.run_id).usage
         expected_output = 7 if reported else 0
         expected_reservation = 10 if failure == "length" and not reported else 0
         assert usage["decision_calls"] == len(transport.requests) == 1
         assert usage["output_tokens"] == expected_output
         assert usage["reserved_output_tokens"] == expected_reservation
-        assert turn.status == "failed" and turn.response["raw"]
-        error, receipt = dict(turn.error), dict(turn.usage.get("provider_usage", {}))
-    ledger.save_error(error)
+        assert turn.status == ("succeeded" if failure == "length" else "failed")
+        assert turn.response["raw"]
+        error, receipt = dict(turn.error or {}), dict(turn.usage.get("provider_usage", {}))
+    if error:
+        ledger.save_error(error)
     if receipt:
         ledger.settle_usage(receipt)
     with context.factory() as session:
         assert session.get(AgentRun, context.run_id).usage == usage
-        assert session.get(AgentTurn, turn.id).status == "failed"
+        assert session.get(AgentTurn, turn.id).status == turn.status
     sibling = RunModelLedger(context)
     request = {
         "model_call_id": "child-after-failure",
@@ -424,11 +534,6 @@ def test_failed_response_cost_remains_in_shared_run_budget(harness_workspace, fa
     }
     token = execution_scope.set(child.id)
     try:
-        if failure == "rejected":
-            sibling.before_send(request)
-        else:
-            with pytest.raises(AgentGatewayError) as raised:
-                sibling.before_send(request)
-            assert raised.value.code == "agent_budget_exhausted"
+        sibling.before_send(request)
     finally:
         execution_scope.reset(token)

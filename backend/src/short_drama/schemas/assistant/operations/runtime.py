@@ -111,6 +111,19 @@ class RunWaitSummary(ReadModel):
     message: str
 
 
+class ConnectionRetryRead(ReadModel):
+    model_call_id: str
+    retry_no: int = Field(ge=1, le=5)
+    max_retries: int = Field(ge=1, le=5)
+    timeout_seconds: float
+
+
+class RecoveryStateRead(ReadModel):
+    scope_id: Identifier
+    model_call_id: str
+    kind: Literal["output_continuation", "context_compaction"]
+
+
 class RunRead(ReadModel):
     id: Identifier
     task_id: Identifier | None = None
@@ -134,6 +147,8 @@ class RunRead(ReadModel):
     blocking_run_id: Identifier | None = None
     blocking_task_id: Identifier | None = None
     stopping: bool = False
+    connection_retries: list[ConnectionRetryRead] = Field(default_factory=list)
+    recovery_states: list[RecoveryStateRead] = Field(default_factory=list)
 
 
 class ConversationRuntimeState(ReadModel):

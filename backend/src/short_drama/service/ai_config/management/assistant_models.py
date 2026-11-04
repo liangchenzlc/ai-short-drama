@@ -244,6 +244,11 @@ class AgentModelService(BaseService):
                 if "context_window_tokens" in values
                 else (previous_inputs.get("context_window_tokens") if same_identity else None)
             )
+            output = (
+                values.get("max_output_tokens")
+                if "max_output_tokens" in values
+                else (previous_inputs.get("max_output_tokens") if same_identity else None)
+            )
             evidence = capability_evidence(row)
             row.row_version += 1
             if evidence:
@@ -252,6 +257,7 @@ class AgentModelService(BaseService):
                 "image": values["image"],
                 "audio": values["audio"],
                 "context_window_tokens": window,
+                "max_output_tokens": output,
                 "row_version": row.row_version,
                 "model_key": row.model_key,
                 "base_url": row.base_url,

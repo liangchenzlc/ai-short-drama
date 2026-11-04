@@ -51,15 +51,11 @@ def test_public_defaults_do_not_expose_execution_budgets():
         settings_defaults,
     )
 
-    result = settings_defaults(
-        SimpleNamespace(agent_run_decision_cap=100, agent_run_output_token_cap=500_000)
-    )
+    result = settings_defaults(SimpleNamespace())
     assert result.workbench_enabled and result.media_generation_enabled
     assert result.long_term_memory_enabled
     assert "model_call_limit" not in result.model_dump()
-    settings = SimpleNamespace(agent_run_decision_cap=100, agent_run_output_token_cap=500_000)
-    assert deployment_limits(settings).model_call_limit == 100
-    assert deployment_limits(settings).output_token_limit == 500_000
+    assert deployment_limits(SimpleNamespace()).model_dump() == {"subagent_max_concurrency": 3}
     assert result.settings_version == 0
     assert result.custom_instructions is None
     assert result.default_instructions

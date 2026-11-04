@@ -1,5 +1,7 @@
 """Input declarations are hints; actual requests reveal model compatibility."""
 
+from urllib.parse import urlsplit
+
 from short_drama.agent.gateway.inputs import select_protocol
 from short_drama.ai.types import GenerationError
 
@@ -10,12 +12,54 @@ def context_profile(snapshot):
         declaration.get(field) == snapshot.get(field)
         for field in ("row_version", "model_key", "base_url", "credential_identity")
     )
-    window = declaration.get("context_window_tokens")
-    declared = valid and type(window) is int and 16384 <= window <= 1048576
-    return {
-        "context_window_tokens": min(window, 262144) if declared else 65536,
-        "context_window_evidence": "declared" if declared else "platform_default",
+    official = urlsplit(
+        snapshot.get("base_url") or ""
+    ).hostname == "api.deepseek.com" and snapshot.get("model_key") in {
+        "deepseek-flash",
+        "deepseek-v4-pro",
     }
+    window = declaration.get("context_window_tokens")
+    declared_window = valid and type(window) is int and 16384 <= window <= 1048576
+    output = declaration.get("max_output_tokens")
+    declared_output = valid and type(output) is int and 1 <= output <= 1048576
+    return {
+        "context_window_tokens": window if declared_window else 1_000_000 if official else 65536,
+        "context_window_evidence": (
+            "declared"
+            if declared_window
+            else "official_profile"
+            if official
+            else "platform_default"
+        ),
+        "max_output_tokens": output if declared_output else 393_216 if official else 8192,
+        "output_capacity_evidence": (
+            "declared"
+            if declared_output
+            else "official_profile"
+            if official
+            else "platform_default"
+        ),
+    }
+
+
+def request_output_tokens(snapshot, source, requested=None):
+    profile = context_profile(snapshot)
+    capacity = profile["max_output_tokens"]
+    auxiliary_limit = {
+        "tool_selection": 2048,
+        "summarization": 8192,
+        "conversation_title": 64,
+    }.get(source)
+    if auxiliary_limit is not None:
+        return min(
+            capacity, auxiliary_limit, requested if requested is not None else auxiliary_limit
+        )
+    if requested is None:
+        return capacity
+    if profile["output_capacity_evidence"] == "platform_default":
+        # 未知模型的 8192 是初值；恢复可逐步放大，同时给固定输入与历史留出空间。
+        capacity = profile["context_window_tokens"] - 6144 - 1024
+    return min(capacity, requested)
 
 
 def input_capabilities(snapshot):

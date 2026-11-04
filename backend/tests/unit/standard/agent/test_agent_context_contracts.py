@@ -376,6 +376,8 @@ def test_input_declaration_is_version_bound_and_responses_cannot_claim_audio():
     assert input_capabilities(snapshot) == {
         "context_window_tokens": 65536,
         "context_window_evidence": "platform_default",
+        "max_output_tokens": 8192,
+        "output_capacity_evidence": "platform_default",
         "text": True,
         "image": True,
         "audio": False,

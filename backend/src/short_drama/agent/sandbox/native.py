@@ -13,12 +13,12 @@ FILESYSTEM = FilesystemMiddleware(
 )
 
 
-def native_spec(name, effect):
+def native_spec(name, effect, description):
     tool = next(tool for tool in FILESYSTEM.tools if tool.name == name)
     schema = tool.tool_call_schema
     return ToolSpec(
         name=name,
-        description=tool.description,
+        description=description,
         args_schema=schema if isinstance(schema, dict) else schema.model_json_schema(),
         handler=tool,
         effect=effect,

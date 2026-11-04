@@ -24,6 +24,8 @@ class ExecutionClaim:
     budget: dict
     tool_names: tuple[str, ...]
     lease_until: datetime
+    title_input: str | None = None
+    title_attempted: bool = False
     discussion_revision: bool = False
     pending_input: bool = False
 

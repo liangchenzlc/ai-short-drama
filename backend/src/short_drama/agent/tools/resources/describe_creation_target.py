@@ -1,5 +1,6 @@
 from short_drama.agent.runtime.read_tools import _describe
 from short_drama.agent.tools.contracts import ToolSpec
+from short_drama.agent.tools.resources.describe_creation_target_description import DESCRIPTION
 from short_drama.agent.tools.runtime import create_runtime_tool
 from short_drama.schemas.assistant.operations.tool_inputs import DescribeTarget
 
@@ -12,8 +13,7 @@ def invoke_locked(
 
 TOOL = create_runtime_tool(
     "runtime__describe_creation_target",
-    "读取目标身份、版本、模型能力与原始保存批次目录，不读取作品正文；"
-    "按 result_before_id/result_limit 翻页。",
+    DESCRIPTION,
     DescribeTarget,
     invoke_locked,
 )

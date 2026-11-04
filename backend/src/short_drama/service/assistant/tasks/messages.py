@@ -64,6 +64,11 @@ class TaskMessageOperations(TaskServiceBase):
                 task = None if inputs.new_task else dao.selected_task(conversation.id)
             inputs = self._project_inputs(conversation, task, inputs)
             previous = dao.latest_run(task.id) if task else None
+            continuing = (
+                previous is not None
+                and task.effective_state.get("engine") == ENGINE_VERSION
+                and task.status in {"stopped", "paused_error", "paused_budget"}
+            )
             if task is None:
                 model = AgentModelService(self.session, self.settings).select_model(
                     inputs.model_config_id
@@ -115,15 +120,11 @@ class TaskMessageOperations(TaskServiceBase):
                 if (
                     inputs.model_config_id is not None
                     and inputs.model_config_id != previous.model_config_id
+                    and not continuing
                 ):
                     raise WorkflowError(
                         "assistant_model_frozen", "当前任务使用已固定的模型，请新建任务切换", 409
                     )
-            continuing = (
-                previous is not None
-                and task.effective_state.get("engine") == ENGINE_VERSION
-                and task.status in {"stopped", "paused_error", "paused_budget"}
-            )
             if previous is not None and task.control_state == "stop_pending":
                 raise WorkflowError(
                     "assistant_task_stopping", "正在停止当前操作，请等待结算后发送补充要求", 409
@@ -133,7 +134,7 @@ class TaskMessageOperations(TaskServiceBase):
                     raise WorkflowError(
                         "assistant_task_settling", "当前回复尚未结算，请稍后继续", 409
                     )
-                if not model_unchanged(self.session, previous):
+                if inputs.model_config_id is None and not model_unchanged(self.session, previous):
                     raise WorkflowError(
                         "assistant_model_changed",
                         "当前任务的模型配置已被修改，请新建任务后继续。已有成果仍然保留。",
@@ -141,6 +142,25 @@ class TaskMessageOperations(TaskServiceBase):
                     )
                 if dao.has_active_operations(task.id):
                     raise Conflict("当前操作尚未结算，请先核对原任务状态")
+                if (previous.error or {}).get("accepted_unknown") and not inputs.confirm_unknown:
+                    raise WorkflowError(
+                        "assistant_acceptance_check_required",
+                        "原模型请求受理结果不明，请先核对原调用，再确认继续可能产生新的模型费用。",
+                        409,
+                    )
+                if inputs.model_config_id is not None:
+                    model = AgentModelService(self.session, self.settings).select_model(
+                        inputs.model_config_id
+                    )
+                    snapshot = model_snapshot(model)
+                    from short_drama.agent.gateway.inputs import select_protocol
+
+                    try:
+                        select_protocol(snapshot)
+                    except AgentGatewayError:
+                        raise WorkflowError(
+                            "unsupported_assistant_protocol", "此模型协议不支持创作助手", 422
+                        ) from None
             message = self._input_locked(conversation, task, inputs, key, request_hash, snapshot)
             if continuing:
                 close_unstarted_calls(self.session, previous)
@@ -149,7 +169,7 @@ class TaskMessageOperations(TaskServiceBase):
                     conversation,
                     task,
                     message,
-                    previous.model_config_id,
+                    model.id if model is not None else previous.model_config_id,
                     snapshot,
                     previous,
                     settings=self.settings,

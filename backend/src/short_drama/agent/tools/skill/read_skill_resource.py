@@ -5,6 +5,7 @@ from short_drama.agent.skill.resource_reads import (
 )
 from short_drama.agent.tools.contracts import ToolSpec
 from short_drama.agent.tools.runtime import create_runtime_tool
+from short_drama.agent.tools.skill.read_skill_resource_description import DESCRIPTION
 
 
 def invoke_locked(
@@ -34,7 +35,7 @@ def invoke_locked(
 
 TOOL = create_runtime_tool(
     "runtime__read_skill_resource",
-    "按当前激活方法的 activation_id 和冻结 manifest 相对路径读取资料、模板或图片，不执行文件。",
+    DESCRIPTION,
     ReadSkillResource,
     invoke_locked,
     prepare=prepare_skill_resource,

@@ -11,7 +11,9 @@ import {
 import { notifyAssistantBusinessChange } from '@host/features/assistant/runtime/assistant-business-events';
 import {
   applyTaskEvent,
+  applyRunRecoveryEvent,
   emptyTaskProjection,
+  mergeAssistantRun,
   mergeAssistantMessages as mergeMessages,
   mergeTaskEntities,
   mergeTaskSnapshot,
@@ -46,6 +48,7 @@ function messageTextParts(value: unknown): NonNullable<AgentMessage['text_parts'
 
 export function useAssistantRuntime(conversationId: string) {
   const [projection, setProjection] = useState(() => emptyTaskProjection(conversationId));
+  const [conversationTitle, setConversationTitle] = useState<{ title: string; row_version: string } | null>(null);
   const traceBlocks = useMemo(() => Object.values(projection.traceBlocks), [projection.traceBlocks]);
   const [inputs, setInputs] = useState<AssistantTaskInputState[]>([]);
   const [hasMoreTasks, setHasMoreTasks] = useState(false);
@@ -95,6 +98,7 @@ export function useAssistantRuntime(conversationId: string) {
   const alive = useRef(true);
   const cursor = useRef(0);
   const snapshotCursor = useRef(-1);
+  const runRecoveryEvents = useRef<Record<string, AgentEvent>>({});
   const initialized = useRef(false);
   const refreshRequest = useRef(0);
   const readController = useRef<AbortController | null>(null);
@@ -138,6 +142,7 @@ export function useAssistantRuntime(conversationId: string) {
       streamController.current?.abort();
       initialized.current = false;
       snapshotCursor.current = -1;
+      runRecoveryEvents.current = {};
       setStreamReady(false);
       setMessages([]);
       setTotal(0);
@@ -212,6 +217,12 @@ export function useAssistantRuntime(conversationId: string) {
       )
         throw new Error('对话状态不完整，请重新读取。');
       if (snapshot.snapshot_cursor < snapshotCursor.current) return;
+      if (initial) {
+        const conversation = await assistantApi.globalConversation(conversationId, controller.signal);
+        if (!alive.current || accessEndedRef.current || controller.signal.aborted || request !== refreshRequest.current)
+          return;
+        setConversationTitle({ title: conversation.title, row_version: conversation.row_version });
+      }
       snapshotCursor.current = snapshot.snapshot_cursor;
       retirePersistedDeltas(snapshot.messages.items);
       if (initial) {
@@ -232,7 +243,12 @@ export function useAssistantRuntime(conversationId: string) {
       }
       setProjection((old) => mergeTaskSnapshot(old, snapshot));
       setInputs(snapshot.inputs);
-      setRuns(old => [...new Map([...old, ...snapshot.runs].map(item => [item.id, item])).values()]);
+      setRuns(old => {
+        const byId = new Map(old.map(item => [item.id, item]));
+        for (const item of snapshot.runs)
+          byId.set(item.id, mergeAssistantRun(byId.get(item.id) ?? null, item, snapshot.snapshot_cursor, runRecoveryEvents.current[item.id]));
+        return [...byId.values()];
+      });
       setPendingQuestions([...new Map((snapshot.pending_questions ?? []).map(item => [item.operation_id, item])).values()]);
       // 普通刷新保留进度；流缺口重建页边界，补回断流期间旧 Task 的新 Run，已读块继续保留。
       if (initial) {
@@ -245,7 +261,8 @@ export function useAssistantRuntime(conversationId: string) {
       const queued = snapshot.runs.filter((item) => item.status === 'queued');
       setMessages((old) => mergeMessages(old, snapshot.messages.items));
       setTotal(snapshot.messages.total);
-      setRun(activeRun ?? queued[0] ?? snapshot.runs.at(-1) ?? null);
+      const selectedRun = activeRun ?? queued[0] ?? snapshot.runs.at(-1);
+      setRun(old => selectedRun ? mergeAssistantRun(old, selectedRun, snapshot.snapshot_cursor, runRecoveryEvents.current[selectedRun.id]) : null);
       setError('');
       setQueuedRuns(queued);
       if (!activeRun && !deltaRecovery.current) setDeltas({});
@@ -309,7 +326,7 @@ export function useAssistantRuntime(conversationId: string) {
       snapshotCursor.current = result.cursor;
       if (result.run.status === 'queued' && run && !['succeeded', 'failed', 'cancelled'].includes(run.status))
         setQueuedRuns((old) => [...old.filter((item) => item.id !== result.run.id), result.run]);
-      else setRun(result.run);
+      else setRun(old => mergeAssistantRun(old, result.run, result.cursor, runRecoveryEvents.current[result.run.id]));
     }
     void reload();
   }
@@ -325,7 +342,7 @@ export function useAssistantRuntime(conversationId: string) {
     );
     if (result.cursor >= snapshotCursor.current) {
       snapshotCursor.current = result.cursor;
-      setRun(result.run);
+      setRun(old => mergeAssistantRun(old, result.run, result.cursor, runRecoveryEvents.current[result.run.id]));
     }
     void reload();
   }
@@ -370,6 +387,18 @@ export function useAssistantRuntime(conversationId: string) {
       }
       cursor.current = event.seq;
       setProjection((old) => applyTaskEvent(old, event));
+      if (event.run_id && ['run.recovery', 'run.finished'].includes(event.event_type) && event.seq > snapshotCursor.current) {
+        runRecoveryEvents.current[event.run_id] = event;
+        setRun(old => old ? applyRunRecoveryEvent(old, event) : null);
+        setRuns(old => old.map(item => applyRunRecoveryEvent(item, event)));
+      }
+      if (
+        event.event_type === 'conversation.title.updated' &&
+        typeof event.payload.title === 'string' &&
+        typeof event.payload.row_version === 'string'
+      ) {
+        setConversationTitle({ title: event.payload.title, row_version: event.payload.row_version });
+      }
       if (event.event_type === 'trace.block' || event.event_type === 'trace.delta') {
         finishDeltaRecovery();
         return;
@@ -517,7 +546,12 @@ export function useAssistantRuntime(conversationId: string) {
         setProjection((old) => mergeTaskSnapshot(old, snapshot, { historical: true }));
         await fillOperationPages(snapshot, undefined, () => history === tracePages.current && !accessEndedRef.current);
         if (history !== tracePages.current || accessEndedRef.current) return;
-        setRuns(old => [...new Map([...old, ...snapshot.runs].map(item => [item.id, item])).values()]);
+        setRuns(old => {
+          const byId = new Map(old.map(item => [item.id, item]));
+          for (const item of snapshot.runs)
+            byId.set(item.id, mergeAssistantRun(byId.get(item.id) ?? null, item, snapshot.snapshot_cursor, runRecoveryEvents.current[item.id]));
+          return [...byId.values()];
+        });
         rememberTraceHistory(snapshot);
         taskBeforeId.current = oldestTaskId(snapshot.tasks);
         setHasMoreTasks(snapshot.has_more_tasks);
@@ -562,6 +596,7 @@ export function useAssistantRuntime(conversationId: string) {
   }
   return {
     messages,
+    conversationTitle,
     total,
     run,
     queuedRuns,

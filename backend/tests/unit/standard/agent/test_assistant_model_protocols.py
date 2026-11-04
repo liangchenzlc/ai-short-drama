@@ -39,6 +39,34 @@ TOOL = {
 }
 
 
+def test_plaintext_http_rejection_keeps_provider_classification(provider):
+    base, state = provider
+    state["responses"] = [(415, b"Unsupported media type", "text/plain")]
+    errors, raw = [], []
+
+    async def save_raw(payload):
+        raw.append(payload)
+
+    async def error(payload):
+        errors.append(payload)
+
+    model = build_chat_model(
+        configured(base, "chat"),
+        "",
+        callbacks=ModelCallbacks(
+            settings=SETTINGS,
+            save_raw=save_raw,
+            error=error,
+        ),
+    )
+    with pytest.raises(AgentGatewayError) as caught:
+        asyncio.run(model.ainvoke([HumanMessage(content="检查明确拒绝")]))
+    assert caught.value.code == "agent_provider_rejected" and not caught.value.accepted_unknown
+    assert len(state["calls"]) == 1
+    assert raw[0]["status_code"] == 415 and raw[0]["body_b64"] == ""
+    assert errors[0]["not_accepted"] is True
+
+
 def assistant_retry(model, tools=()):
     middleware = assistant_middleware(
         model=model,
@@ -679,11 +707,11 @@ def test_official_summary_fallback_recognizes_the_protected_sdk_provider(
         ("deepseek", "chat", "none", "none", False),
         ("deepseek", "chat", None, None, False),
         ("compatible", "chat", "required", "required", False),
-        ("deepseek", "responses", "required", "required", False),
+        ("deepseek", "responses", "required", "required", True),
         ("anthropic", "claude", None, None, False),
     ],
 )
-def test_factory_limits_thinking_override_to_forced_deepseek_chat_tools(
+def test_factory_limits_thinking_override_to_forced_deepseek_tools(
     provider, provider_name, protocol, choice, expected_choice, forced
 ):
     base, state = provider

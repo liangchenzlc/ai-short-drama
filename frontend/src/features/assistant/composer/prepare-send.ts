@@ -17,6 +17,7 @@ export async function prepareAssistantSend({
   submitted,
   layout,
   modelId,
+  confirmUnknown,
   projectId,
   executionTarget,
   skillsDirty,
@@ -56,7 +57,10 @@ export async function prepareAssistantSend({
     content: submitted.trim(),
     ...input,
     ...(layout === 'standard' ? { script_reference: null } : {}),
-    ...(task ? { task_id: task.id } : { new_task: true, model_config_id: modelId }),
+    ...(task
+      ? { task_id: task.id, ...(task.can_change_model ? { model_config_id: modelId } : {}) }
+      : { new_task: true, model_config_id: modelId }),
+    ...(confirmUnknown ? { confirm_unknown: true } : {}),
     ...(selection ? { subject_selection: selection } : {}),
     ...(!task
       ? {

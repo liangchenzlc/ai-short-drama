@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from 'react';
 export function AssistantHistory({
   accountId,
   projectId,
+  conversation,
   currentId,
   onSelect,
   onNew,
@@ -29,6 +30,7 @@ export function AssistantHistory({
 }: {
   accountId: string;
   projectId: string;
+  conversation: ProjectAssistantConversation | null;
   currentId: string;
   onSelect: (id: string) => void;
   onNew: () => Promise<void>;
@@ -63,6 +65,8 @@ export function AssistantHistory({
   );
   const alive = useRef(true);
   const locked = useRef(false);
+  const currentConversation = useRef(conversation);
+  currentConversation.current = conversation;
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -77,7 +81,14 @@ export function AssistantHistory({
     request
       .then((page) => {
         if (!controller.signal.aborted) {
-          setItems(page.items);
+          const latest = currentConversation.current;
+          setItems(
+            page.items.map((item) =>
+              latest?.id === item.id && BigInt(latest.row_version) > BigInt(item.row_version)
+                ? { ...item, title: latest.title, row_version: latest.row_version }
+                : item,
+            ),
+          );
           setTotal(page.total);
         }
       })
@@ -89,6 +100,16 @@ export function AssistantHistory({
       });
     return () => controller.abort();
   }, [projectId, offset, search, revision]);
+  useEffect(() => {
+    if (!conversation || conversation.id !== currentId) return;
+    setItems((previous) =>
+      previous.map((item) =>
+        item.id === conversation.id && BigInt(conversation.row_version) > BigInt(item.row_version)
+          ? { ...item, title: conversation.title, row_version: conversation.row_version }
+          : item,
+      ),
+    );
+  }, [conversation?.id, conversation?.row_version, conversation?.title, currentId]);
   async function mutate(operation: () => Promise<void>) {
     if (locked.current) return;
     locked.current = true;

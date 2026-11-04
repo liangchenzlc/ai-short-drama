@@ -43,8 +43,6 @@ def test_settings_share_cas_and_partial_edits_preserve_other_fields(harness_work
 
 def test_public_settings_exclude_deployment_budgets_and_task_media_quotas(harness_workspace):
     factory, settings, model = harness_workspace
-    settings.agent_run_decision_cap = 100
-    settings.agent_run_output_token_cap = 500_000
     with factory() as session:
         service = task_service(session, settings)
         current = AssistantSettingsService(session, settings).get_settings()
@@ -63,8 +61,10 @@ def test_public_settings_exclude_deployment_budgets_and_task_media_quotas(harnes
             conversation.id, {"content": "讨论节奏", "model_config_id": model}, "settings-task"
         )
         assert "media_limits" not in type(accepted.task).model_fields
-        frozen = session.get(AgentRun, accepted.run.id).config_snapshot["assistant_settings"]
-        assert frozen["model_call_limit"] == 100 and frozen["output_token_limit"] == 500_000
+        run = session.get(AgentRun, accepted.run.id)
+        frozen = run.config_snapshot["assistant_settings"]
+        assert "model_call_limit" not in frozen and "output_token_limit" not in frozen
+        assert run.budget["decision_calls"] is None and run.budget["output_tokens"] is None
         assert frozen["subagent_max_concurrency"] == 3
 
 
@@ -80,21 +80,19 @@ def test_new_run_refreshes_preferences_and_keeps_the_previous_snapshot(harness_w
         run = session.get(AgentRun, accepted.run.id)
         old = dict(run.config_snapshot["assistant_settings"])
         assert old["instructions"] == "旧指令" and "旧指令" in old["system_prompt"]
-        assert old["model_call_limit"] == 240
+        assert "model_call_limit" not in old and "output_token_limit" not in old
         run.status, run.finished_at = "cancelled", utcnow()
         task = session.get(AgentTask, accepted.task.id)
         task.status, task.phase = "stopped", "terminal"
         session.commit()
-        settings.agent_run_decision_cap = 100
-        settings.agent_run_output_token_cap = 500_000
         update(session, settings, custom_instructions="新指令")
         again = service.send_task_message(conversation.id, {"content": "继续讨论"}, "second")
         assert again.task.id == accepted.task.id
         new_run = session.get(AgentRun, again.run.id)
         frozen = new_run.config_snapshot["assistant_settings"]
         assert frozen["instructions"] == "新指令" and "新指令" in frozen["system_prompt"]
-        assert frozen["model_call_limit"] == new_run.budget["decision_calls"] == 100
-        assert frozen["output_token_limit"] == new_run.budget["output_tokens"] == 500_000
+        assert new_run.budget["decision_calls"] is None
+        assert new_run.budget["output_tokens"] is None
         assert frozen["subagent_max_concurrency"] == 3
         assert frozen["prompt_versions"] and frozen["tool_catalog_version"]
         session.commit()
@@ -112,14 +110,23 @@ def test_capacity_patch_preserves_omitted_value_and_can_clear_declaration(harnes
         service = AgentModelService(session, settings)
         first = service.patch_inputs(
             model,
-            {"row_version": "1", "image": True, "audio": False, "context_window_tokens": 131072},
+            {
+                "row_version": "1",
+                "image": True,
+                "audio": False,
+                "context_window_tokens": 131072,
+                "max_output_tokens": 32768,
+            },
         )
         assert first.input_capabilities.context_window_tokens == 131072
         assert first.input_capabilities.context_window_evidence == "declared"
+        assert first.input_capabilities.max_output_tokens == 32768
+        assert first.input_capabilities.output_capacity_evidence == "declared"
         second = service.patch_inputs(
             model, {"row_version": first.row_version, "image": True, "audio": False}
         )
         assert second.input_capabilities.context_window_tokens == 131072
+        assert second.input_capabilities.max_output_tokens == 32768
         cleared = service.patch_inputs(
             model,
             {
@@ -127,7 +134,10 @@ def test_capacity_patch_preserves_omitted_value_and_can_clear_declaration(harnes
                 "image": True,
                 "audio": False,
                 "context_window_tokens": None,
+                "max_output_tokens": None,
             },
         )
         assert cleared.input_capabilities.context_window_tokens == 65536
         assert cleared.input_capabilities.context_window_evidence == "platform_default"
+        assert cleared.input_capabilities.max_output_tokens == 8192
+        assert cleared.input_capabilities.output_capacity_evidence == "platform_default"

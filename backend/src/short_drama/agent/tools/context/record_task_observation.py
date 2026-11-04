@@ -1,4 +1,5 @@
 from short_drama.agent.context.working_set import RecordObservation, record_locked
+from short_drama.agent.tools.context.record_task_observation_description import DESCRIPTION
 from short_drama.agent.tools.contracts import ToolSpec
 from short_drama.agent.tools.runtime import create_runtime_tool
 
@@ -11,7 +12,7 @@ def invoke_locked(
 
 TOOL = create_runtime_tool(
     "runtime__record_task_observation",
-    "记录本任务跨压缩需要保留的观察，引用真实读取操作及原文短句；图片必须实际看过。",
+    DESCRIPTION,
     RecordObservation,
     invoke_locked,
 )

@@ -35,7 +35,7 @@ from short_drama.domain.assistant.conversations.models import (
     AgentEvent,
     AgentMessage,
 )
-from short_drama.domain.assistant.execution.models import AgentRun
+from short_drama.domain.assistant.execution.models import AgentRun, AgentTurn
 from short_drama.domain.identity.accounts.user import User, UserSession
 from short_drama.schemas.assistant.operations.runtime import (
     ConversationRuntimeState,
@@ -126,6 +126,12 @@ def read_run(session, run, *, queue_position=None, stopping=None, blocker=None, 
         blocking_run_id=blocker.id if blocker else None,
         blocking_task_id=blocker.task_id if blocker else None,
         stopping=stopping,
+        connection_retries=list(run.checkpoint.get("model_connections", {}).values())
+        if run.status == "running"
+        else [],
+        recovery_states=list(run.checkpoint.get("recovery_states", {}).values())
+        if run.status == "running"
+        else [],
     )
 
 
@@ -196,6 +202,29 @@ class AgentRunService(AgentConversationService):
                         "tool_descriptions": {spec.name: spec.description for spec in specs},
                     },
                 }
+            title_input = None
+            title_attempted = False
+            if conversation.title == "新对话" and conversation.row_version == 1:
+                title_input = self.session.scalar(
+                    select(AgentMessage.content).where(
+                        AgentMessage.conversation_id == conversation.id,
+                        AgentMessage.id == run.trigger_message_id,
+                        AgentMessage.seq == 1,
+                        AgentMessage.role == "user",
+                    )
+                )
+                if title_input:
+                    title_attempted = (
+                        self.session.scalar(
+                            select(AgentTurn.id)
+                            .where(
+                                AgentTurn.run_id == run.id,
+                                AgentTurn.usage["source"].as_string() == "conversation_title",
+                            )
+                            .limit(1)
+                        )
+                        is not None
+                    )
             run.checkpoint = {
                 **run.checkpoint,
                 "permitted_tool_names": names,
@@ -227,12 +256,39 @@ class AgentRunService(AgentConversationService):
                 budget=deepcopy(run.budget),
                 tool_names=tuple(names),
                 lease_until=run.lease_until,
+                title_input=title_input,
+                title_attempted=title_attempted,
                 discussion_revision=bool(run.checkpoint.get("discussion_revision")),
                 pending_input=(
                     not run.checkpoint.get("discussion_revision")
                     and task.input_revision > task.applied_input_revision
                 ),
             )
+
+    def save_generated_title(self, claim: ExecutionClaim, title: str) -> bool:
+        from short_drama.agent.core.events import append_event
+
+        with self.session.begin():
+            rows = lock_run(self.session, claim.run_id)
+            if rows is None:
+                return False
+            _project, conversation, run = rows
+            if (
+                not owns_execution(run, claim.fence)
+                or conversation.title != "新对话"
+                or conversation.row_version != 1
+            ):
+                return False
+            conversation.title = title
+            conversation.row_version += 1
+            append_event(
+                self.session,
+                conversation,
+                "conversation.title.updated",
+                {"title": title, "row_version": str(conversation.row_version)},
+                run_id=run.id,
+            )
+            return True
 
     def execution_active(self, claim: ExecutionClaim) -> bool:
         """One short non-locking control read, independent of the renewal transaction."""

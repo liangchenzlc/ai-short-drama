@@ -153,9 +153,7 @@ async function inspectFailure(run, phase) {
     const visible = page.locator('.ai-assistant-turn[data-message-id="' + failure.id + '"]').locator(".ai-assistant-reply");
     await visible.waitFor({ state: "visible" });
     assert.ok((await visible.innerText()).includes(config.failureMessage));
-    const notice = page.locator(".ai-assistant-failed");
-    await notice.waitFor({ state: "visible" });
-    assert.equal(await notice.innerText(), saved.error.message || config.failureNotice);
+    assert.equal(await page.locator(".ai-assistant-failed").count(), 0);
     await page.getByRole("button", { name: "停止", exact: true }).waitFor({ state: "hidden" });
     await page.locator(".ai-assistant-run-state").waitFor({ state: "hidden" });
     await page.locator(".ai-assistant-log").getByText("正在思考…", { exact: true }).waitFor({ state: "hidden" });

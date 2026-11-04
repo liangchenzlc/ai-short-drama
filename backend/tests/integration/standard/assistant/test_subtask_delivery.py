@@ -534,6 +534,7 @@ def test_new_run_after_stop_inherits_delivered_child_business_facts(flow, media)
             {
                 "task_id": accepted.task.id,
                 "content": "继续处理刚才子任务已交付的成果，不要重新受理",
+                "confirm_unknown": True,
             },
             uuid4().hex,
         )

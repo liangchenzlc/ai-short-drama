@@ -4,6 +4,9 @@
 
 当前新 Run 引擎固定 `assistant-runtime.1`。旧 `langgraph-harness.1` 及无引擎标记的运行经 [006离线切换](../database/migrations/2026-10-29-assistant-runtime/README.md)终结编排，保留消息、业务成果、已受理生成和人工审核审计，并持久显示“执行引擎已更新，请重新发送继续”。仅旧引擎的typed图会清理；新引擎图保留。下方关于旧引擎共存、句式授权、contract与reviewer的内容均为对应日期历史记录。
 
+正式 Run 的模型连接首次等待30秒，仅在未发送请求字节的连接超时后重试5次，连接等待依次为60、90、120、150、180秒。SDK与HTTP库自动重试关闭。重试状态持久化，刷新后仍显示“连接超时，正在重试 1/5”；连接成功或结算后清除。响应等待使用 `AGENT_MODEL_TIMEOUT_SECONDS`（默认120秒、范围1–600秒），从发送前开始，流式正文、思考和工具参数进展刷新空闲期限，HTTP头与心跳不续期。响应超时返回 `agent_response_timeout` 并直接结束，不重发已发送请求；受理不明保留unknown与输出预留。主动停止取消异步HTTP。配置启动读取、重启生效；标题辅助调用使用独立短期限且不作连接重试。
+执行中的任务显示实际模型并锁定；错误暂停、预算暂停或停止且控制与操作已结算后，`can_change_model=true`，可选择模型并在同一Task创建新Run继续，旧Run、业务收据与已保存成果保留。原调用受理不明时，须先核对并明确确认继续可能产生新费用。会话失败只展示后端保存的消息。
+
 ## 当前目录与职责
 
 | 入口（相对 backend/src/short_drama/） | 职责 |
@@ -24,15 +27,17 @@
 
 ## 连续执行与状态结算
 
-claim 固定 owner、Task／Run／scope、消息版本及租约 token、模型快照、预算和工具目录。每次模型与工具边界实时核对 fence、停止及账号权限，数据库事务不跨网络请求，Session 不跨线程共享。框架直接管理 model → tools → model，图 recursion_limit 按冻结调用预算容纳中间节点，所有实际主／selector／summary 请求仍先在父 Run 原子预留额度。
+claim 固定 owner、Task／Run／scope、消息版本及租约 token、模型快照、单次容量和工具目录。每次模型与工具边界实时核对 fence、停止及账号权限，数据库事务不跨网络请求，Session 不跨线程共享。框架直接管理 model → tools → model，图 recursion_limit 使用平台整数上界，不再由累计调用预算限制；所有实际主／selector／summary 请求仍先在父 Run 原子登记并预占输出。
 
-模型工厂仅在 `openai_chat.v1` 且冻结快照 `provider=deepseek` 时选官方 ChatDeepSeek，保留同一受保护 AsyncOpenAI／HTTP 客户端及零自动重试。薄适配只在官方请求序列化后，为强制工具选择合入 `thinking.type=disabled`，并将原 AIMessage 的 `reasoning_content` 回填到对应 assistant 消息；主助手默认、`auto`、`none` 不关闭思考。工厂另按 `metadata.lc_source=summarization` 为同一 DeepSeek chat 摘要请求显式关闭思考，不改变摘要提示、输出额度或其他 provider、协议与来源。官方 SDK 负责读取流式与普通响应中的真实思考，原 `on_model_content` 单独发布 reasoning，正文不混入思考；结果、原始回执和 typed checkpoint 沿现有脱敏与恢复路径保存，重放不再次 POST。不新增运行参数或绕开框架 selector、循环和 checkpoint。
+DeepSeek 通过显式 `provider=deepseek` 或精确官方域名 `api.deepseek.com` 识别；官方地址配置为 `custom` 也启用适配，任意自定义端点不按模型名推断。Chat Completions 使用官方 ChatDeepSeek，历史 `reasoning_content` 回填与摘要引用计量共用原投影。Chat 与 Responses 的强制工具选择请求合入 `thinking.type=disabled`，Chat 摘要辅助请求也关闭思考；主模型默认、auto、none 保留思考配置。思考和工具选择冲突使用 `agent_tool_choice_conflict`，不能据此认定模型不支持工具。思考／正文分流、脱敏、typed checkpoint、用量与原始回执重放沿用原路径。
 
 DeepSeek chat 的 SDK 出站历史与 GraphResources 引用计量投影共用 `with_reasoning_content`，保留已存在的历史思考、空值和消息顺序，原消息对象不变；引用水合和 request_template 继续处理媒体。其他 provider／协议不新增此字段。摘要触发计量因此包含实际会发送的历史 reasoning，最终真实 SDK body 仍由原准入守卫独立校验；这不等于供应商 tokenizer 或其 reasoning 输入计费语义。
 
 保护模型的框架 `ls_provider` 与实际 SDK 对齐：DeepSeek chat 为 deepseek、Claude Messages 为 anthropic、其余 ChatOpenAI 路径为 openai（包括 compatible chat 和 DeepSeek Responses）。保留基类已有 LS 字段，不启用外部跟踪。官方摘要可据此识别同 provider 的真实 reported-token 兜底，错 provider 仍不匹配；窗口、输出／工具／安全预留和原摘要算法不变。
 
 Run 首次 claim 在原工具目录冻结事务中，将获准目录的名称与描述同时写入 permitted_tool_names 和既有 config_snapshot 的 assistant_settings.tool_descriptions；构图时以冻结正文创建 Run 专属工具实例，原生 BaseTool 使用公开 model_copy，task 使用公开 task_description 参数。根／子助手、selector 候选和 Skill 追加工具共用冻结实例池；已创建但尚未首次 claim 的 Run 取领取时的目录正文，已领取 Run 跨 Worker 沿原冻结值。prompt 仍在创建 Run 时冻结，目录描述不扩展 permitted_tool_names，不冻结 handler 代码或 schema。
+
+工具级描述的唯一维护源是工具实现同目录的 `<tool>_description.py`；registry 将编译后正文放入冻结目录。输入字段说明留在对应 Pydantic schema 并随模型参数 JSON Schema 发送，不与 Run 冻结描述混为一份；因此已领取 Run 保留旧工具说明，但新执行构建所用的输入 schema 仍来自部署代码。描述变更只影响新领取/新创建 Run，不改变权限目录或实时授权检查。
 
 assistant-runtime-v17 要求主／子助手按剩余目标、已保存成果和真实回执持续使用现有工具；规模或阶段性进展本身不是结束理由，可修正的失败自主修正后继续。主模型判断完成并简洁交付真实成果与验证，无法继续时说明具体阻碍；ask／wait、停止、权限、预算及受理不明规则保持有效。此为创建 Run 时冻结的提示约束，不增加 reviewer、continuation 或进度账本。
 
@@ -235,7 +240,7 @@ L1–L5 来源核对仍按相关 Task 查询成功操作的轻元数据，仅投
 
 阶段结束可用 `release_skill(activation_id)` 释放自动方法，停止正文独立保留；手选方法拒绝自动释放。重新加载同一不可变版本时优先复用仍有效的原正文 Operation，归档失活记录也可恢复；来源已遗忘或原正文位于历史下界之前时不复活旧正文。名称／slug 歧义先报错并要求唯一 ID，不因已有活动记录而错误去重。方法所需工具可来自已启用或可按需启用的能力组，具体工具执行仍受当轮 manifest 约束。
 
-Harness 采用"单 Run 有限、可续期"的预算：任务创建时把 `AGENT_RUN_DECISION_CAP`（默认 240 次决策）与 `AGENT_RUN_OUTPUT_TOKEN_CAP`（默认 200 万输出 tokens）冻结进 `agent_policy.budget_caps`，每次建 Run 写入 `run.budget`。超限以 `agent_budget_exhausted` 暂停为 `paused_budget` 并保留成果；发送"继续"会在原 Task 下创建新 Run，**等于一次显式续期**，不设 Task 总上限。`active_seconds` 仍为 `null`：媒体等待会累计活跃秒数，设上限会误杀合法长任务。升级前的 Run 若冻结的是 `null` 四字段，继续按原无限策略解释，不改写历史记录。单次输出最多 8192 tokens，单次最多 16 个工具请求、请求超时最多 120 秒；上下文、媒体及来源配额继续生效。单次 graph 投递的递归保护不限制 Task 总轮数。旧引擎预算保持原规则，预算暂停不代表受理不明请求可以自动重发。
+正式 Harness 不再以累计决策次数、累计输出 tokens 或活跃时长终止 Run；这些字段为 null，实际请求预占、用量结算与来源记录继续保留。单轮助手、记忆维护及媒体配额使用各自边界。图递归与累计计量解耦；连续三轮相同工具参数及相同错误且无成功结果，或连续三次残缺工具参数，明确暂停。连接与响应期限独立于长度恢复，受理不明不自动重发。
 
 ## 提示词与观测
 
@@ -243,7 +248,7 @@ Harness 采用"单 Run 有限、可续期"的预算：任务创建时把 `AGENT_
 
 请求布局 v2 先放稳定系统提示、轻任务身份和完整工具历史，再放动态任务 frame 及 continuation，以增加可复用前缀。工具 schema 按需启用：基础读取和编排工具常驻，`standard_write/canvas_write/media/memory_write/image_adoption` 由 `enable_tool_group` 启用后按启用顺序追加；schema 生成有缓存，返回独立副本，已有工具顺序稳定。旧冻结请求保留原布局和 schema，不改写已发送报文。提示词不代替 Pydantic schema、业务版本或权限校验。工具参数错误返回最多八个字段位置、错误类型和原因，不附输入值、异常上下文或内部堆栈，模型据此修正。
 
-容量声明绑定模型版本、地址、模型键与凭据身份。有效声明参与平台预算（16384–1048576，平台最多使用 262144），默认 65536；窗口、输出预留与工具 schema 共同影响近期组额度。声明省略保留有效旧值，`null` 清除。当前只提供 API／DTO，未新增配置界面，也未把协议兼容当作视觉语义能力实测。
+容量声明绑定模型版本、地址、模型键与凭据身份。有效声明优先，其次精确 api.deepseek.com 的 deepseek-flash／deepseek-v4-pro 官方配置（1000000窗口、393216最大输出），否则默认65536窗口、8192输出初值；取消262144截顶。max_output_tokens声明省略保留、null清除。selector最多2048、摘要8192、标题64；网关、摘要和账本按同一出站输出值预留。未知模型的输出初值可在窗口允许内倍增，声明及官方值为原生上限。容量不是供应商语义能力实测。
 
 结构化日志记录 `agent_resource_hydrated` 的资源、字节与估算成本，`agent_context_compacted` 的 dropped_groups、retained_skills、recent_tokens，以及 `agent_context_assembled` 的 assembly_ms、tool_count、tool_schema_bytes、estimated_tool_tokens。Turn usage 保存当轮 context_metrics，Run 汇总实际 input_tokens、cached_tokens、uncached_input_tokens，重放不重复计量；缓存命中来自供应商 usage，不由平台估算替代。重复加载由 `already_loaded` 回执计量。当前提供日志与回执，未新增指标看板或告警通知服务；媒体泄漏日志为 ERROR 且写入失败，应由部署日志告警规则接入。
 
@@ -254,3 +259,11 @@ Harness 采用"单 Run 有限、可续期"的预算：任务创建时把 `AGENT_
 长任务回读、普通消息续执行与累计预算策略的后续修复证据见 [修复验收](../reviews/2026-10-26-Harness长任务回读与续执行修复验收.md)。
 
 </details>
+
+## 长度接续与结果回读
+
+Chat length、Claude max_tokens 和 Responses 明确 max_output_tokens 的 incomplete 作为可恢复回执；缺失终止帧、过滤和受理不明仍走独立错误路径。残缺工具调用被清除，下一轮须提交更小完整参数；仅思考时逐步扩大输出，达到原生上限仍无正文则报 agent_reasoning_output_limit，不关闭主模型思考。正文以同Run、同scope的Turn引用登记，交付时拼接，图检查点与模型回执共同防重；新输入或memory_epoch变化清空旧接续。子范围独立交付接续结果。
+
+大工具结果先保存完整Operation和ToolMessage，再按min(8192,input_limit/4)估算tokens返回preview／operation_id／全文checksum／read_with投影，重放一致。read_operation_receipt可用include_result与字符游标回读原文，每页默认4000、最多6000字符；scope、交接、来源撤回和活动Skill资格继续校验。Skill正文和媒体等关键结构走原专用路径。摘要首次后仍超限时可再整理一次；固定system／工具／活动Skill／来源仍无法适配时准确拒绝，不丢弃约束。
+
+Run checkpoint按scope保存recovery_states，run.recovery事件返回完整列表；运行时显示“正在继续生成”或“正在整理上下文”，终态清空。预览16KiB截断只影响展示，不是模型或任务额度。

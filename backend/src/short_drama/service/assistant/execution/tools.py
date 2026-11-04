@@ -12,6 +12,7 @@ from sqlalchemy import select
 from short_drama.agent.context.delegation import delegated_inputs_locked
 from short_drama.agent.context.delegation_results import business_outputs_locked
 from short_drama.agent.context.subjects import subject_memory_keys
+from short_drama.agent.context.tool_results import project_tool_result
 from short_drama.agent.core.access import LeaseLost, lock_run, may_decide
 from short_drama.agent.core.events import append_event, initial_usage
 from short_drama.agent.core.fence import owns_execution
@@ -200,6 +201,25 @@ class AgentToolExecutionService:
                 run_id=run.id,
             )
 
+    def model_output(self, state, message):
+        fragments = (state.get("output_recovery") or {}).get("fragments", [])
+        if not fragments:
+            return message.text
+        with self.context.factory.begin() as session:
+            self._bound(session)
+            turns = AgentModelLedgerDAO(session, self.context.run_id).graph_fragments(
+                self.context.scope_id, fragments
+            )
+            texts = {
+                turn.usage["model_call_id"]: messages_from_dict([turn.response["graph_message"]])[
+                    0
+                ].text
+                for turn in turns
+            }
+            if set(texts) != set(fragments):
+                raise WorkflowError("agent_response_not_durable", "接续片段尚未持久保存", 500)
+            return "".join(texts[identifier] for identifier in fragments) + message.text
+
     def start_tool(self, call, state):
         with self.context.factory.begin() as session:
             conversation, task, run = self._bound(session)
@@ -223,7 +243,11 @@ class AgentToolExecutionService:
                     operation.wait_state or {}
                 ).get("consumed")
                 return operation.id, self._replay(
-                    stored.result
+                    stored.result,
+                    operation_id=operation.id,
+                    tool_name=operation.tool_name,
+                    snapshot=run.config_snapshot,
+                    wait_state=operation.wait_state,
                 ) if operation.finished_at and not needs_interrupt else None
             operation = AgentOperation(
                 id=next_id(),
@@ -248,19 +272,18 @@ class AgentToolExecutionService:
                 updated_at=utcnow(),
             )
             session.add(operation)
-            if stored.tool_name in READ_TOOLS:
-                delegated = delegated_inputs_locked(session, run.id, self.context.scope_id)
-                snapshot = (
-                    delegated.get("context_snapshot")
-                    if delegated is not None
-                    else task.context_snapshot
-                )
-                stored.result = {
-                    "source_context": {
-                        "memory_epoch": state.get("memory_epoch", 0),
-                        "subject_keys": sorted(subject_memory_keys(snapshot)),
-                    }
+            delegated = delegated_inputs_locked(session, run.id, self.context.scope_id)
+            snapshot = (
+                delegated.get("context_snapshot")
+                if delegated is not None
+                else task.context_snapshot
+            )
+            stored.result = {
+                "source_context": {
+                    "memory_epoch": state.get("memory_epoch", 0),
+                    "subject_keys": sorted(subject_memory_keys(snapshot)),
                 }
+            }
             stored.status, stored.updated_at = "running", utcnow()
             task.phase, task.row_version = "tool_running", task.row_version + 1
             session.flush()
@@ -398,6 +421,7 @@ class AgentToolExecutionService:
                     "skill_activation_ids": sorted(
                         set(
                             source_context.get("skill_activation_ids", [])
+                            + result.get("skill_activation_ids", [])
                             + message.additional_kwargs.get("skill_activation_ids", [])
                             + ([result["activation_id"]] if result.get("activation_id") else [])
                         )
@@ -450,11 +474,29 @@ class AgentToolExecutionService:
                 result_refs=operation.result_refs,
                 error=operation.error,
             )
-        return output
+            snapshot, wait_state = run.config_snapshot, operation.wait_state
+            tool_name = operation.tool_name
+        # 原始正文已提交；图只接收投影，重放也从同一原始回执生成。
+        return project_tool_result(
+            output,
+            operation_id=operation_id,
+            tool_name=tool_name,
+            snapshot=snapshot,
+            wait_state=wait_state,
+        )
 
     @staticmethod
-    def _replay(saved):
+    def _replay(saved, *, operation_id, tool_name, snapshot, wait_state):
         message = messages_from_dict([saved["message"]])[0]
-        if saved["update"] is not None:
-            return Command(update={**saved["update"], "messages": [message]})
-        return message
+        output = (
+            Command(update={**saved["update"], "messages": [message]})
+            if saved["update"] is not None
+            else message
+        )
+        return project_tool_result(
+            output,
+            operation_id=operation_id,
+            tool_name=tool_name,
+            snapshot=snapshot,
+            wait_state=wait_state,
+        )

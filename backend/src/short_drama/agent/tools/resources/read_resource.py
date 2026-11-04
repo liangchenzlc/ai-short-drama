@@ -1,5 +1,6 @@
 from short_drama.agent.resources.tool_reads import read_resource_locked
 from short_drama.agent.tools.contracts import ToolSpec
+from short_drama.agent.tools.resources.read_resource_description import DESCRIPTION
 from short_drama.agent.tools.runtime import create_runtime_tool
 from short_drama.schemas.assistant.operations.tool_inputs import ReadResource
 
@@ -12,8 +13,7 @@ def invoke_locked(
 
 TOOL = create_runtime_tool(
     "runtime__read_resource",
-    "按附件目录 ref_id 读取本任务附件；媒体填写用途并按需水合。"
-    "Skill 文件使用 read_skill_resource。",
+    DESCRIPTION,
     ReadResource,
     invoke_locked,
 )

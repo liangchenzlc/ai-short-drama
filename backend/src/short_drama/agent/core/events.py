@@ -12,24 +12,16 @@ VARIABLE_HARNESS_METERS = frozenset(
     {"decision_calls", "tool_calls", "output_tokens", "active_seconds"}
 )
 
-# Per-Run defaults; a task freezes its own caps in ``effective_state.agent_policy``.
-HARNESS_DECISION_CAP = 240
-HARNESS_OUTPUT_TOKEN_CAP = 2_000_000
-
-
 ACTIVE = frozenset({"queued", "running", "waiting_generation", "waiting_input"})
 
 
-def budget_limits(mode="discuss", *, images=0, videos=0, caps=None):
+def budget_limits(mode="discuss", *, images=0, videos=0):
     if mode == "harness":
-        frozen = caps or {}
         return {
-            "decision_calls": int(frozen.get("decision_calls") or HARNESS_DECISION_CAP),
-            # Tool calls stay unlimited: one decision already bounds the batch.
+            "decision_calls": None,
             "tool_calls": None,
             "output_tokens_per_call": 8192,
-            "output_tokens": int(frozen.get("output_tokens") or HARNESS_OUTPUT_TOKEN_CAP),
-            # Media waits pause the run, so a wall-clock cap would kill long tasks.
+            "output_tokens": None,
             "active_seconds": None,
             "images": images,
             "videos": videos,

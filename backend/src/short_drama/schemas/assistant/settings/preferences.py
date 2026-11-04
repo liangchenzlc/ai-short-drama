@@ -27,8 +27,6 @@ class AssistantSettingsPatch(InputModel):
 
 
 class AssistantRuntimeLimits(ReadModel):
-    model_call_limit: int
-    output_token_limit: int
     subagent_max_concurrency: int
 
 

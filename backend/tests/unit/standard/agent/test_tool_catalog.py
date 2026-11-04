@@ -226,7 +226,7 @@ def test_runtime_specs_bind_concrete_tools_and_skill_validation_uses_injected_ca
             continue
         assert isinstance(spec.handler, BaseTool)
         assert spec.name == spec.handler.name
-        assert spec.description == spec.handler.description
+        assert spec.description
         schema = (
             spec.args_schema
             if isinstance(spec.args_schema, dict)
@@ -237,6 +237,7 @@ def test_runtime_specs_bind_concrete_tools_and_skill_validation_uses_injected_ca
         elif spec.name in {"runtime__ask_user", "runtime__wait_generation"} | resources:
             assert spec.handler.args_schema == spec.args_schema.model_json_schema()
         else:
+            assert spec.description == spec.handler.description
             assert callable(spec.handler.locked_handler)
             assert spec.args_schema is spec.handler.input_model
         assert "runtime" not in schema.get("properties", {})

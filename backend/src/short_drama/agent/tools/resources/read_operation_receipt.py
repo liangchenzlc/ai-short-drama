@@ -1,20 +1,31 @@
 from short_drama.agent.context.operation_receipts import read_receipt_locked
 from short_drama.agent.tools.contracts import ToolSpec
+from short_drama.agent.tools.resources.read_operation_receipt_description import DESCRIPTION
 from short_drama.agent.tools.runtime import create_runtime_tool
 from short_drama.schemas.assistant.operations.tool_inputs import ReadReceipt
 
 
 def invoke_locked(
-    session, conversation, task, operation, values, settings, *, resource_prepared=None
+    session,
+    conversation,
+    task,
+    operation,
+    values,
+    settings,
+    *,
+    state=None,
+    tool_lookup=None,
+    resource_prepared=None,
 ):
-    return read_receipt_locked(session, conversation, task, operation, values)
+    return read_receipt_locked(session, conversation, task, operation, values, state=state)
 
 
 TOOL = create_runtime_tool(
     "runtime__read_operation_receipt",
-    "核对当前范围、明确交接的父操作及task已交付的真实子业务收据和撤销收据，不重新执行。",
+    DESCRIPTION,
     ReadReceipt,
     invoke_locked,
+    skill_state=True,
 )
 SPEC = ToolSpec(
     name=TOOL.name,

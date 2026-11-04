@@ -16,15 +16,45 @@ INLINE_MEDIA = re.compile(r"data:(?:image|audio|video)/[^\s\"']*;base64,", re.IG
 class ResourceRef(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1] = 1
-    kind: Literal["image", "skill", "text", "script", "audio", "video", "file"]
-    ref_id: Annotated[str, Field(min_length=1, max_length=240)]
-    uri: Annotated[str, Field(min_length=1, max_length=2048)]
-    source: Annotated[str, Field(min_length=1, max_length=80)]
-    version: str | None = None
-    checksum: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")] | None = None
-    metadata: dict[str, JsonValue] = Field(default_factory=dict)
-    availability: Literal["available", "unavailable", "stale"] = "available"
+    schema_version: Literal[1] = Field(
+        default=1, description="ResourceRef 格式版本；当前固定为 1。"
+    )
+    kind: Literal["image", "skill", "text", "script", "audio", "video", "file"] = Field(
+        description="资源媒体/内容类别；由原始目录回执提供。"
+    )
+    ref_id: Annotated[
+        str,
+        Field(
+            min_length=1, max_length=240, description="资源稳定身份；从受权目录或成功操作回执复制。"
+        ),
+    ]
+    uri: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=2048,
+            description="受控资源引用 URI；只使用服务端返回值，不自行构造。",
+        ),
+    ]
+    source: Annotated[
+        str, Field(min_length=1, max_length=80, description="资源来源标识；沿用原始 ResourceRef。")
+    ]
+    version: str | None = Field(
+        default=None, description="资源版本；按来源回执复制，未提供时为 null。"
+    )
+    checksum: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+        description="可选资源 SHA-256 校验值；来自资源目录。",
+    )
+    metadata: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        description="服务端产生的资源说明元数据；原样交接，不填存储密钥或定位信息。",
+    )
+    availability: Literal["available", "unavailable", "stale"] = Field(
+        default="available",
+        description="资源当前可用状态；只沿用目录结果，不自行将不可用资源标记为可用。",
+    )
 
     @model_validator(mode="after")
     def managed_uri(self):

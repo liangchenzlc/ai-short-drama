@@ -101,6 +101,11 @@ def _safe_context_budget(facts: object) -> dict:
 
 def failure_message(code, *, accepted_unknown=False):
     """Stable user-facing explanations never reflect raw provider errors."""
+    if code == "agent_response_timeout":
+        return (
+            "等待模型响应超时，本次执行已停止，未自动重发。"
+            "请求可能已被受理，请先核对原调用；你的输入和已保存内容已保留。"
+        )
     if accepted_unknown or code in {
         "agent_acceptance_unknown",
         "agent_provider_unknown",
@@ -108,6 +113,14 @@ def failure_message(code, *, accepted_unknown=False):
     }:
         return "请求可能已经提交，但结果暂时无法确认。请先核对当前任务，避免重复生成和计费。"
     messages = {
+        "agent_connection_timeout": (
+            "连接模型服务超时，已重试5次仍未能建立连接，请检查网络或模型服务后继续。"
+            "本次请求尚未发出，你的输入已保留。"
+        ),
+        "agent_tool_choice_conflict": (
+            "当前模型的思考模式与工具选择方式不兼容，请检查模型接口配置或更换模型后继续。"
+            "你的输入已保留。"
+        ),
         "assistant_engine_updated": "执行引擎已更新，请重新发送继续",
         "agent_execution_error": (
             "执行过程中发生系统错误，本次任务已停止。你的输入和已保存成果仍然保留，请联系维护人员排查。"
@@ -161,6 +174,17 @@ def failure_message(code, *, accepted_unknown=False):
         "agent_response_truncated": (
             "模型输出超过了长度限制，本次结果未完成。请缩小创作范围后继续。"
         ),
+        "agent_reasoning_output_limit": (
+            "模型已达到单次输出上限，仍未生成正文或完整工具调用。"
+            "原思考设置与任务已保留，请调整任务要求或切换模型后继续。"
+        ),
+        "agent_output_no_progress": (
+            "模型连续三轮未能产生新的完整输出，任务已暂停。已有成果已保留，请调整要求后继续。"
+        ),
+        "agent_tool_no_progress": (
+            "模型连续三轮以相同参数重复失败的工具调用，任务已暂停。已有成果已保留，请处理错误后继续。"
+        ),
+        "agent_response_filtered": "模型服务过滤了本次响应，任务与输入已保留，请调整要求后继续。",
         "agent_budget_exhausted": "本次任务已达到执行上限，请缩小范围后继续。已有候选仍然保留。",
         "agent_context_budget_exhausted": (
             "任务输入、历史、方法或工具结果超过了本次上下文预算。"
@@ -372,6 +396,12 @@ def finish_locked(session, conversation, run, status, error=None):
         raise ValueError("Invalid Agent terminal state")
     if run.status in TERMINAL:
         return False
+    if status != "succeeded":
+        from short_drama.dao.assistant.execution.model_ledger import AgentModelLedgerDAO
+
+        # 停止和Worker失联也可能留下在途请求；新Run的确认门必须沿用账本事实。
+        if AgentModelLedgerDAO(session, run.id).has_uncertain_request():
+            error = {"code": "agent_acceptance_unknown", **(error or {}), "accepted_unknown": True}
     if getattr(run, "task_id", None) is not None:
         from short_drama.agent.task.state import finish_task_attempt_locked
 
@@ -379,6 +409,7 @@ def finish_locked(session, conversation, run, status, error=None):
     now = utcnow()
     charge_active(run, now)
     run.status = status
+    run.checkpoint = {**run.checkpoint, "recovery_states": {}}
     run.error = safe_error(error.get("code")) if error else None
     if run.error and error.get("accepted_unknown") is True:
         run.error["accepted_unknown"] = True

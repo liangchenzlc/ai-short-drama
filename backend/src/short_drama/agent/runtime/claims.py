@@ -56,7 +56,7 @@ def checked_budget(run):
         raise AgentGatewayError("invalid_agent_budget")
     for key, value in budget.items():
         if mode == "harness" and key in VARIABLE_HARNESS_METERS:
-            if value is None and key in {"tool_calls", "active_seconds"}:
+            if value is None:
                 continue
             if type(value) is not int or value <= 0:
                 raise AgentGatewayError("invalid_agent_budget")

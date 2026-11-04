@@ -1,6 +1,8 @@
 """Bounded helper input for the official summarization middleware's public callback."""
 
+import asyncio
 import json
+from uuid import uuid4
 
 from langchain.agents.middleware.summarization import DEFAULT_SUMMARY_PROMPT
 from langchain_core.messages import HumanMessage
@@ -12,20 +14,39 @@ from short_drama.agent.context.budget import (
     input_limit,
     wire_tool_counts,
 )
-from short_drama.agent.context.capabilities import context_profile
+from short_drama.agent.context.capabilities import context_profile, request_output_tokens
 from short_drama.agent.gateway.contracts import AgentGatewayError
+from short_drama.agent.runtime.model_ledger import RunModelLedger
 
 
 class BoundedSummary:
-    def __init__(self, model):
+    def __init__(self, model, *, context=None):
         self.model = model
         self.calls = 0
+        self.context = context
 
     async def summarize(self, messages, config):
+        if self.context is None:
+            return await self._summarize(messages, config)
+        ledger, call_id = RunModelLedger(self.context), f"summary:{uuid4().hex}"
+        previous = await asyncio.to_thread(ledger.recovery_state, "context_compaction", call_id)
+        try:
+            return await self._summarize(messages, config)
+        finally:
+            await asyncio.to_thread(
+                ledger.recovery_state,
+                previous["kind"] if previous else None,
+                previous["model_call_id"] if previous else None,
+                expected_call_id=call_id,
+            )
+
+    async def _summarize(self, messages, config):
         source = get_buffer_string(messages, format="xml")
         snapshot = getattr(self.model, "snapshot", {})
         callbacks = getattr(self.model, "model_callbacks", None)
-        output = getattr(callbacks, "max_output_tokens", 8192)
+        output = request_output_tokens(
+            snapshot, "summarization", getattr(callbacks, "max_output_tokens", None)
+        )
         window = context_profile(snapshot)["context_window_tokens"]
         limit = input_limit(output, context_window=window)
         project = getattr(callbacks, "project_input", None) or convert_to_openai_messages

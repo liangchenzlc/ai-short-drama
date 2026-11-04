@@ -10,7 +10,7 @@ from short_drama.agent.tools.canvas.apply_canvas_patch import SPEC as WORKBENCH_
 from short_drama.agent.tools.context.record_task_observation import (
     SPEC as RUNTIME__RECORD_TASK_OBSERVATION,
 )
-from short_drama.agent.tools.contracts import ToolSpec
+from short_drama.agent.tools.contracts import ToolSpec, require_tool_description
 from short_drama.agent.tools.delegation.task import SPEC as TASK
 from short_drama.agent.tools.media_generation.get_generation_policy import (
     SPEC as RUNTIME__GET_GENERATION_POLICY,
@@ -88,6 +88,7 @@ from short_drama.agent.tools.trace_visibility import tool_trace_visibility
 def build_catalog(specs: Iterable[ToolSpec]) -> dict[str, ToolSpec]:
     result = {}
     for spec in specs:
+        require_tool_description(spec.name, spec.description)
         if spec.name in result:
             raise ValueError(f"重复工具名称：{spec.name}")
         result[spec.name] = spec

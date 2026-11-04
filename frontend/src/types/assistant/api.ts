@@ -193,6 +193,7 @@ export interface AssistantOperation extends Partial<Omit<AssistantExecutionDispl
   finished_at: string | null;
 }
 export interface AssistantTask {
+  can_change_model?: boolean;
   id: string;
   conversation_id: string;
   goal: string;
@@ -228,6 +229,7 @@ export interface AssistantTask {
   updated_at: string;
 }
 export interface AssistantTaskSendInput extends AssistantSendInput {
+  confirm_unknown?: boolean;
   task_id?: string;
   new_task?: boolean;
   script_reference?: AssistantScriptReference | null;

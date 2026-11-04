@@ -1,6 +1,7 @@
 """Global task inputs cannot silently inherit a page or increase reference scope."""
 
 from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +18,40 @@ from short_drama.schemas.assistant.tasks.task import (
     TaskControlRequest,
     TaskExecutionTarget,
 )
+
+
+def test_every_registered_tool_has_a_sibling_description_and_described_wire_schema():
+    from short_drama.agent.tools.contracts import DESCRIPTION_HEADINGS
+    from short_drama.agent.tools.langchain import create_langchain_tool
+
+    root = Path(__file__).resolve().parents[4]
+    description_files = list((root / "src/short_drama/agent/tools").rglob("*_description.py"))
+    assert len(TOOL_SPECS) == 45
+    assert len(description_files) == len(TOOL_SPECS)
+    assert len({spec.name for spec in TOOL_SPECS}) == len(TOOL_SPECS)
+
+    def missing_descriptions(schema, prefix=""):
+        missing = []
+        for name, field in schema.get("properties", {}).items():
+            path = f"{prefix}{name}"
+            if not field.get("description"):
+                missing.append(path)
+            for index, branch in enumerate(field.get("anyOf", [])):
+                missing.extend(missing_descriptions(branch, f"{path}.anyOf[{index}]."))
+        for name, definition in schema.get("$defs", {}).items():
+            missing.extend(missing_descriptions(definition, f"{name}."))
+        return missing
+
+    for spec in TOOL_SPECS:
+        assert all(heading in spec.description for heading in DESCRIPTION_HEADINGS), spec.name
+        tool = create_langchain_tool(spec)
+        assert tool.description == spec.description, spec.name
+        schema = (
+            tool.args_schema.model_json_schema()
+            if hasattr(tool.args_schema, "model_json_schema")
+            else tool.args_schema
+        )
+        assert not missing_descriptions(schema), (spec.name, missing_descriptions(schema))
 
 
 def test_task_conversation_accepts_project_scope_and_preserves_legacy_creation():

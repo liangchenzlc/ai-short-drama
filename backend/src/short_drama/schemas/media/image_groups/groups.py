@@ -21,10 +21,16 @@ OperationType = Literal[
 
 
 class ImagePrimarySet(InputModel):
-    item_id: Identifier
-    expected_primary_version: Identifier
-    expected_item_version: Identifier
-    expected_target_version: Identifier
+    item_id: Identifier = Field(description="要采用的已就绪图片图位 ID；来自图组目录。")
+    expected_primary_version: Identifier = Field(
+        description="图片组 primary_version；来自读取该图组时的版本。"
+    )
+    expected_item_version: Identifier = Field(
+        description="图位 item_version；来自图组目录对应图位。"
+    )
+    expected_target_version: Identifier = Field(
+        description="素材/镜头 row_version；来自同一目标图组目录的 target_version。"
+    )
 
 
 class ImageToolParameters(InputModel):

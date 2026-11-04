@@ -1,4 +1,5 @@
 from short_drama.agent.tools.contracts import ToolSpec
+from short_drama.agent.tools.memory.search_memory_description import DESCRIPTION
 from short_drama.agent.tools.runtime import create_runtime_tool
 from short_drama.schemas.assistant.operations.tool_inputs import SearchMemory
 from short_drama.service.assistant.memory.memory_store import (
@@ -18,7 +19,7 @@ def invoke_locked(
 
 TOOL = create_runtime_tool(
     "runtime__search_memory",
-    "在本人账号的长期记忆中检索关键词。",
+    DESCRIPTION,
     SearchMemory,
     invoke_locked,
 )

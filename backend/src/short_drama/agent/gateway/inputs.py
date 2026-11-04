@@ -1,11 +1,20 @@
 """协议选择、托管媒体输入与冻结凭据校验。"""
 
+from urllib.parse import urlsplit
+
 from pydantic import ValidationError
 
 from short_drama.agent.gateway.contracts import AgentGatewayError
 from short_drama.ai.adapters.catalog import select_adapter
 from short_drama.ai.adapters.model_protocols import INTERFACE_BY_ID, PROTOCOL_ADAPTERS
 from short_drama.ai.gateway.canvas_credentials import CanvasCredentials
+
+
+def is_deepseek(snapshot: dict) -> bool:
+    """官方地址不依赖界面的自定义服务商标签；中转仍需明确声明。"""
+    return snapshot.get("provider") == "deepseek" or (
+        urlsplit(snapshot.get("base_url", "")).hostname == "api.deepseek.com"
+    )
 
 
 def select_protocol(snapshot: dict) -> str:

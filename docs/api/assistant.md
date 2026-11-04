@@ -2,6 +2,10 @@
 
 > 2026-10-30：正式 Worker 已切换 AgentRuntime.execute，由唯一 create_agent 图完整运行或恢复，普通工具不逐轮重投；正常最终答复直接保存，强制 reviewer／contract／continuation 已退役。下方相应旧流程只作历史背景；当前合同优先见单助手设置、正式图运行与停止恢复、问题与生成等待、代码与文件资源。
 
+## 会话标题
+
+新建会话默认标题为“新对话”。首条用户消息进入 Worker 后，助手与首轮任务并行使用该消息选定的文本模型生成标题，模型调用计入当前 Run 的实际预算；标题只保存一次，后续消息继续使用已保存标题。自动标题最多 12 个字符；生成失败时，以首条消息内容截短至最多 12 个字符作为兜底。已发送但受理不明的标题请求保留账本记录，不重复外发且不阻塞主任务恢复。标题更新通过 `conversation.title.updated` 会话事件推送；用户手动改名最多 120 个字符，改名递增会话版本，自动标题不会覆盖。
+
 ## 单助手设置
 
 | 方法 | 路径 | 契约 |
@@ -11,9 +15,9 @@
 
 PATCH 可提交 `custom_instructions`（最多 16000 字符，空白或 `null` 使用默认指令）、`workbench_enabled`、`media_generation_enabled`、`long_term_memory_enabled`（后三项为严格布尔值）。`settings_version` 为非负十进制版本；响应另有只读 `default_instructions`。三项开关默认开启；工作台关闭时保留媒体偏好，实际媒体能力由两者共同决定。用户调用额度、输出 Token 额度、子任务并发和默认媒体数量已从接口与数据库移除，旧字段返回 422。
 
-四项偏好共用 `agent_preferences.settings_version`，原独立媒体策略接口及 `policy_version` 已退役。前端仅提交修改字段，文字输入 600ms 后串行同步，开关立即同步；409 与结果未知均保留草稿并先读取服务端核对。新 Run 冻结有效指令、设置版本、完整系统提示词、提示词／工具目录版本及 Skill 目录；模型调用、输出 Token 和子任务并发由内部运行预算提供。继续原 Task 的新 Run 读取最新设置，实时能力仍在工具与外发边界核验。Task 只保留真实 `media_usage` 统计，不限制用户媒体数量；未知结果重试继续使用原请求体及幂等键。
+四项偏好共用 `agent_preferences.settings_version`，原独立媒体策略接口及 `policy_version` 已退役。前端仅提交修改字段，文字输入 600ms 后串行同步，开关立即同步；409 与结果未知均保留草稿并先读取服务端核对。新 Run 冻结有效指令、设置版本、完整系统提示词、提示词／工具目录版本及 Skill 目录；模型调用与输出 Token 持久计量，子任务并发由冻结运行策略提供。继续原 Task 的新 Run 读取最新设置，实时能力仍在工具与外发边界核验。Task 只保留真实 `media_usage` 统计，不限制用户媒体数量；未知结果重试继续使用原请求体及幂等键。
 
-新图通过唯一 `build_agent` 创建真实 `create_agent`，Context、框架摘要、最多 16 项工具选择、当前范围 Skill 依赖及调用限制使用公开 middleware API。主模型、selector、summary 共用受保护模型工厂与父 Run 的持久预算；SDK 重试关闭，未知发送不重发。凭据、连接、SDK、transport 与回调不进入图 checkpoint。活动 Skill 从真实 Operation 恢复完整调用组，每条结果保留自己的来源和 activation 身份；同组已撤回成员只保留无正文的真实终态回执。来源遗忘撤回正文与摘要保留资格。同 Task 新 Run 使用统一的 TaskInput 稳定消息身份合并历史，旧输入与触发输入各保留一次并维持原顺序。响应截断或工具参数无效仍先结算可靠供应商用量；没有可靠输出用量时保留预占，只有确认未受理才释放。
+新图通过唯一 `build_agent` 创建真实 `create_agent`，Context、框架摘要、最多 16 项工具选择、当前范围 Skill 依赖及截断恢复使用公开 middleware API。主模型、selector、summary 共用受保护模型工厂与父 Run 的持久账本，不设累计 token 或调用次数硬限；SDK 重试关闭，未知发送不重发。凭据、连接、SDK、transport 与回调不进入图 checkpoint。活动 Skill 从真实 Operation 恢复完整调用组，每条结果保留自己的来源和 activation 身份；同组已撤回成员只保留无正文的真实终态回执。来源遗忘撤回正文与摘要保留资格。同 Task 新 Run 使用统一的 TaskInput 稳定消息身份合并历史，旧输入与触发输入各保留一次并维持原顺序。响应截断或工具参数无效仍先结算可靠供应商用量；没有可靠输出用量时保留预占，只有确认未受理才释放。
 
 > 2026-10-28 兼容清理：Worker 只执行 Harness；`TaskRead` 不再返回 `interruptions_supported`。停止或暂停后使用普通消息继续，前端不再附带旧 resume 控制。决策次数和输出 token 预算必须为正整数，工具次数与活动时长仍可不限；下文相应的旧引擎、旧字段与旧预算描述为历史记录。
 
@@ -21,12 +25,18 @@ PATCH 可提交 `custom_instructions`（最多 16000 字符，空白或 `null` �
 
 ## 正式图运行与停止恢复（2026-10-30）
 
+连接与响应独立计时：DNS／TCP／TLS共同使用首次30秒的连接期限，只有未发送任何请求字节的连接超时才重试5次，期限依次为60／90／120／150／180秒。响应默认120秒无有效正文、思考或工具参数进展则以 `agent_response_timeout` 结束，不自动重发；HTTP头、心跳和空工具参数帧不续期。连接耗尽为 `agent_connection_timeout`，思考／强制工具选择冲突为 `agent_tool_choice_conflict`，与 `agent_tools_unsupported` 区分。非JSON的HTTP错误体不保存正文，但保留明确拒绝的HTTP分类。
+
+`RunRead.connection_retries` 为数组，成员含 `model_call_id`、`retry_no`、`max_retries`、`timeout_seconds`；只投影运行中调用的重试状态。`model.connection` 事件通知读取快照，刷新通过 `/state` 恢复；发送前准入、完成或错误结算清除状态。界面只展示“连接超时，正在重试 1/5”，不展示本次连接等待秒数；最终失败只展示后端持久会话消息。
+
+`TaskRead.can_change_model` 在 `paused_error`、`paused_budget` 或 `stopped` 且控制／操作已结算后为true。普通发送携带原 `task_id` 和可选 `model_config_id`，在同Task创建新Run并冻结所选模型当前配置，旧Run和已保存成果保留；执行中仍拒绝更换模型。若前次 `run.error.accepted_unknown=true`，需核对原调用并显式携带 `confirm_unknown:true` 才能继续，否则409 `assistant_acceptance_check_required`；此确认随原请求体和幂等键一起恢复，不构成自动重发旧Run。新Run不会回放旧模型图。
+
 
 `MessageRead.interrupted` 与 `message.created.interrupted` 表示在完成前中断的正文，原 `text_parts` 继续提供轮次和事件身份。失败／取消结算持租约围栏合并已保存 delta，不截尾4000字、不重复已落库轮次；内部引用为 `{type:"interrupted_response",turn_id:"..."}`。该消息用于展示，普通历史投影不注入其正文，记忆整理仅取得固定不完整占位。
 
 `RunRead.stopping` 在running且已持久停止／删除控制时为true，表示正在收尾。活动执行约1秒读取轻量控制状态；续租仍按原频率并受真实有效期约束，短暂查询异常不等于用户停止。停止不能保证供应商未受理、无费用或已提交原生媒体被撤销；取消信号到达后，底层同步IO仍可能收尾，stopping不承诺即时Run终态。
 
-`run.error` 提供稳定 `code`、统一安全 `message`；受理不明时另带 `accepted_unknown:true`，false不额外输出。`agent_execution_error` 是不可自动恢复的执行错误；`agent_checkpoint_codec_unsupported`、`agent_checkpoint_corrupt`、`agent_checkpoint_version_mismatch` 分别表示未知格式、损坏与版本围栏不一致，保留原状态供核对，不强制重放。模型成功与轨迹归档可用性分开结算，资源 `available:false` 不代表模型调用失败。
+`run.error` 提供稳定 `code`、统一安全 `message`；受理不明时另带 `accepted_unknown:true`，false不额外输出。失败／取消的统一结算还核对非标题模型账本的在途或unknown调用，Worker失联与在途停止不会漏记确认要求；单独标题调用未知不阻止主任务继续。`agent_execution_error` 是不可自动恢复的执行错误；`agent_checkpoint_codec_unsupported`、`agent_checkpoint_corrupt`、`agent_checkpoint_version_mismatch` 分别表示未知格式、损坏与版本围栏不一致，保留原状态供核对，不强制重放。模型成功与轨迹归档可用性分开结算，资源 `available:false` 不代表模型调用失败。
 
 HTTP 受理继续返回 Task／Run，正式 Worker 领取冻结执行快照后一次完成图循环。工具目录使用 Run 的 permitted_tool_names，Skill 激活／释放与正文只写当前 scope 的 graph state；Task.selected_skills 为用户手选冻结元数据。正常答复直接写为 kind=reply 的助手消息，不增加验收模型 Turn。
 
@@ -36,7 +46,7 @@ HTTP 受理继续返回 Task／Run，正式 Worker 领取冻结执行快照后�
 
 最终纯文本响应期间受理的补充由框架公开 after_model 路由继续消费；最终 checkpoint 已完成后的补充，在 finish 行锁内交给同 Run 下一投递。此交接不发布旧答复、不更换线程／scope／配置或重置额度，未进入 graph 的输入不提前推进应用水位。wait 与 finish 均持锁重查取消、停止控制和 may_decide，停止／失权优先取消，保留已受理原生业务结果。
 
-完整 astream／checkpoint／pending writes 退出后才释放 Run 租约。恢复区分过期运行、等待和终态；未就绪 interrupt 不执行，已完成 checkpoint 不重复请求模型。已提交工具收据与 Command 可重放；模型 sent 或缺少可确认 graph 回执的崩溃窗口记 unknown，失败原因 agent_acceptance_unknown，不盲重发。父 Run 预算与框架本地上限触顶均进入 paused_budget。
+完整 astream／checkpoint／pending writes 退出后才释放 Run 租约。恢复区分过期运行、等待和终态；未就绪 interrupt 不执行，已完成 checkpoint 不重复请求模型。已提交工具收据与 Command 可重放；模型 sent 或缺少可确认 graph 回执的崩溃窗口记 unknown，失败原因 agent_acceptance_unknown，不盲重发。正式Run无累计token／模型调用硬停止；模型原生输出上限、上下文容量、无进展、权限与停止各自处理。
 
 停止／暂停后普通消息在同 Task 创建新 Run，读最新助手设置并保留 Task 已生成成果与用量；通过前一 Run 真实成功创建收据冻结明确主体身份续接成果，不向工具开放 sibling／所有 Task 操作。纯讨论重答禁用工具、排除未来消息并原位替换旧答复。图片只水合读取后的下一主模型请求，持久账本／typed checkpoint 只留引用；遗忘撤回包含旧正文的消息、摘要与后续推导。
 
@@ -96,7 +106,7 @@ description 末尾可附唯一的 `workbench-inputs` JSON 围栏块：只允许 
 
 当前新 Run 固定 `assistant-runtime.1`。`TaskRead.interruptions` 返回 `stop/redirect/resume` 能力，其中 `redirect/resume` 恒为 false；控制 DTO 只接受 `kind='stop'`，其他 kind 或旧字段返回 422。停止后直接发送普通消息，以同 Task 的新 Run 继续。运行中补充按原输入版本在下一边界生效。旧引擎须经 [006 离线切换](../database/migrations/2026-10-29-assistant-runtime/README.md)终结旧编排，界面显示“执行引擎已更新，请重新发送继续”；已有消息、成果和已受理生成保留，旧 checkpoint 不恢复。下文句式授权和旧 redirect／resume 记录仅为历史说明。
 
-Harness 处于 `stopped/paused_error/paused_budget` 时，向原任务发送普通消息（包括“继续”）即在同一 Task 下创建新 Run 并调度；刷新后仍保留暂停任务作为发送目标。消息和成果、已结算工具历史及活动 Skill 继承，撤销来源和遗忘规则继续生效。冻结模型配置被修改时返回 `assistant_model_changed`，活跃操作未结算返回冲突；相同幂等键复用已受理结果。此续执行不经过旧中断 control。Harness 的任务创建时冻结单 Run 预算（`AGENT_RUN_DECISION_CAP`/`AGENT_RUN_OUTPUT_TOKEN_CAP`），超限暂停为 `paused_budget`，"继续"即新 Run 续期，不设 Task 总上限；升级前的 `null` 预算快照继续按无限解释。
+Harness 处于 `stopped/paused_error/paused_budget` 时，向原任务发送普通消息（包括“继续”）即在同一 Task 下创建新 Run 并调度；刷新后仍保留暂停任务作为发送目标。消息和成果、已结算工具历史及活动 Skill 继承，撤销来源和遗忘规则继续生效。冻结模型配置被修改时返回 `assistant_model_changed`，活跃操作未结算返回冲突；相同幂等键复用已受理结果。此续执行不经过旧中断 control。正式Harness不再使用累计token／调用次数终止Run，旧额度设置已删除；已失败或停止的任务仍通过普通消息创建新Run继续，受理不明必须先确认。
 
 当前新冻结请求使用工具 schema v4；已有 v3 及更早请求按原冻结协议重放。写工具不含 `request_message_id/request_hash` 等句式授权字段，主体、目标、版本与服务端可信 Actor 校验保留。`load_skill` 参数为 `name/content_version/purpose`；`read_resource` 参数为目录 `ref_id/purpose` 及可选 `detail/crop/offset/limit`；`read_skill_resource` 使用 `activation_id/path/offset/limit/purpose` 及可选图片 detail／crop。方法包仅支持文本和图片资源。schema 的唯一来源为 `agent/tools/registry.py`，客户端不可构造任意工具历史。
 
@@ -498,7 +508,7 @@ V3 注册三个只读方法工具，与既有工具合计二十三项；它们�
 
 整理作业 `status` 支持 `pending/running/succeeded/failed/stale/cancelled/abandoned`。凭据／配置及明确鉴权失败直接 `failed`；明确限流，以及抽取／摘要任务已持久化完整回执后的内容校验失败，最多三次发送。内容纠正保留来源覆盖约束、各次回执及实际发送次数，安全失败说明沿原 `error.message` 返回。只有可重试抽取耗尽后成为 `abandoned`，允许抽取水位越过；摘要耗尽仍为 `failed`，不扩大手动重试入口（仍仅接受 `failed`）。一般失败及受理不明不推进水位，后者不自动重发；此处次数不限制创作 Task 的累计执行。
 
-模型输入在冻结及最终发送前检查总预算，纳入任务、Skill、工具、历史和待回传工具结果；已完整表示的近期用户输入不重复装配。Harness 默认平台窗口为 65536 tokens，可使用有效的[模型容量声明](agent.md#模型选择与运行反馈)，平台上限 262144；预留输出（最多 8192，且不超过窗口八分之一）、工具结果 4096 和安全余量 2048，近期完整工具组配额随容量缩小。使用 JSON UTF-8 字节／3 及媒体估算，不是供应商 tokenizer；实际输入和缓存用量另存 Turn／Run usage，不将声明或估算当作供应商窗口实测。超限且有有效的任务约束整理在途时，保留原输入并等待作业；没有可推进作业或整理失败时进入 `paused_budget`，保留明确约束及未闭合工具配对，不发送请求、不增加调用数。
+正式Harness在最终发送前按有效窗口、当次实际输出、4096工具余量及2048安全余量检查输入，摘要按70%触发／25%保留，必要时再整理一次。主输出采用有效声明／官方配置／默认初值，selector2048、摘要8192、标题64单独限额。估算不代表供应商tokenizer；固定约束仍不适配时保留输入报错。历史单轮助手和后台记忆维护继续使用原有边界。
 
 长逻辑任务另使用 `kind=task_state` 的后台作业整理已应用的旧输入前缀，近期原文与新纠正继续直接注入。软阈值为 16000 UTF-8 字节；每轮新来源不超过 48000 字节／128 条，尾部约 8000 字节且至少保留最后一条。有效约束放在任务 `effective_state.input_compaction`；模型接收 `task_constraints` 和近期 `inputs`，原始消息、任务目标及完整来源保留，仍可用 `read_conversation_history` 回查。事实最多24条、估算5000 tokens，必须覆盖新增未受限用户来源及全部父事实；旧来源通过固定父作业及事实索引追溯，不无限展开消息 ID。
 
@@ -594,6 +604,12 @@ memory_selections 最多 200 项、不能重复，非空选择要求 clear_deriv
 
 模型行版本输出十进制字符串，输入兼容正整数与十进制字符串；前端始终保留字符串。声明绑定配置版本、地址、模型标识和凭据身份；更新声明会增加模型版本，并保留未变更的已验证工具协议证据。配置发生变化后，旧声明失效。声明本身不调用模型，也不代表真实供应商验证。
 
-`PATCH /agent/models/{id}/inputs` 可选 `context_window_tokens` 为 16384–1048576 的整数。省略时保留仍有效的原容量声明，显式 `null` 清除；无有效声明使用平台默认 65536，平台有效上限 262144。返回的 `context_window_tokens` 是实际参与预算的值，`context_window_evidence` 为 `declared/platform_default`，与图像／音频的 `evidence` 分开。当前前端仅同步 DTO 与请求函数，不提供容量配置界面；声明不是供应商窗口探测或视觉语义验收。
+`PATCH /agent/models/{id}/inputs` 支持context_window_tokens（16384–1048576）及max_output_tokens（1–1048576），省略保留有效旧声明，null清除；声明绑定模型版本、地址、模型键与凭据身份。有效声明优先，精确官方api.deepseek.com的deepseek-flash／deepseek-v4-pro采用1000000窗口及393216输出；其它默认65536／8192，无262144截顶。DTO增加max_output_tokens、output_capacity_evidence，两个capacity evidence为declared／official_profile／platform_default。未新增配置界面，声明不是语义能力实测。
 
 当前 SDK 适配中，Chat 协议允许图片和 MP3/WAV 音频内联；Responses 协议允许图片，不能编码音频输入；视频由图片采样与可选音轨组合输入。协议或供应商明确拒绝所选组合时，运行在对话内给出安全中文反馈。用户决定更换模型、减少附件或对视频明确选择仅画面，系统不自动降级。
+
+### 接续状态与完整工具回执
+
+RunRead.recovery_states默认为[]，元素为{scope_id,model_call_id,kind:output_continuation|context_compaction}。run.recovery事件payload为{recovery_states:[当前完整列表]}，关联event.run_id，终态返回空列表。前端对应“正在继续生成”／“正在整理上下文”；连接超时仍仅提示“连接超时，正在重试 1/5”。
+
+工具runtime__read_operation_receipt增加include_result=false、character_offset=0、character_limit=4000（最大6000），通过result_page返回content、total_characters、checksum_sha256和next_offset；checksum针对整份原文。回读保持原scope／交接／来源资格；Skill正文须用原专用工具。

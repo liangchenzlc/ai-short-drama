@@ -261,10 +261,6 @@
   color: var(--assistant-secondary);
   line-height: 1.7;
 }
-.ai-assistant-failed {
-  color: var(--assistant-danger);
-  line-height: 1.75;
-}
 .ai-assistant-empty {
   display: grid;
   gap: 20px;

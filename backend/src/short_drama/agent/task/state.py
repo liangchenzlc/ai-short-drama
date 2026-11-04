@@ -121,6 +121,9 @@ def read_task(session, task, *, active_operation=_UNSET_OPERATION):
     selected = subject_catalog(task.context_snapshot)
     sources = {(item["project_id"], item["source_kind"], item["source_id"]) for item in selected}
     return TaskRead(
+        can_change_model=task.status in {"paused_error", "paused_budget", "stopped"}
+        and task.control_state == "none"
+        and operation is None,
         id=task.id,
         conversation_id=task.conversation_id,
         goal=task.goal,
@@ -225,13 +228,7 @@ def new_attempt_locked(
             "task_input_revision": task.applied_input_revision,
             "task_plan_revision": task.plan_revision,
         },
-        budget=budget_limits(
-            "harness",
-            caps={
-                "decision_calls": frozen["model_call_limit"],
-                "output_tokens": frozen["output_token_limit"],
-            },
-        ),
+        budget=budget_limits("harness"),
         usage=initial_usage(),
         message_status="pending",
         message_version=1,

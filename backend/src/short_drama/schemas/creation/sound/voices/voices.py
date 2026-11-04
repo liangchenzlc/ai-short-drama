@@ -38,15 +38,28 @@ class SoundModeEdit(InputModel):
 
 
 class NativeLine(InputModel):
-    character_id: Identifier
-    text: str = Field(min_length=1, max_length=500)
-    delivery: str = Field(default="", max_length=200)
-    speech: Literal["onscreen", "voiceover"] = "onscreen"
+    character_id: Identifier = Field(
+        description="说话角色素材 ID；使用当前项目已授权角色目录中的真实 ID。"
+    )
+    text: str = Field(min_length=1, max_length=500, description="该角色实际说出的台词文本。")
+    delivery: str = Field(
+        default="", max_length=200, description="可选表演/情绪提示，不是台词正文。"
+    )
+    speech: Literal["onscreen", "voiceover"] = Field(
+        default="onscreen", description="onscreen 表示画面内说话，voiceover 表示画外音。"
+    )
 
 
 class NativeDialogueDocument(InputModel):
-    lines: list[NativeLine] = Field(default_factory=list, max_length=20)
-    reviewed: bool = False
+    lines: list[NativeLine] = Field(
+        default_factory=list,
+        max_length=20,
+        description="按演出顺序排列的对白行；首版最多支持两位说话角色。",
+    )
+    reviewed: bool = Field(
+        default=False,
+        description="标记用户/创作者已明确核对该对白稿；不能由助手仅凭生成自动设为已核验。",
+    )
 
     @model_validator(mode="after")
     def speakers(self):

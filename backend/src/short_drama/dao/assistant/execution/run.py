@@ -125,6 +125,8 @@ class AgentRunDAO:
             AgentRun.finished_at,
             AgentRun.checkpoint["authorization"]["mode"].as_string().label("mode"),
             AgentRun.checkpoint["awaiting_artifacts"].label("awaiting_artifacts"),
+            AgentRun.checkpoint["model_connections"].label("model_connections"),
+            AgentRun.checkpoint["recovery_states"].label("recovery_states"),
             AgentRun.config_snapshot["name"].as_string().label("model_name"),
         ).where(AgentRun.conversation_id == conversation_id)
         if task_ids is not None:
@@ -143,6 +145,8 @@ class AgentRunDAO:
             checkpoint = {
                 "authorization": {"mode": values.pop("mode") or "discuss"},
                 "awaiting_artifacts": values.pop("awaiting_artifacts") or [],
+                "model_connections": values.pop("model_connections") or {},
+                "recovery_states": values.pop("recovery_states") or {},
             }
             snapshot = {"name": values.pop("model_name") or "文本模型"}
             result.append(RunProjection(**values, checkpoint=checkpoint, config_snapshot=snapshot))
@@ -168,7 +172,7 @@ class AgentRunDAO:
                 AgentRun.conversation_id,
                 AgentRun.status,
                 AgentRun.task_id,
-                func.left(AgentTask.goal, 120).label("goal"),
+                func.substr(AgentTask.goal, 1, 120).label("goal"),
             )
             .outerjoin(AgentTask, AgentTask.id == AgentRun.task_id)
             .where(

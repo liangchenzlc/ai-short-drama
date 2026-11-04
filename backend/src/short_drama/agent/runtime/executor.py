@@ -1,7 +1,9 @@
 """One Worker delivery runs or resumes the complete framework graph."""
 
 import asyncio
+import json
 import logging
+import sys
 from dataclasses import replace
 
 from langchain.agents.middleware import ModelCallLimitMiddleware
@@ -37,6 +39,7 @@ from short_drama.agent.sandbox.backend import ScopedBackend
 from short_drama.agent.sandbox.workspace import SandboxWorkspaceService, cleanup_run
 from short_drama.agent.tools.langchain import create_langchain_tool
 from short_drama.agent.tools.registry import get_spec
+from short_drama.ai.prompts.loader import load_prompt
 from short_drama.core.exceptions import BusinessError
 from short_drama.service.ai_config.management.assistant_models import model_credentials
 from short_drama.service.assistant.execution.graph import AgentGraphService
@@ -45,6 +48,17 @@ from short_drama.service.assistant.execution.scope import AgentExecutionScopeSer
 from short_drama.service.assistant.execution.waiting import GenerationWaitService
 
 logger = logging.getLogger(__name__)
+_TITLE_MAX_LENGTH = 12
+
+
+def conversation_title(value: str, fallback: str) -> str:
+    title = " ".join(value.split()).strip(" \"'`“”‘’#*")
+    title = title[:_TITLE_MAX_LENGTH].rstrip(" .。!！?？,，;；:：")
+    return title or fallback
+
+
+def title_fallback(value: str) -> str:
+    return conversation_title(value, "新对话")
 
 
 def recoverable_persistence_error(error: Exception) -> bool:
@@ -187,7 +201,6 @@ class AgentRuntime:
         await asyncio.to_thread(events.recover)
         resources = GraphResources(context, claim.snapshot, self.resolver_factory)
         callbacks = RunModelLedger(context).callbacks(
-            max_output_tokens=claim.budget["output_tokens_per_call"],
             hydrate=resources.hydrate,
             project_input=resources.project_input,
             input_scope=resources.input_scope,
@@ -252,46 +265,105 @@ class AgentRuntime:
             checkpointer=saver,
             system_prompt=system_prompt,
         )
-        # 每次实际模型请求均扣父 Run 账本；图步数仅容纳预算内所有中间件/工具节点。
-        config = {**saver._config(), "recursion_limit": 16 * claim.budget["decision_calls"] + 32}
+        # 图步数不再把累计模型计量变成任务截断条件；停止和无进展由各自边界处理。
+        config = {**saver._config(), "recursion_limit": sys.maxsize}
+
+        async def generate_title():
+            fallback = title_fallback(claim.title_input)
+            title = fallback
+            if not claim.title_attempted:
+                try:
+                    title_callbacks = replace(
+                        callbacks,
+                        stream=False,
+                        max_output_tokens=64,
+                        timeout_seconds=min(callbacks.timeout_seconds, 10),
+                        on_model_content=None,
+                        on_text_delta=None,
+                    )
+                    title_model = build_chat_model(
+                        claim.snapshot,
+                        model_credentials(claim.snapshot, self.settings.encryption_key),
+                        callbacks=title_callbacks,
+                        transport=self.transport,
+                    )
+                    title_request = (
+                        load_prompt("assistant/conversation_title.md")
+                        + "\n\n首条消息："
+                        + json.dumps(claim.title_input[:4000], ensure_ascii=False)
+                    )
+                    response = await title_model.ainvoke(
+                        [HumanMessage(content=title_request)],
+                        config={"metadata": {"lc_source": "conversation_title"}},
+                    )
+                    title = conversation_title(response.text, fallback)
+                except Exception:
+                    logger.exception(
+                        "agent_conversation_title_generation_failed",
+                        extra={"run_id": claim.run_id},
+                    )
+            try:
+                await asyncio.to_thread(self._service, "save_generated_title", claim, title)
+            except Exception:
+                logger.exception(
+                    "agent_conversation_title_save_failed",
+                    extra={"run_id": claim.run_id},
+                )
 
         async def deliver():
-            snapshot = await graph.aget_state(config, subgraphs=True)
-            if not snapshot.values:
-                snapshot = None
-            saved = (
-                snapshot
-                if snapshot is not None and not snapshot.next and not claim.pending_input
-                else await stream_run(
-                    graph,
-                    claim=claim,
-                    context=context,
-                    config=config,
-                    snapshot=snapshot,
-                    initial_messages=initial_messages,
-                    waits=context.waits,
-                    events=events,
+            title_task = asyncio.create_task(generate_title()) if claim.title_input else None
+            try:
+                snapshot = await graph.aget_state(config, subgraphs=True)
+                if not snapshot.values:
+                    snapshot = None
+                saved = (
+                    snapshot
+                    if snapshot is not None and not snapshot.next and not claim.pending_input
+                    else await stream_run(
+                        graph,
+                        claim=claim,
+                        context=context,
+                        config=config,
+                        snapshot=snapshot,
+                        initial_messages=initial_messages,
+                        waits=context.waits,
+                        events=events,
+                    )
                 )
-            )
-            if saved.interrupts:
+                if title_task:
+                    await title_task
+                if saved.interrupts:
+                    await asyncio.to_thread(
+                        context.sandbox.release_for_wait, claim.run_id, fence=claim.fence
+                    )
+                    await asyncio.to_thread(self._service, "wait", claim)
+                    return
+                message = saved.values["messages"][-1]
+                if (
+                    not isinstance(message, AIMessage)
+                    or message.tool_calls
+                    or not message.text.strip()
+                ):
+                    raise AgentGatewayError("empty_agent_response")
+                from short_drama.service.assistant.execution.tools import AgentToolExecutionService
+
+                content = await asyncio.to_thread(
+                    AgentToolExecutionService(context).model_output, saved.values, message
+                )
                 await asyncio.to_thread(
-                    context.sandbox.release_for_wait, claim.run_id, fence=claim.fence
+                    self._service,
+                    "finish",
+                    claim,
+                    status="succeeded",
+                    content=content,
+                    model_call_id=message.response_metadata.get("protected_usage", {}).get(
+                        "model_call_id"
+                    ),
                 )
-                await asyncio.to_thread(self._service, "wait", claim)
-                return
-            message = saved.values["messages"][-1]
-            if not isinstance(message, AIMessage) or message.tool_calls or not message.text.strip():
-                raise AgentGatewayError("empty_agent_response")
-            await asyncio.to_thread(
-                self._service,
-                "finish",
-                claim,
-                status="succeeded",
-                content=message.text,
-                model_call_id=message.response_metadata.get("protected_usage", {}).get(
-                    "model_call_id"
-                ),
-            )
+            finally:
+                if title_task and not title_task.done():
+                    title_task.cancel()
+                    await asyncio.gather(title_task, return_exceptions=True)
 
         try:
 

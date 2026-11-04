@@ -251,21 +251,29 @@ def test_schema_fields_named_type_are_not_mistaken_for_media_blocks():
     assert_reference_payload({"type": ["string", "null"]})
 
 
-def test_runtime_budget_requires_finite_decisions_and_output_but_allows_unlimited_time():
+def test_runtime_budget_allows_unlimited_cumulative_usage_but_rejects_invalid_values():
     from short_drama.agent.core import ENGINE_VERSION
     from short_drama.agent.core.events import budget_limits, initial_usage
     from short_drama.agent.gateway.contracts import AgentGatewayError
     from short_drama.agent.runtime.claims import checked_budget
 
-    frozen = budget_limits("harness", caps={"decision_calls": 32, "output_tokens": 131072})
+    frozen = budget_limits("harness")
+    assert frozen["decision_calls"] is None
+    assert frozen["output_tokens"] is None
     available = SimpleNamespace(
         checkpoint={"engine": ENGINE_VERSION},
         budget=frozen,
-        usage={**initial_usage(), "tool_calls": 400, "active_seconds": 7200},
+        usage={
+            **initial_usage(),
+            "decision_calls": 300,
+            "output_tokens": 3_000_000,
+            "tool_calls": 400,
+            "active_seconds": 7200,
+        },
     )
     assert checked_budget(available) == frozen
     for key in ("decision_calls", "output_tokens"):
-        available.budget = {**frozen, key: None}
+        available.budget = {**frozen, key: -1}
         with pytest.raises(AgentGatewayError, match="invalid_agent_budget"):
             checked_budget(available)
 

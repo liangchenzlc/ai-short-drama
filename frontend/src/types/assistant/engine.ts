@@ -74,7 +74,9 @@ export interface AgentModel {
     video: 'sampled_frames' | 'unsupported';
     evidence: 'declared' | 'model_family' | 'text_only' | 'runtime';
     context_window_tokens?: number;
-    context_window_evidence?: 'declared' | 'platform_default';
+    context_window_evidence?: 'declared' | 'official_profile' | 'platform_default';
+    max_output_tokens?: number;
+    output_capacity_evidence?: 'declared' | 'official_profile' | 'platform_default';
   };
 }
 export interface AgentModelPage {
@@ -110,6 +112,11 @@ export interface AgentMessagePage {
   offset: number;
   limit: number;
 }
+export interface AgentRunRecoveryState {
+  scope_id: string;
+  model_call_id: string;
+  kind: 'output_continuation' | 'context_compaction';
+}
 export interface AgentRun {
   task_id?: string | null;
   id: string;
@@ -120,6 +127,8 @@ export interface AgentRun {
   mode: 'auto' | 'discuss' | 'single' | 'workflow';
   model_config_id: string;
   model_name: string;
+  connection_retries?: { model_call_id: string; retry_no: number; max_retries: number; timeout_seconds: number }[];
+  recovery_states: AgentRunRecoveryState[];
   error: { code: string; message?: string; accepted_unknown?: boolean } | null;
   usage: Record<string, unknown>;
   budget: Record<string, unknown>;

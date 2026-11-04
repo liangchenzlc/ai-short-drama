@@ -9,8 +9,14 @@ from short_drama.schemas.creation.assets.management.assets import AssetCreate, A
 class AssetLibraryCreate(AssetCreate):
     """Public manual creation; model/media/state are server-owned."""
 
-    model_id: None = Field(default=None, exclude=True)
-    media_id: None = Field(default=None, exclude=True)
+    model_id: None = Field(
+        default=None, exclude=True, description="服务端管理的模型配置身份；助手新建素材时禁止传入。"
+    )
+    media_id: None = Field(
+        default=None,
+        exclude=True,
+        description="服务端管理的已采用媒体身份；助手新建素材时禁止传入。",
+    )
 
     @model_validator(mode="before")
     @classmethod

@@ -1,6 +1,7 @@
 from short_drama.agent.skill.progressive import release_locked
 from short_drama.agent.tools.contracts import ToolSpec
 from short_drama.agent.tools.runtime import create_runtime_tool
+from short_drama.agent.tools.skill.release_skill_description import DESCRIPTION
 from short_drama.schemas.assistant.operations.tool_inputs import ReleaseSkill
 
 
@@ -21,7 +22,7 @@ def invoke_locked(
 
 TOOL = create_runtime_tool(
     "runtime__release_skill",
-    "阶段完成后释放当前任务自动方法正文；手选方法由用户管理，保留历史回执。",
+    DESCRIPTION,
     ReleaseSkill,
     invoke_locked,
     skill_state=True,

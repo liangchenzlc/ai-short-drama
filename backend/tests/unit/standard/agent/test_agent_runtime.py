@@ -10,6 +10,20 @@ from short_drama.agent.runtime.delta_buffer import _DeltaBuffer
 from short_drama.tasks.celery_app import agent_queue, make_celery, topology
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("雨夜车站里相遇的两个陌生人", "雨夜车站里相遇的两个陌生"),
+        ("雨夜车站悬疑", "雨夜车站悬疑"),
+    ],
+)
+def test_automatic_conversation_titles_are_at_most_twelve_characters(text, expected):
+    from short_drama.agent.runtime.executor import conversation_title, title_fallback
+
+    assert conversation_title(text, "新对话") == expected
+    assert title_fallback(text) == expected
+
+
 def test_lease_renewal_jitter_does_not_cancel_valid_execution(caplog):
     from short_drama.agent.runtime.lease import run_with_lease
     from short_drama.core.time import utcnow

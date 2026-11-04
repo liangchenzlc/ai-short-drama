@@ -43,6 +43,8 @@ def provider_failure_code(status, content):
     except (ValueError, TypeError, AttributeError):
         details = ""
     unsupported = any(word in details for word in ("not support", "unsupported", "not allowed"))
+    if "thinking" in details and "tool_choice" in details and unsupported:
+        return "agent_tool_choice_conflict"
     if unsupported:
         if any(word in details for word in ("tool", "function_call")):
             return "agent_tools_unsupported"
@@ -75,7 +77,7 @@ class ModelCallbacks:
     hydrate: Callable[[list], Awaitable[tuple]] | None = None
     project_input: Callable[[list], list] | None = None
     input_scope: Callable[[list], AbstractContextManager[None]] | None = None
-    max_output_tokens: int = 8192
+    max_output_tokens: int | None = None
     timeout_seconds: float = 120
     stream: bool = True
     resources: tuple = ()

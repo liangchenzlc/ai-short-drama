@@ -18,6 +18,7 @@ export function isAssistantAdmissionRejection(error: { code?: string; status?: n
     (error.status === 409 &&
       new Set([
         'assistant_model_frozen',
+        'assistant_acceptance_check_required',
         'assistant_model_changed',
         'assistant_task_finished',
         'assistant_task_stopping',

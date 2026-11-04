@@ -14511,6 +14511,62 @@
       "support": [
         "frontend/e2e/support/studio-fixture.ts"
       ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_output_recovery.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/support/assistant_http.py"
+      ]
+    },
+    {
+      "path": "backend/tests/unit/standard/agent/test_tool_result_offloading.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": [
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/support/assistant_http.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_output_recovery.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/support/assistant_http.py"
+      ]
+    },
+    {
+      "path": "backend/tests/integration/standard/assistant/test_tool_result_offloading.py",
+      "features": [
+        "standard.agent",
+        "standard.assistant"
+      ],
+      "runner": "mysql",
+      "level": "mysql",
+      "requires": [],
+      "support": [
+        "backend/tests/support/assistant_runtime.py",
+        "backend/tests/support/assistant_http.py"
+      ]
     }
   ],
   "auxiliary": [

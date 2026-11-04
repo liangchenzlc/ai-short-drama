@@ -7,40 +7,26 @@ from pydantic import AfterValidator, Field
 
 from short_drama.agent.context.delegation import scope_snapshot_locked
 from short_drama.agent.context.operation_receipts import scoped_operation_locked
-from short_drama.agent.context.subjects import eligible_snapshot, subject_memory_keys
+from short_drama.agent.context.tool_results import eligible_scope_keys as eligible_scope_keys
+from short_drama.agent.context.tool_results import source_context_eligible
 from short_drama.agent.memory.sources import restricted_messages
 from short_drama.agent.resources.audit import pixels_delivered
 from short_drama.agent.task.sources import READ_TOOLS
 from short_drama.core.exceptions import WorkflowError
 from short_drama.dao.assistant.execution.transcript import AgentTranscriptDAO
 from short_drama.schemas.base import Identifier, InputModel, nonblank
-from short_drama.service.assistant.context.subject import selection_metadata
 from short_drama.utils.json_digest import digest
 
 NOTE_TOKENS = 3000
 
 
-def eligible_scope_keys(session, owner_id, snapshot, restricted):
-    subjects = eligible_snapshot(snapshot, restricted)
-    available = {
-        item["subject_key"]
-        for item in selection_metadata(session, owner_id, subjects)
-        if item["availability"] != "unavailable"
-    }
-    return subject_memory_keys(
-        {
-            "subjects": [
-                item
-                for item in (subjects or {}).get("subjects", [])
-                if item["subject_key"] in available
-            ]
-        }
-    )
-
-
 class RecordObservation(InputModel):
-    operation_id: Identifier
-    kind: Literal["observation", "inference"] = "observation"
+    operation_id: Identifier = Field(
+        description="本任务中产生证据的成功读取 operation_id；来自真实 operation 回执。"
+    )
+    kind: Literal["observation", "inference"] = Field(
+        default="observation", description="observation 为直接证据，inference 为明确标识的推断。"
+    )
     source_quote: Annotated[
         str,
         Field(
@@ -49,7 +35,15 @@ class RecordObservation(InputModel):
             "已交付像素的观察可留空。",
         ),
     ] = ""
-    note: Annotated[str, Field(min_length=1, max_length=1000), AfterValidator(nonblank)]
+    note: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=1000,
+            description="跨压缩需保留的简短结论；不可超出 source_quote 支持范围。",
+        ),
+        AfterValidator(nonblank),
+    ]
 
 
 def _contents(value):
@@ -89,17 +83,8 @@ def _eligible(source, run, restricted, scope_keys, state=None):
     if source is None or source.status != "succeeded" or source.tool_name not in READ_TOOLS:
         return False
     context = (source.tool_result or {}).get("source_context")
-    return bool(
-        context is not None
-        and context["memory_epoch"] == run.checkpoint.get("memory_epoch", 0)
-        and set(context["subject_keys"]).issubset(scope_keys)
-        and not {str(value) for value in restricted}.intersection(context["source_message_ids"])
-        and (
-            state is None
-            or set(context["skill_activation_ids"]).issubset(
-                item["id"] for item in state.get("skill_activations", []) if item.get("active")
-            )
-        )
+    return source_context_eligible(
+        context, run.checkpoint.get("memory_epoch", 0), restricted, scope_keys, state
     )
 
 
