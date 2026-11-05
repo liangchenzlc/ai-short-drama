@@ -1,3 +1,4 @@
+import { brand } from '@host/shared/branding';
 import { settingsPath, skillsPath } from '@host/shared/navigation/paths';
 import { Icon } from '@host/shared/ui/Icon';
 import type { MainPage } from '@host/types/app/layouts/studio/components/Sidebar';
@@ -5,12 +6,11 @@ import { Link } from 'react-router-dom';
 export function Sidebar({ page }: { page: MainPage }) {
   return (
     <aside className="studio-sidebar">
-      <Link className="studio-brand" to="/projects" aria-label="短剧工作台首页">
-        <span className="studio-brand-mark" aria-hidden="true">
-          <Icon name="film" size={24} />
-        </span>
-        <span>
-          短剧工作台<small>AI 短剧创作空间</small>
+      <Link className="studio-brand" to="/projects" aria-label={`${brand.name} 首页`}>
+        <img className="studio-brand-mark" src={brand.assets.mark} alt="" aria-hidden="true" />
+        <span className="studio-brand-copy">
+          <span title={brand.name}>{brand.name}</span>
+          <small title={brand.tagline}>{brand.tagline}</small>
         </span>
       </Link>
       <nav aria-label="主导航">

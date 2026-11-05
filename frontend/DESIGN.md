@@ -1,5 +1,5 @@
 ---
-name: 短剧工作台
+name: Miniart
 description: 中性炭黑、紧凑的中文桌面创作与剪辑界面
 colors:
   accent-fill: "#f5f5f5"
@@ -165,7 +165,9 @@ components:
     height: "20px"
 ---
 
-# Design System: 短剧工作台
+# Design System: Miniart
+
+品牌使用已确认的 Miniart v8 素材：侧栏以独立图形配配置中的名称和短说明，独立图形宽 48px、等比显示；账号入口使用宽 240px 的横向组合；浏览器标签使用方形应用图标。不改图形配色、线宽、字标或留白，不把独立图形压成正方形。资源与文字由[统一品牌配置](../docs/instruction/品牌配置维护.md)提供，沿用现有桌面布局及主题。
 
 ## 支持范围
 

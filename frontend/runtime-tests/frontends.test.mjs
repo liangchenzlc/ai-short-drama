@@ -9,8 +9,11 @@ import { dirname, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { loadBrandConfig } from '../branding/vite-plugin.ts';
 
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const brandPath = resolve(frontend, '../backend/src/short_drama/core/branding/brand.json');
+const brand = loadBrandConfig(brandPath);
 const require = createRequire(resolve(frontend, 'package.json'));
 const runner = resolve(frontend, 'scripts/run-frontends.mjs');
 const viteCli = resolve(dirname(require.resolve('vite/package.json')), 'bin/vite.js');
@@ -96,7 +99,8 @@ async function waitUntil(check, label, service) {
 }
 
 async function response(url, accept = 'text/html') {
-  const result = await fetch(url, { headers: { accept }, signal: AbortSignal.timeout(10_000) });
+  const result = await fetch(url, { headers: { accept }, signal: AbortSignal.timeout(10_000) })
+    .catch(error => { throw new Error(`前端请求失败：${url}`, { cause: error }); });
   assert.equal(result.status, 200, `${url} 返回 ${result.status}`);
   return result;
 }
@@ -106,20 +110,32 @@ async function expectEntries(base) {
   const canvas = await (await response(`${base}/canvas-app/`)).text();
   const deep = await (await response(`${base}/canvas-app/canvas/9007199254740993123?runtime=1`)).text();
   const dotted = await (await response(`${base}/canvas-app/canvas/source.key-1?runtime=1`, '*/*')).text();
-  assert.match(standard, /<title>短剧工作台 · 网页版<\/title>/);
+  assert.equal(htmlTitle(standard), brand.titles.app);
   assert.match(canvas, /infinite-canvas:theme_store/);
   assert.match(deep, /infinite-canvas:theme_store/);
   assert.match(dotted, /infinite-canvas:theme_store/);
-  assert.doesNotMatch(canvas, /<title>短剧工作台 · 网页版<\/title>/);
-  assert.doesNotMatch(deep, /<title>短剧工作台 · 网页版<\/title>/);
-  assert.doesNotMatch(dotted, /<title>短剧工作台 · 网页版<\/title>/);
+  assert.equal(htmlTitle(canvas), brand.titles.canvas);
+  assert.equal(htmlTitle(deep), brand.titles.canvas);
+  assert.equal(htmlTitle(dotted), brand.titles.canvas);
   return { standard, canvas, deep };
 }
 
+function htmlTitle(html) {
+  const entities = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
+  return html.match(/<title>([^<]*)<\/title>/)?.[1].replace(/&(?:amp|lt|gt|quot|#39);/g, entity => entities[entity]);
+}
+
 async function expectLogo(base) {
-  const image = await response(`${base}/canvas-app/favicon.svg`, 'image/svg+xml');
-  assert.match(image.headers.get('content-type'), /image\/svg\+xml/);
-  assert.deepEqual(Buffer.from(await image.arrayBuffer()), await readFile(resolve(frontend, 'canvas/public/favicon.svg')));
+  for (const [entry, prefix] of [['/projects', '/assets/'], ['/canvas-app/', '/canvas-app/static/']]) {
+    const html = await (await response(`${base}${entry}`)).text();
+    const iconTag = html.match(/<link\b[^>]*rel="icon"[^>]*>/)?.[0];
+    const iconUrl = iconTag?.match(/href="([^"]+)"/)?.[1];
+    assert.ok(iconUrl?.startsWith(prefix), `品牌图标越出应用路径：${iconUrl}`);
+    assert.match(iconUrl, /-[a-f0-9]{12}\.(?:svg|png|jpe?g|webp|gif|ico|avif)$/);
+    const image = await response(new URL(iconUrl, base), 'image/*');
+    assert.match(image.headers.get('content-type'), /^image\//);
+    assert.deepEqual(Buffer.from(await image.arrayBuffer()), await readFile(resolve(dirname(brandPath), brand.assets.icon)));
+  }
 }
 
 async function expectFont(base, stylesheets) {
@@ -166,7 +182,7 @@ test('统一 dev 实际启动独立入口、宿主模块与资源，并在停止
   const base = `http://127.0.0.1:${standardPort}`;
   const canvasBase = `http://127.0.0.1:${canvasPort}`;
   await waitUntil(async () => (await fetch(`${canvasBase}/canvas-app/`, { signal: AbortSignal.timeout(1_000) })).ok, '两台 Vite 就绪', service);
-  await expectEntries(base);
+  await expectEntries(base).catch(error => { throw new Error(`${error.message}\n${service.output}`, { cause: error }); });
   assert.match(await (await response(`${canvasBase}/canvas-app/`)).text(), /infinite-canvas:theme_store/);
   const sessionModule = await (await response(`${base}/canvas-app/src/services/host-session.ts`, 'text/javascript')).text();
   const bridgeUrl = sessionModule.match(/from\s+["']([^"']*\/src\/integrations\/canvas\/session\.ts[^"']*)["']/)?.[1];

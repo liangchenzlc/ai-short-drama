@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     smtp_starttls: bool = True
     email_proof_key: SecretStr | None = None
-    app_name: str = "AI Short Drama"
     db_host: str = "127.0.0.1"
     db_port: int = Field(default=3306, ge=1, le=65535)
     db_user: str = "short_drama"

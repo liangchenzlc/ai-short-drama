@@ -81,7 +81,7 @@ def test_uvicorn_preserves_peer_until_mcp_trusts_forwarded_chain(db_session):
                 app.state.settings.mcp_trusted_proxy_cidrs = ["127.0.0.1/32", "10.0.0.0/8"]
                 trusted = client.post("/mcp/", json=payload)
                 assert trusted.status_code == 200
-                assert trusted.json()["result"]["serverInfo"]["name"] == "AI 短剧工作台"
+                assert trusted.json()["result"]["serverInfo"]["name"] == "Miniart"
         finally:
             server.should_exit = True
             thread.join(5)

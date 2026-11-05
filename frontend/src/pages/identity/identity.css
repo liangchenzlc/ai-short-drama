@@ -80,8 +80,11 @@
   font-weight: 600;
   text-decoration: none;
 }
-.identity-brand svg {
-  color: var(--accent);
+.identity-brand img {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: auto;
 }
 .identity-links {
   display: flex;

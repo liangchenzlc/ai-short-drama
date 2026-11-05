@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 
 from short_drama.ai.prompts.loader import load_prompt
+from short_drama.core.branding import get_brand
 
 _ASSET_RULES = {
     "character": "script_assets/character_rules.md",
@@ -11,7 +12,7 @@ _ASSET_RULES = {
 }
 
 PROMPT_VERSIONS = {
-    "assistant": "assistant-runtime-v17",
+    "assistant": "assistant-runtime-v18",
     "assistant_tool_selection": "assistant-tool-selection-v1",
     "script_rewrite": "script-rewrite-v2",
     "script_assets": "script-assets-v2",
@@ -45,7 +46,7 @@ def system_prompt(scene: str, *, kinds: Iterable[str] = ()) -> str:
                     "compaction",
                 )
             )
-        )
+        ).replace("{{BRAND_NAME}}", get_brand().name)
     if scene == "script_rewrite":
         return _parts(f"{scene}/system.md", "common/source_boundary.md")
     if scene == "script_shots":

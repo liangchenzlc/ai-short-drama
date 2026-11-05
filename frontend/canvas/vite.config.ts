@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import { assetPrefixes, rebaseAssetLiterals } from "./asset-paths.mjs";
+import { brandPlugin } from "../branding/vite-plugin";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const base = "/canvas-app/";
@@ -21,6 +22,7 @@ export default defineConfig(({ mode }) => {
     return {
         base,
         plugins: [
+            brandPlugin('canvas'),
             {
                 name: "canvas-public-assets",
                 enforce: "pre",

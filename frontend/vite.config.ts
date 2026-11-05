@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { brandPlugin } from './branding/vite-plugin';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const canvasPreview: Plugin = {
@@ -36,10 +37,10 @@ export default defineConfig(({ mode }) => {
   }
   const apiProxy = { '/api': { target: env.API_PROXY_TARGET || 'http://127.0.0.1:8000', changeOrigin: true } };
   return {
-    plugins: [react(), canvasPreview],
+    plugins: [react(), brandPlugin('app'), canvasPreview],
     base: '/',
     resolve: { alias: { '@host': resolve(root, 'src') } },
-    server: { port: 8080, strictPort: true, watch: { ignored: ['**/.runtime/**', '**/canvas/**'] }, proxy: {
+    server: { port: 8080, strictPort: true, fs: { allow: [root] }, watch: { ignored: ['**/.runtime/**', '**/canvas/**'] }, proxy: {
       '/canvas-app': { target: `http://127.0.0.1:${canvasPort}`, changeOrigin: true, ws: true },
       ...apiProxy,
     } },

@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from short_drama.api.mcp.auth import McpBearerAuth, authenticate
 from short_drama.api.mcp.server import create_mcp_app
 from short_drama.api.v1.router import router
+from short_drama.core.branding import get_brand
 from short_drama.core.config import Settings
 from short_drama.core.exceptions import BusinessError
 from short_drama.core.logging import configure_logging
@@ -50,7 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             engine.dispose()
 
-    app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title=get_brand().titles.app, version="0.1.0", lifespan=lifespan)
 
     app.state.settings = settings
     mcp_http = create_mcp_app(app.state)

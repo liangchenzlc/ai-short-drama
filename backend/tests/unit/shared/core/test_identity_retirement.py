@@ -92,6 +92,7 @@ def test_current_account_proofs_keep_their_email_purpose(monkeypatch, purpose, e
     )
     smtp_send(settings, {"email": "recipient@example.test", "code": "123456", "purpose": purpose})
     assert len(messages) == 1
+    assert messages[0]["Subject"] == "Miniart · 邮箱验证"
     assert expected in messages[0].get_content()
     assert "123456" in messages[0].get_content()
 

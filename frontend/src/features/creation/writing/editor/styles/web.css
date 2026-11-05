@@ -60,11 +60,6 @@
   width: 216px;
   flex-basis: 216px;
 }
-.studio-brand-mark {
-  padding: 8px;
-  background: var(--surface-raised);
-  border-radius: 10px;
-}
 .studio-brand {
   padding-inline: 4px;
 }

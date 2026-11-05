@@ -2,7 +2,7 @@
 
 > **开始任何任务前先读[最高原则](PRINCIPLES.md)。** 那是每次执行都生效的最高优先级规则：编码前思考、简洁优先、精准修改、目标驱动执行。本文件只补项目特有约定，两者冲突时停下来指出冲突，不要自行取舍。
 
-AI 短剧工作台：账号认证、小说与剧本、素材、分镜、异步生成、Agent 创作与成片合成。业务数据以 MySQL 和 MinIO 为准，后端分层 API → Service → DAO → ORM。
+Miniart：账号认证、小说与剧本、素材、分镜、异步生成、Agent 创作与成片合成。业务数据以 MySQL 和 MinIO 为准，后端分层 API → Service → DAO → ORM。
 
 技术栈：React 19、TypeScript strict、Vite 7、Ant Design；Python 3.12+、FastAPI、Pydantic 2、SQLAlchemy 2；MySQL 8.0.21+、RabbitMQ、Celery、MinIO。前端统一使用 Node 22.18+ 的 22.x 或 24.x LTS。
 
@@ -24,6 +24,7 @@ AI 短剧工作台：账号认证、小说与剧本、素材、分镜、异步�
 | 改表结构、写增量迁移 | [表设计说明](docs/database/README.md)、[迁移索引](docs/database/migrations/README.md) |
 | 加改接口 | [接口约定](docs/api/README.md)、[前端 API 约定](frontend/src/api/README.md) |
 | 改界面与交互 | [产品范围](frontend/PRODUCT.md)、[设计约定](frontend/DESIGN.md)、[创作反馈规则](docs/design/创作反馈规则.md) |
+| 替换产品名称、网页标题、描述或 logo | [品牌配置维护](docs/instruction/品牌配置维护.md) |
 | 改成片编辑器 | [标准成片编辑器维护说明](docs/instruction/标准成片编辑器维护说明.md) |
 | 碰无限画布 | [画布迁移边界](docs/instruction/画布迁移边界.md) |
 | 部署 Agent、排查模型调用 | [Agent 模式部署与排障](docs/instruction/Agent模式部署与排障.md) |

@@ -1,24 +1,25 @@
 import { create } from "zustand";
+import { brand } from "@host/integrations/canvas/branding";
 
 import type { PublicAppearance } from "@/services/api/appearance";
 import { applySkinTheme, DEFAULT_CLASSIC_SKIN, normalizeSkinDefinition } from "@/lib/skin-themes";
 
 export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
     schemaVersion: 7,
-    brandName: "无限画布",
+    brandName: brand.name,
     brandSlug: "infinite-canvas",
     authHeroTitle: "",
     authHeroDescription: "",
-    logoUrl: "/canvas-app/favicon.svg",
-    darkLogoUrl: "/canvas-app/favicon.svg",
+    logoUrl: brand.assets.mark,
+    darkLogoUrl: brand.assets.mark,
     logoFrameEnabled: false,
     authVideoUrl: "",
     authVideoPosterUrl: "",
     authVideoAutoplay: true,
     skinId: "classic",
     activeSkin: DEFAULT_CLASSIC_SKIN,
-    seoTitle: "无限画布 · 短剧工作台",
-    seoDescription: "短剧工作台的无限画布创作空间。",
+    seoTitle: brand.titles.canvas,
+    seoDescription: brand.descriptions.canvas,
     seoKeywords: "",
     footerCopyright: "",
     icpFilingEnabled: false,
@@ -124,7 +125,8 @@ export function applyAppearanceMetadata(appearance: PublicAppearance, targetDocu
         favicon.rel = "icon";
         targetDocument.head.appendChild(favicon);
     }
-    favicon.href = appearanceLogoURL(appearance, "dark");
+    favicon.href = brand.assets.icon;
+    favicon.removeAttribute("type");
 
     const location = targetDocument.defaultView?.location;
     if (location && (location.protocol === "http:" || location.protocol === "https:")) {
@@ -150,10 +152,6 @@ function setMeta(targetDocument: Document, attribute: "name" | "property", key: 
         targetDocument.head.appendChild(element);
     }
     element.content = content;
-}
-
-export function appearanceLogoURL(appearance: PublicAppearance, theme: "light" | "dark") {
-    return theme === "dark" ? appearance.darkLogoUrl || appearance.logoUrl : appearance.logoUrl || appearance.darkLogoUrl;
 }
 
 function normalizeBrandSlug(value: unknown) {

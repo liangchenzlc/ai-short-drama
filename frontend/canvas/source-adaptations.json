@@ -490,8 +490,8 @@
     "upstream_sha256": "b6a19ca3de5373a5bec4da91c1ab89a62bf58ef9482e0d3a1176c3f4f36bc07d"
   },
   "src/lib/settings-navigation.ts": {
-    "reason": "???????????????return_to??????????????????????????????409???????????",
-    "sha256": "4b9812dd3787f512331b581d4918bc8d084b38f8d00d8c20231f30c709505500",
+    "reason": "校正已提交设置导航的适配登记，代码未变：模型设置返回当前画布，离开前等待保存并保留导航守卫。",
+    "sha256": "5465335cf9914f8a79d3711e3efc70b5db30aa1ff2515c2717ef62601197242c",
     "upstream_sha256": "7e5be8498ce553121e02c69df11f7481cee47613a152675c7e9922e6da0ba150"
   },
   "src/components/layout/app-changelog-dialog.tsx": {
@@ -830,13 +830,13 @@
     "upstream_sha256": "2d12c20057b336a9b3df5c5f3e695b05fa21029ac11d0218ccabc8ab10c311a2"
   },
   "index.html": {
-    "reason": "独立HTML保留源主题与首屏加载，使用宿主品牌；favicon定位到画布子包前缀，保证独立开发及统一生产深链的资源读取。",
-    "sha256": "f623572ae6bcf4713338abb304fbdc89cebb822e9f2e2aef51b211ce2b4ed04c",
+    "reason": "统一品牌配置在构建时注入标题、描述与方形图标，保留画布主题初始化。",
+    "sha256": "6bafd478799e99993e5efa50b545bbddedce30518ee7e45f0a4480ed3563be54",
     "upstream_sha256": "877b35f5b2f68e20f0da0d3236058ffcd18b8f23feae220f62605e1a2b808453"
   },
   "src/stores/use-appearance-store.ts": {
-    "reason": "保留画布主题和元数据，沿用宿主默认品牌；默认favicon使用画布子包路径，独立开发和统一产物深链均可读取。",
-    "sha256": "1106168cdd03df809ff634986e64b64a7a012b21ddf31b2e76cf6e8d29cad356",
+    "reason": "画布默认名称及元信息读取统一品牌配置，favicon独立使用方形图标，保留主题与内部存储标识。",
+    "sha256": "4576049872ae4cd12265ba3e0bd5141425d1bcc4ece8088c8462c459e7ad6bdf",
     "upstream_sha256": "24eda8e42aea8b01bd2fd2f80ff2260138b42b6f8afb65244924e9f7aededb71"
   },
   "src/components/ui/aceternity/full-screen-loader.tsx": {

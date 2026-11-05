@@ -1,0 +1,17 @@
+{
+  "name": "Miniart",
+  "tagline": "AI 短剧创作空间",
+  "titles": {
+    "app": "{name}",
+    "canvas": "无限画布 · {name}"
+  },
+  "descriptions": {
+    "app": "{name}：小说改编、素材管理、分镜制作与成片剪辑。",
+    "canvas": "{name} 的无限画布创作空间。"
+  },
+  "assets": {
+    "mark": "assets/miniart-mark.svg",
+    "lockup": "assets/miniart-logo.svg",
+    "icon": "assets/miniart-app-icon.svg"
+  }
+}

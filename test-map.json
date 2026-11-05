@@ -1361,6 +1361,18 @@
         "backend/tests/unit/shared/core/test_service_boundaries.py"
       ]
     },
+    "shared.branding": {
+      "description": "统一产品品牌配置、资源与双前端元信息",
+      "sources": [
+        "backend/src/short_drama/core/branding/**",
+        "frontend/branding/**",
+        "frontend/src/shared/branding.ts",
+        "frontend/src/types/shared/branding.ts",
+        "frontend/src/types/shared/virtual-brand.d.ts",
+        "frontend/src/integrations/canvas/branding.ts"
+      ],
+      "depends_on": []
+    },
     "shared.core": {
       "description": "基础契约、数据库模型与服务边界",
       "sources": [
@@ -3459,6 +3471,46 @@
     }
   },
   "tests": [
+    {
+      "path": "frontend/canvas/e2e/document/branding.test.mjs",
+      "features": ["shared.branding"],
+      "runner": "canvas-browser",
+      "level": "browser",
+      "requires": [],
+      "support": []
+    },
+    {
+      "path": "backend/tests/unit/shared/core/test_branding.py",
+      "features": ["shared.branding"],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": ["backend/tests/__init__.py", "backend/tests/conftest.py"]
+    },
+    {
+      "path": "backend/tests/unit/shared/core/test_brand_consumers.py",
+      "features": ["shared.branding"],
+      "runner": "pytest",
+      "level": "fast",
+      "requires": [],
+      "support": ["backend/tests/__init__.py", "backend/tests/conftest.py"]
+    },
+    {
+      "path": "frontend/tests/branding/brand-config.test.mjs",
+      "features": ["shared.branding"],
+      "runner": "node",
+      "level": "fast",
+      "requires": [],
+      "support": []
+    },
+    {
+      "path": "frontend/e2e/workspace/branding.spec.ts",
+      "features": ["shared.branding"],
+      "runner": "playwright",
+      "level": "browser",
+      "requires": [],
+      "support": ["frontend/e2e/support/studio-fixture.ts"]
+    },
     {
       "path": "backend/tests/api/canvas/timeline/test_canvas_timeline_plan_api.py",
       "features": [
@@ -13032,7 +13084,8 @@
     {
       "path": "frontend/runtime-tests/frontends.test.mjs",
       "features": [
-        "shared.runtime"
+        "shared.runtime",
+        "shared.branding"
       ],
       "runner": "runtime",
       "level": "runtime",

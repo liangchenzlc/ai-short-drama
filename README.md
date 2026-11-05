@@ -1,4 +1,6 @@
-# AI Short Drama
+# Miniart
+
+Miniart 的名称、网页标题、描述和品牌图片统一由[品牌配置](backend/src/short_drama/core/branding/brand.json)维护，替换及发布步骤见[品牌配置维护](docs/instruction/品牌配置维护.md)。
 
 正式 Agent 持续推进不再由累计 token 或调用次数截断。单次长度截断会保留原模型与思考模式接续，前端显示“正在继续生成”；上下文整理显示独立状态，大工具结果保存原文并可按页回读。明确超出模型原生输出上限仍无正文时准确报错，输入与成果保留；响应空闲120秒、受理不明及停止规则继续生效。
 

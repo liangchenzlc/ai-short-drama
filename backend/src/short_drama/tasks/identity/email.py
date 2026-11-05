@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from sqlalchemy import or_, select, update
 
+from short_drama.core.branding import get_brand
 from short_drama.core.crypto import KeyCipher
 from short_drama.domain.identity.email.models import AuthRateLimit, EmailChallenge, EmailOutbox
 from short_drama.service.base import utcnow
@@ -17,7 +18,7 @@ from short_drama.service.base import utcnow
 def smtp_send(settings, payload):
     message = EmailMessage()
     message["From"], message["To"] = settings.smtp_from, payload["email"]
-    message["Subject"] = "短剧工作台 · 邮箱验证"
+    message["Subject"] = f"{get_brand().name} · 邮箱验证"
     purposes = {
         "registration": "完成账号注册",
         "password_reset": "重置账号密码",
