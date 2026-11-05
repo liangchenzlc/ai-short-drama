@@ -100,7 +100,7 @@
 
 [2026-10-02 Agent 创作模式](2026-10-02-agent-mode/README.md)：独立 MySQL 测试覆盖旧库关闭功能时的启动兼容、显式迁移重入、严格结构核验、私有会话层级、本人候选隔离与采用作品共享。
 
-迁移测试保留在 `backend/tests/integration`，通过[开发说明](../../instruction/开发运行与验证.md)中的 `backend/scripts/run_integration.py` 运行。测试 fixture 创建随机隔离数据库，从当前总 SQL 建库，再在隔离库内模拟旧结构和历史数据，验证迁移、重入和数据保留。迁移 SQL 和 Python 回填是运维交付的一部分，不能因为它们不被运行时 import 就当作无引用代码删除。
+迁移测试保留在 `backend/tests/integration`，通过 `backend/scripts/run_integration.py` 运行。测试 fixture 创建随机隔离数据库，从当前总 SQL 建库，再在隔离库内模拟旧结构和历史数据，验证迁移、重入和数据保留。迁移 SQL 和 Python 回填是运维交付的一部分，不能因为它们不被运行时 import 就当作无引用代码删除。
 
 
 2026-10-11 当前 `short_drama` 已完成 018 的三条结构 DDL 及 019 的七条结构 DDL并独立回读；019 新增两张表，当前完整 SQL 为 101 张表。旧来源全 NULL，角色版本、版本媒体和当前指针均 0；角色回填及七角色同版部署未执行，不能称完整升级流程通过。准确 SQL、指纹和未执行边界见[019 实际执行记录](2026-10-05-infinite-canvas/README.md#2026-10-11-当前业务库-019-实际结构执行记录)。历史阶段表数与原验收失败保留。

@@ -826,7 +826,7 @@ description、tags、prompt、negativePrompt、selection、assets、executionPol
 `resourceId` 为十进制字符串；`fileName=depth-action-reference.mp4`，尺寸1920×1080，
 `device` 为 `cpu/cuda/mps`，`runtimeVersion=v1`。回执与未放入图的结果仅本人可见；
 原画布操作附加节点后，成品才按项目权限共享。组件部署配置见
-[开发指南](../instruction/开发运行与验证.md#环境准备)，验收范围和未验部分见剩余工作台账。
+环境准备见根 [README](../../README.md)，验收范围和未验部分见剩余工作台账。
 
 ## 已退役来源与普通角色
 

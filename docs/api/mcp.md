@@ -48,4 +48,4 @@
 
 Uvicorn 必须使用 `--no-proxy-headers`，保留原连接 peer。`MCP_TRUSTED_PROXY_CIDRS` 默认 `[]`，此时忽略 X-Forwarded-For；仅 peer 在配置内时从右向左跳过可信代理，取最近不可信地址作为来源，整条可信链仍须为有效 IP。只配置实际受控代理网段，代理须覆盖或正确追加来源链，避免上游先改写 peer 后再次解析。
 
-启动始终检查 `mcp_access_tokens` 与审计新增结构，包括关闭浏览器认证或助手的环境。已有库先执行 [运行时增量005](../database/migrations/2026-10-29-assistant-runtime/README.md)及[配置模块迁移](../database/migrations/2026-11-03-settings-module/README.md)；旧令牌按迁移流程撤销重建。测试及运行命令见 [开发运行与验证](../instruction/开发运行与验证.md)。
+启动始终检查 `mcp_access_tokens` 与审计新增结构，包括关闭浏览器认证或助手的环境。已有库先执行 [运行时增量005](../database/migrations/2026-10-29-assistant-runtime/README.md)及[配置模块迁移](../database/migrations/2026-11-03-settings-module/README.md)；旧令牌按迁移流程撤销重建。测试及运行命令见根 [README](../../README.md)。

@@ -6,7 +6,7 @@ Run DTO的wait_summary承载真实待答问题、媒体批次、生成任务计�
 
 `api/assistant/conversations/requests.ts` 的 `settings/updateSettings` 对应 `GET/PATCH /assistant/settings`；`types/assistant/api.ts` 的 `AssistantSettings/AssistantSettingsPatch` 定义四项偏好与统一十进制版本。PATCH 仅提交修改字段，开关立即、文本 600ms 串行同步；409、断连和迟到响应不覆盖草稿。技术预算不进入用户设置 DTO。Skill 的 `script` 读取和导出不执行脚本。
 
-HTTP 公共契约见[接口说明](../../../docs/api/README.md)，目录树见[目录与职责维护](../../../docs/instruction/目录与职责维护.md)。
+HTTP 公共契约见[接口说明](../../../docs/api/README.md)。
 
 ## 请求与类型
 
@@ -49,4 +49,4 @@ Skill 创建受理不明用原键只读查询回执；文件按准确内容版�
 
 导出、预览、恢复及重试固定原请求和原键，受理未知不能换参自动重提。同步失败保留编辑和上次状态；媒体只持久化稳定 ID，签名 URL 过期后重读。画布内部契约继续由独立子包负责，宿主集成桥提供会话、DTO、助手与共享图片工具。
 
-.env.local 仅放公开前端设置；VITE_API_BASE_URL 会进入浏览器，不能放凭据。开发代理使用 API_PROXY_TARGET；生产部署先代理 API 再做 SPA fallback，见[运行指南](../../../docs/instruction/开发运行与验证.md#部署与维护)。
+.env.local 仅放公开前端设置；VITE_API_BASE_URL 会进入浏览器，不能放凭据。开发代理使用 API_PROXY_TARGET；生产部署先代理 API 再做 SPA fallback。

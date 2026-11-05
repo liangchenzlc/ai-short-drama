@@ -194,7 +194,7 @@ export function parseArgs(args) {
     else if (flag === '--runner') options.runners.push(...value(index++, flag).split(','));
     else if (flag === '--scope') options.scope = value(index++, flag);
     else if (flag === '--base') options.base = value(index++, flag);
-    else if (['--all', '--changed', '--dry-run', '--check', '--list', '--json', '--help', '--inventory'].includes(flag)) options[flag.slice(2).replace('-r', 'R')] = true;
+    else if (['--all', '--changed', '--dry-run', '--check', '--list', '--json', '--help'].includes(flag)) options[flag.slice(2).replace('-r', 'R')] = true;
     else if (flag.startsWith('-')) throw new Error(`未知参数：${flag}；原生运行器参数放在 -- 后`);
     else options.files.push(flag);
   }
@@ -203,7 +203,7 @@ export function parseArgs(args) {
   if (options.scope && !['backend', 'frontend', 'canvas', 'tooling', 'all'].includes(options.scope)) throw new Error('未知 --scope');
   const selectors = Number(options.features.length > 0) + Number(Boolean(options.all)) + Number(Boolean(options.changed)) + Number(options.files.length > 0);
   if (selectors > 1) throw new Error('--feature、--all、--changed 和文件路径只能选择一种');
-  if (!selectors && !options.help && !options.check && !options.list && !options.inventory) throw new Error('请指定 --feature <功能>、--changed 或 --all；使用 --list 查看功能');
+  if (!selectors && !options.help && !options.check && !options.list) throw new Error('请指定 --feature <功能>、--changed 或 --all；使用 --list 查看功能');
   if (options.base && !options.changed) throw new Error('--base 需要同时指定 --changed');
   return options;
 }
@@ -303,19 +303,8 @@ export async function main(args = process.argv.slice(2)) {
   if (map.source_migrations_file) {
     map.source_migrations = JSON.parse(readFileSync(inside(ROOT, map.source_migrations_file), 'utf8'));
   }
-  const inventory = validateMap(map);
-  if (options.check) { output(JSON.stringify({ status: 'valid', ...inventory })); return 0; }
-  if (options.inventory) {
-    const lines = ['# 测试文件清单', '', '由 `node scripts/test.mjs --inventory` 根据 `test-map.json` 生成。功能、级别、前置条件以清单为准；此表不表示测试已执行。', '',
-      `共 ${inventory.tests} 个测试文件、${inventory.auxiliary} 个辅助文件、${inventory.features} 个功能。`, '',
-      '| 功能 | 测试文件 | 级别 | 运行器 | 环境开关 |', '| --- | --- | --- | --- | --- |'];
-    for (const row of map.tests) lines.push(`| ${row.features.join(', ')} | \`${row.path}\` | ${row.level} | ${row.runner} | ${(row.requires ?? []).join(', ')} |`);
-    lines.push('', '## 夹具、辅助文件与验收脚本', '', '| 文件 | 功能 | 类型 | 状态 |', '| --- | --- | --- | --- |');
-    for (const row of map.auxiliary) lines.push(`| \`${row.path}\` | ${row.features.join(', ')} | ${row.kind} | ${row.status} |`);
-    writeFileSync(join(ROOT, 'docs/instruction/测试文件清单.md'), lines.join('\n') + '\n');
-    output('已更新 docs/instruction/测试文件清单.md');
-    return 0;
-  }
+  const validation = validateMap(map);
+  if (options.check) { output(JSON.stringify({ status: 'valid', ...validation })); return 0; }
   if (options.list) {
     for (const [id, feature] of Object.entries(map.features).sort(([a], [b]) => a.localeCompare(b))) {
       const rows = map.tests.filter(row => row.features.includes(id));

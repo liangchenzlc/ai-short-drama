@@ -164,7 +164,7 @@ ui-e只补菜单截图的入场等待，正常场景 **1 passed/2 deselected，4
 
 ## 验证与来源
 
-测试已按功能归档，`npm test` 和 `test:e2e` 必须追加功能或文件；用 `node ../../scripts/test.mjs --list` 查看编号，目录和级别规则见[测试规范](../../docs/instruction/按功能执行测试.md)。
+测试已按功能归档，`npm test` 和 `test:e2e` 必须追加功能或文件；用 `node ../../scripts/test.mjs --list` 查看编号。
 
 - `npm test -- --feature canvas.document`：示例运行文档功能的 Node 测试。其他功能按编号选择；整体覆盖版本、路径、首次请求重试、HTTP 适配、启动顺序、个人视口/外观串行与冲突、撤权会话隔离、上传范围捕获及幂等身份合同，实际数量以当前执行结果为准。
 - `npm run build`：完整画布类型检查与生产构建，包括 wasm/Worker。

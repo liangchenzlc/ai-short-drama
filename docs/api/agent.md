@@ -4,7 +4,7 @@
 
 # Agent 会话、统一创作与上下文
 
-2026-10-26 新 V3 任务采用 LangGraph／LangChain Harness，兼容路由不变；新工具自主选择与中断边界见 [助手 API](assistant.md) 和 [Harness 运行机制](../instruction/AI创作助手Harness运行机制.md)。本页 V1／V2 计划审核为历史兼容能力。
+2026-10-26 新 V3 任务采用 LangGraph／LangChain Harness，兼容路由不变；新工具自主选择与中断边界见 [助手 API](assistant.md)。本页 V1／V2 计划审核为历史兼容能力。
 
 Skill 包的资源 `kind` 支持 `reference/template/script/image`。文本和只读脚本使用 `encoding=utf-8`，PNG／JPEG／WebP 示例图使用 `encoding=base64`；这是管理接口的上传／读取传输格式，运行时只保留受管引用。导入、复制、更新和导出按原始字节核对 checksum。脚本不执行，图片正文不进入常驻 Skill 索引。
 
@@ -146,7 +146,7 @@ Skill 包的资源 `kind` 支持 `reference/template/script/image`。文本和�
 | GET | `/agent/skills/{skill_id}/versions/{version}/resources` | 按 manifest 的 `path` 只读获取文件；文本 `offset/limit` 按 Unicode 字符分段，limit 最多 6000；图片完整返回 Base64 |
 | DELETE | `/agent/skills/{skill_id}` | JSON body 必带 `row_version`；软删除并停用，返回 204 |
 
-内置稳定 ID、内容版本和发布流程见 [内置方法维护](../instruction/内置创作方法维护.md)。内置原件不可修改／删除（403），可更改本人启停并导出；在本地修改后重新导入为个人 Skill。目录读取数据库已发布最新版本；任务加载及冻结资源见 [助手 API](assistant.md#任务创作方法与资料)。
+内置稳定 ID、内容版本与发布流程由内置包目录及数据库发布记录决定。内置原件不可修改／删除（403），可更改本人启停并导出；在本地修改后重新导入为个人 Skill。目录读取数据库已发布最新版本；任务加载及冻结资源见 [助手 API](assistant.md#任务创作方法与资料)。
 
 摘要包含身份、名称、`slug/description/tags/modes/exclusions/required_tools/source`、`content_version/row_version`、`enabled/settings_version`、`compatible/issues`、校验值、资源数量及更新时间。卡片仅显示名称、用途、适用模式和启停；标签和文件数量不展示。详情另含 `instructions/resources`，资源目录包含相对路径、类型、字节数与 SHA-256，不暴露存储地址。
 
@@ -162,7 +162,7 @@ Skill 包的资源 `kind` 支持 `reference/template/script/image`。文本和�
 
 旧启停操作记录若含退役的触发方式字段，仅提供原记录下载与明确清除，不删除字段后重新发送设置请求。
 
-资料先在 MinIO 暂存并读回核验，再以短 MySQL 事务发布 ready manifest；新上传须一小时内持有账号／内置目录锁发布，超时返回 `agent_skill_upload_expired`。这不是跨存储原子事务，回收规则见 [资料回收维护](../instruction/内置创作方法维护.md#未引用资料回收)。历史版本不可修改，软删除不立即删除资料。目录设置只影响新加载；任务使用的冻结包、资源与实际来源审计保持原样。旧数据库升级见 [Skill 管理迁移](../database/migrations/2026-10-26-skill-management/README.md)。
+资料先在 MinIO 暂存并读回核验，再以短 MySQL 事务发布 ready manifest；新上传须一小时内持有账号／内置目录锁发布，超时返回 `agent_skill_upload_expired`。这不是跨存储原子事务。历史版本不可修改，软删除不立即删除资料。目录设置只影响新加载；任务使用的冻结包、资源与实际来源审计保持原样。旧数据库升级见 [Skill 管理迁移](../database/migrations/2026-10-26-skill-management/README.md)。
 
 ## 模型选择与运行反馈
 

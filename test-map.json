@@ -13829,16 +13829,6 @@
       ]
     },
     {
-      "path": "scripts/tests/check-docs.test.mjs",
-      "features": [
-        "shared.test_runner"
-      ],
-      "runner": "tooling",
-      "level": "fast",
-      "requires": [],
-      "support": []
-    },
-    {
       "path": "backend/tests/integration/standard/assistant/test_graph_checkpointer.py",
       "features": [
         "standard.agent",

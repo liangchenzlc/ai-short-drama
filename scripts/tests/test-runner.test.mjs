@@ -52,7 +52,7 @@ test('代码未匹配、未知功能、级别为空时失败；纯文档明确�
   assert.throws(() => selectTests(fixture(), { changedPaths: ['backend/src/new_feature.py'], levels: ['fast'] }), /未映射/);
   assert.throws(() => selectTests(fixture(), { features: ['missing'], levels: ['fast'] }), /未知功能/);
   assert.throws(() => selectTests(fixture(), { features: ['canvas.video'], levels: ['fast'] }), /没有/);
-  const result = selectTests(fixture(), { changedPaths: ['docs/instruction/按功能执行测试.md'], levels: ['fast'] });
+  const result = selectTests(fixture(), { changedPaths: ['docs/api/README.md'], levels: ['fast'] });
   assert.equal(result.noTestsRequired, true);
 });
 

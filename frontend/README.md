@@ -25,7 +25,7 @@ npm run preview
 
 `build` 依次完成两包类型检查和生产构建，再将独立画布产物复制到 `dist/canvas-app/`；画布自己的 `canvas/dist/` 仍可单独构建。`preview` 只启动宿主 Vite preview，使用统一 `dist/`，对画布页面回退到 `/canvas-app/index.html`，对标准页面回退到 `/index.html`，API 沿用代理配置，不需要额外画布 preview 进程。静态文件本身不含 API 代理能力，正式部署仍需配置反向代理和两套 HTML 回退。
 
-`npm test` 和 `npm run test:e2e` 保持标准工作台的测试范围，必须追加功能或文件参数；画布检查可从本目录运行 `npm run test:canvas -- --feature canvas.models`、`npm run test:e2e:canvas -- --feature canvas.characters`、`npm run source:check`，也可在 `canvas/` 独立执行。目录、功能编号及选测规则见[测试规范](../docs/instruction/按功能执行测试.md)。`test:frontends` 需要先完成统一构建，使用临时端口验证双服务启动/退出、端口占用时清理、独立 HTML 与深链接、资源和 API 代理。Node 测试覆盖保存队列、导航、版本冲突、模型选择、生成契约和部分 UI 源码约定。浏览器 API 夹具测试不调用真实模型。
+`npm test` 和 `npm run test:e2e` 保持标准工作台的测试范围，必须追加功能或文件参数；画布检查可从本目录运行 `npm run test:canvas -- --feature canvas.models`、`npm run test:e2e:canvas -- --feature canvas.characters`、`npm run source:check`，也可在 `canvas/` 独立执行。目录、功能编号及选测规则用 `node scripts/test.mjs --list` 查。`test:frontends` 需要先完成统一构建，使用临时端口验证双服务启动/退出、端口占用时清理、独立 HTML 与深链接、资源和 API 代理。Node 测试覆盖保存队列、导航、版本冲突、模型选择、生成契约和部分 UI 源码约定。浏览器 API 夹具测试不调用真实模型。
 
 ```powershell
 npx playwright install chromium
@@ -50,11 +50,11 @@ npm run test:e2e -- --feature standard.assets
 | `/media-library/:kind` | all/image/video/audio，本人生成资产的工作台分类、名称搜索与纯预览 |
 | `/login`、`/register`、`/verify-email`、`/reset-password` | 登录、注册、邮箱验证和密码找回 |
 
-旧video和无效步骤链接按当前待处理阶段规范化；旧快照算出的video阶段映射到storyboard。BrowserRouter使用真实路径；生产部署要配置API代理、SPA fallback及正确的Vite资源base，详见[部署限制](../docs/instruction/开发运行与验证.md#部署与维护)。
+旧video和无效步骤链接按当前待处理阶段规范化；旧快照算出的video阶段映射到storyboard。BrowserRouter使用真实路径；生产部署要配置 API 代理、SPA fallback 及正确的 Vite 资源 base。
 
 ## 模块职责
 
-页面在 src/pages 以目录和 index.tsx 组织，页面样式独立；业务进入 src/features 的业务／功能目录。请求放 src/api，具名类型放 src/types；通用界面与工具放 src/shared。应用壳在 src/app，画布宿主桥在 src/integrations/canvas。完整目录与旧文件去向见[目录与职责维护](../docs/instruction/目录与职责维护.md)。
+页面在 src/pages 以目录和 index.tsx 组织，页面样式独立；业务进入 src/features 的业务／功能目录。请求放 src/api，具名类型放 src/types；通用界面与工具放 src/shared。应用壳在 src/app，画布宿主桥在 src/integrations/canvas。
 
 ## 保存与交互
 
@@ -62,6 +62,6 @@ npm run test:e2e -- --feature standard.assets
 
 剧本提供故事设定／正文双标签和选区 AI 改写，小说／大纲及专属 API 已退役。结构化候选仍须明确采用，素材与分镜参考图独立保存；生成成功不等于候选已经采用。临时媒体 URL 失效时重读。
 
-产品边界见[PRODUCT.md](PRODUCT.md)，界面约定见[DESIGN.md](DESIGN.md)，后端契约见[接口说明](../docs/api/README.md)。
+产品边界与界面约定见[核心规则](../AGENTS.md)，后端契约见[接口说明](../docs/api/README.md)。
 
 时间轴验收与运行条件见[实施验收记录](../docs/reviews/2026-09-29-成片时间轴验收.md)，依赖与上游参考见[时间轴依赖](docs/timeline-dependencies.md)。`scripts/timeline-*.mjs` 为 Playwright CLI 的浏览器验收函数，使用隔离 API 测试替身和真实本地视频，不是 `test:e2e` 自动收集的测试。旧 `scripts/assembly-acceptance.mjs` 对应已替换的列表式剪辑界面，停止用于当前版本验收。

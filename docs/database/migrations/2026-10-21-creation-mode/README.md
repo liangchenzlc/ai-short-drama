@@ -1,6 +1,6 @@
 # 2026-10-21 创作模式单层项目切换
 
-本版移除 `episodes`、三层素材关联、成员和邀请，业务对象直接归属项目；删除项目梗概／画幅／风格，保留画布生命周期使用的 `projects.archived_at`。完整新库结构见 [schema.mysql8.sql](../../../database/schema/schema.mysql8.sql)，离线操作与恢复见[创作模式维护说明](../../../instruction/创作模式维护说明.md)。本次使用允许清空业务测试数据的专用重建流程，不能用于保留旧作品的升级。
+本版移除 `episodes`、三层素材关联、成员和邀请，业务对象直接归属项目；删除项目梗概／画幅／风格，保留画布生命周期使用的 `projects.archived_at`。完整新库结构见 [schema.mysql8.sql](../../../database/schema/schema.mysql8.sql)。本次使用允许清空业务测试数据的专用重建流程，不能用于保留旧作品的升级。
 
 执行工具为 `backend/scripts/creation_mode_reset.py`。工具在停止写入后导出完整数据和对象，在随机隔离库恢复旧库并重建新结构，验证保护数据摘要及全部外键后才允许原库切换。每条实际执行 DDL 保存在备份目录的 `applied-ddl.sql`；完整 SQL 从当前 Domain 导出，不以应用启动自动迁移。
 

@@ -120,7 +120,7 @@ PATCH 只更新提供的字段，`model_config_id:null` 清除模型。每次受
 
 私人图片输入替代本次补充提示词，模型与可见参数在该任务内使用已保存草稿；素材名称、描述、提示词与镜头正文仍由服务端读取，隐藏 `layout` 仍需匹配来源值。私人视频输入仅替代本次视频提示词段，保留镜头正文和当前采用图片，时长不修改脚本时长。任务 `source_snapshot.creation_draft` 保存私人输入、草稿版本及 `source_version/current_source_version`，实际参数在任务 `parameters` 中冻结。来源参考图与私人参考图按永久 ID 合并去重，共同校验 16 张及模型上限；视频仍只使用当前采用分镜图。无私人引用的旧请求沿用原来源语义，素材图、分镜图生成后直接保存到作品图片组，默认第一张主图；标准分镜视频成功归档后自动确定，文本及其他创作结果保留各自审核流程。
 
-旧分集版本按[创作模式维护说明](../instruction/创作模式维护说明.md)离线切换，不叠加历史增量迁移。
+旧分集版本需离线切换，不叠加历史增量迁移。
 
 ## 模型配置
 
@@ -326,7 +326,7 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 
 ## 依赖检查
 
-`GET /test` 返回服务可达；`GET /test/db` 检查数据库；`GET /test/minio` 检查配置的两个bucket。它们不执行生成。部署和测试命令见[开发与运行](../instruction/开发运行与验证.md)。
+`GET /test` 返回服务可达；`GET /test/db` 检查数据库；`GET /test/minio` 检查配置的两个bucket。它们不执行生成。部署和测试命令用 `scripts/test.mjs` 与 `backend/scripts/start_generation.ps1`。
 
 
 ## 生成参考图与分页分镜

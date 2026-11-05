@@ -50,7 +50,7 @@ HTTP 受理继续返回 Task／Run，正式 Worker 领取冻结执行快照后�
 
 停止／暂停后普通消息在同 Task 创建新 Run，读最新助手设置并保留 Task 已生成成果与用量；通过前一 Run 真实成功创建收据冻结明确主体身份续接成果，不向工具开放 sibling／所有 Task 操作。纯讨论重答禁用工具、排除未来消息并原位替换旧答复。图片只水合读取后的下一主模型请求，持久账本／typed checkpoint 只留引用；遗忘撤回包含旧正文的消息、摘要与后续推导。
 
-新工具 schema 的唯一来源是 agent/tools/registry.py 及各 ToolSpec。业务结果等待、ask_user、代码／文件与原生 task 已真实接线；前端展示简洁工具／Skill 行、实际公开思考、子轨迹、输入框上方的问答面板和业务成果操作。执行实现与历史边界见[框架运行机制](../instruction/AI创作助手Harness运行机制.md)。
+新工具 schema 的唯一来源是 agent/tools/registry.py 及各 ToolSpec。业务结果等待、ask_user、代码／文件与原生 task 已真实接线；前端展示简洁工具／Skill 行、实际公开思考、子轨迹、输入框上方的问答面板和业务成果操作。执行实现与历史边界以 `backend/src/short_drama/agent` 为准。
 
 ## 统一执行轨迹
 
@@ -110,7 +110,7 @@ Harness 处于 `stopped/paused_error/paused_budget` 时，向原任务发送普�
 
 当前新冻结请求使用工具 schema v4；已有 v3 及更早请求按原冻结协议重放。写工具不含 `request_message_id/request_hash` 等句式授权字段，主体、目标、版本与服务端可信 Actor 校验保留。`load_skill` 参数为 `name/content_version/purpose`；`read_resource` 参数为目录 `ref_id/purpose` 及可选 `detail/crop/offset/limit`；`read_skill_resource` 使用 `activation_id/path/offset/limit/purpose` 及可选图片 detail／crop。方法包仅支持文本和图片资源。schema 的唯一来源为 `agent/tools/registry.py`，客户端不可构造任意工具历史。
 
-基础工具常驻，`tool_catalog` 列可用能力组、用途及启用状态。模型通过 `enable_tool_group(group)` 启用 `standard_write/canvas_write/media/memory_write/image_adoption`，下一决策追加该组 schema；仍按任务模式、媒体开关及可信范围裁剪，不额外授予权限。`confirm_requirements` 确认服务端按用户原话生成的 draft（`keys`），可附有原文引用的 `additions`，不能自行删除或降低数量；引用更新用户消息并包含明确数量修订时，旧定义转为 superseded，新定义成为有效要求；`record_task_observation` 保存引用成功读取操作的观察或推断；`release_skill` 只释放自动方法，不移除手选方法。具体配额和字段见 [Harness 运行机制](../instruction/AI创作助手Harness运行机制.md)。
+基础工具常驻，`tool_catalog` 列可用能力组、用途及启用状态。模型通过 `enable_tool_group(group)` 启用 `standard_write/canvas_write/media/memory_write/image_adoption`，下一决策追加该组 schema；仍按任务模式、媒体开关及可信范围裁剪，不额外授予权限。`confirm_requirements` 确认服务端按用户原话生成的 draft（`keys`），可附有原文引用的 `additions`，不能自行删除或降低数量；引用更新用户消息并包含明确数量修订时，旧定义转为 superseded，新定义成为有效要求；`record_task_observation` 保存引用成功读取操作的观察或推断；`release_skill` 只释放自动方法，不移除手选方法。
 
 需要验收的候选最终答复进入内部 Turn，由独立 Turn 的 `submit_completion_review` 结构化检查用户来源、实际操作、成果数量和答复引用；该检查不是业务工具调用。没有已确认要求且没有成功写操作时，普通讨论直接发布。验收 Turn 不继承执行器工具轨迹，而是接收服务端根据需求表重建的证据包与确定性检查结果，验收模型优先使用本人另一个文本模型。发布前另有确定性守卫：有成功写操作却没有任何已确认 `write` 要求时拒绝发布（`agent_requirements_unconfirmed`），未覆盖的成果类别自动补 `server_derived` 要求。监督请求暂存流式文本，工具旁白在结算时发布，需要验收的最终回复通过检查后发布；缺项返回原 Agent 继续。停滞按当前已应用输入版本的完整滑动窗口判定：不足窗口不累计空转，完整窗口内无新证据连续两个窗口以 `agent_progress_stalled` 暂停；同组完成缺项连续 6 次未解决以 `agent_completion_stalled` 暂停。未结算生成等待和编排类工具不触发空转暂停。暂停后普通消息可继续。
 
@@ -120,7 +120,7 @@ Harness 处于 `stopped/paused_error/paused_budget` 时，向原任务发送普�
 
 选入主体的 `read_image_content` 需要 `subject_key/group_id/item_id/media_id/purpose`，从 `read_image_group` 图位的 `read_content_args` 复制身份。新工具结果增加 `receipt_operation_id` 标记当前操作，不能当作原保存批次。`read_task_results(operation_id)` 必须引用 `result_sources` 中的成功保存 ID，正文为 `results[].content`；读取不创建成果引用。当前仍选入、由本任务更新的素材／分镜也能回读其保存快照。`describe_creation_target` 增加可选 `result_before_id/result_limit`（默认 10，最多 20），返回分页 `result_sources.items/next_result_before_id`，不读取正文。
 
-工具正文只保存在 Operation，运行检查点、ToolCall、pending results 和冻结请求以操作引用访问；媒体只在本次模型请求水合，持久化历史无像素编码。压缩独立保留活动 Skill 的调用／结果对。纯讨论重答仍只读、原位替换，不带入未来历史。协议、预算与目录入口见 [Harness 运行机制](../instruction/AI创作助手Harness运行机制.md)。
+工具正文只保存在 Operation，运行检查点、ToolCall、pending results 和冻结请求以操作引用访问；媒体只在本次模型请求水合，持久化历史无像素编码。压缩独立保留活动 Skill 的调用／结果对。纯讨论重答仍只读、原位替换，不带入未来历史。
 
 
 </details>
