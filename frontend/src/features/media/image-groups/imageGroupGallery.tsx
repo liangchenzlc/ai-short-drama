@@ -6,12 +6,13 @@ import { Expand, Image as ImageIcon } from 'lucide-react';
 import { useState } from 'react';
 import './imageGroupGallery.css';
 
-export function ImageGroupGallery({ group, adoptedImage, previewMediaId, onPreview, onAdopt }: {
+export function ImageGroupGallery({ group, adoptedImage, previewMediaId, onPreview, onAdopt, onRetryItem }: {
   group: ImageGroup | null;
   adoptedImage: ImageMedia | null;
   previewMediaId: string | null;
   onPreview: (mediaId: string) => void;
   onAdopt: (mediaId: string) => void;
+  onRetryItem?: (itemId: string) => void;
 }) {
   const [zoom, setZoom] = useState(false);
   const [compare, setCompare] = useState(false);
@@ -23,27 +24,32 @@ export function ImageGroupGallery({ group, adoptedImage, previewMediaId, onPrevi
     ?? adoptedImage;
   const selectedIndex = items.findIndex((item) => item.media_id === selected?.media_id);
   const isPrimary = (id: string | null) => id !== null && id === adoptedImage?.media_id;
+  const separatePrimary = !!adoptedImage && !items.some((item) => item.media_id === adoptedImage.media_id);
 
   return (
     <div className="imageGroupGallery">
       <div className="imageGalleryCanvas">
         {selected?.url ? <>
-          <img src={selected.url} alt={'当前查看图片 ' + (selectedIndex + 1 || 1)} />
+          <img key={selected.media_id ?? selected.url} src={selected.url} alt={'当前查看图片 ' + (selectedIndex + 1 || 1)} />
+          {items.length === 1 && isPrimary(selected.media_id) && <span className="imageGalleryPrimary">主图</span>}
           <Button className="imageGalleryZoom" type="text" aria-label="放大图片" icon={<Expand size={15} />}
             onClick={() => setZoom(true)} />
         </> : <div className="imageGalleryEmpty"><ImageIcon size={25} /><span>暂无图片</span></div>}
       </div>
       <div className="imageGalleryControls">
         <div className="imageGalleryThumbs">
-          {items.map((item, index) => <button type="button" key={item.id}
+          {(items.length > 1 || separatePrimary) && items.map((item, index) => <button type="button" key={item.id}
             className={item.media_id === selected?.media_id ? 'isSelected' : ''}
-            disabled={!item.media_id || item.status !== 'ready'}
-            aria-label={isPrimary(item.media_id) ? '图片 ' + (index + 1) + '，主图' : '查看图片 ' + (index + 1)}
-            onClick={() => item.media_id && onPreview(item.media_id)}>
-            {item.url ? <img src={item.url} alt="" /> : <span>{item.status === 'failed' ? '失败' : '生成中'}</span>}
+            disabled={item.status === 'generating' || (item.status === 'failed' ? !onRetryItem : !item.media_id)}
+            title={item.error ?? undefined}
+            aria-label={item.status === 'failed' && onRetryItem ? '重试图片 ' + (index + 1) :
+              item.status === 'generating' ? '图片 ' + (index + 1) + '，生成中' :
+                isPrimary(item.media_id) ? '图片 ' + (index + 1) + '，主图' : '查看图片 ' + (index + 1)}
+            onClick={() => item.status === 'failed' ? onRetryItem?.(item.id) : item.media_id && onPreview(item.media_id)}>
+            {item.url ? <img src={item.url} alt="" /> : <span>{item.status === 'failed' ? '失败 · 重试' : '生成中'}</span>}
             {isPrimary(item.media_id) && <i>主图</i>}
           </button>)}
-          {adoptedImage && !items.some((item) => item.media_id === adoptedImage.media_id) &&
+          {adoptedImage && separatePrimary &&
             <button type="button" aria-label="查看当前主图" onClick={() => onPreview(adoptedImage.media_id)}>
               {adoptedImage.url && <img src={adoptedImage.url} alt="" />}<i>主图</i>
             </button>}

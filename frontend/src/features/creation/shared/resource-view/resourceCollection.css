@@ -37,6 +37,7 @@
 }
 
 .resourceCollectionItems {
+  animation: resourceViewEnter 160ms ease-out;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -72,6 +73,7 @@
 }
 
 .resourceItemBody {
+  transition: background-color 150ms ease-out;
   display: flex;
   width: 100%;
   min-width: 0;
@@ -160,4 +162,13 @@
 
 .resourceCollectionFilters > .ant-select {
   width: 110px;
+}
+@keyframes resourceViewEnter {
+  from { opacity: 0.65; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resourceCollectionItems { animation: none; }
+  .resourceItemBody { transition: none; }
 }

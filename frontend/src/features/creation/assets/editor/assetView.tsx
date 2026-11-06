@@ -1,5 +1,6 @@
 import { AssetPromptInput } from '@host/features/creation/assets/images/AssetPromptInput';
 import { GenerationComposer } from '@host/features/creation/shared/generation/GenerationComposer';
+import { confirmAction } from '@host/shared/ui/confirm';
 import { ImageGroupGallery } from '@host/features/media/image-groups/imageGroupGallery';
 import type { AssetPromptReference } from '@host/types/creation/assets/images/asset-prompt-references';
 import type { AssetView as AssetViewData, CharacterProfile } from '@host/types/creation/workspace/workbenchView';
@@ -7,10 +8,10 @@ import { Button, Input, Popover, Select } from 'antd';
 import { Plus, X } from 'lucide-react';
 import './assetView.css';
 
-type AssetPatch = Partial<Pick<AssetViewData, 'name' | 'description' | 'tags' | 'profile' | 'imagePrompt'>>;
+type AssetPatch = Partial<Pick<AssetViewData, 'kind' | 'name' | 'description' | 'tags' | 'profile' | 'imagePrompt'>>;
 
 export function AssetView({ asset, previewMediaId, references, availableReferences, onChange, onPreview, onAdopt,
-  onSelectGroup, onReferencesChange, onGenerate }: {
+  onSelectGroup, onReferencesChange, onGenerate, onRetryItem }: {
   asset: AssetViewData;
   previewMediaId: string | null;
   references: AssetPromptReference[];
@@ -21,11 +22,21 @@ export function AssetView({ asset, previewMediaId, references, availableReferenc
   onSelectGroup: (groupId: string) => void;
   onReferencesChange: (references: AssetPromptReference[]) => void;
   onGenerate: () => void;
+  onRetryItem?: (itemId: string) => void;
 }) {
   const group = asset.imageGroups.find((item) => item.id === asset.activeGroupId) ?? null;
   const changeProfile = (patch: Partial<CharacterProfile>) => {
     if (asset.profile) onChange({ profile: { ...asset.profile, ...patch } });
   };
+  async function changeKind(kind: AssetViewData['kind']) {
+    if (kind !== 'character' && asset.profile && Object.values(asset.profile).some(Boolean) &&
+      !(await confirmAction('更改素材类型将清除当前角色画像，无法撤销。', {
+        title: '更改素材类型', confirmText: '确认更改', danger: true,
+      }))) return;
+    onChange({ kind, profile: kind === 'character' ? asset.profile ?? {
+      role: '', gender: '', age: '', identity: '', appearance: '', personality: '',
+    } : null });
+  }
 
   return (
     <section className="assetView" aria-label="资产详情">
@@ -33,6 +44,9 @@ export function AssetView({ asset, previewMediaId, references, availableReferenc
       <div className="assetViewBody">
         <div className="assetDetails">
           <h3>{asset.kind === 'character' ? '角色画像' : '资产信息'}</h3>
+          <label>素材类型<Select aria-label="素材类型" value={asset.kind} onChange={(kind: AssetViewData['kind']) => void changeKind(kind)}
+            options={[{ value: 'character', label: '角色' }, { value: 'scene', label: '场景' },
+              { value: 'prop', label: '道具' }]} /></label>
           <label>{asset.kind === 'character' ? '姓名' : '名称'}<Input aria-label={asset.kind === 'character' ? '姓名' : '名称'}
             value={asset.name} onChange={(event) => onChange({ name: event.target.value })} /></label>
           {asset.profile && <>
@@ -61,7 +75,7 @@ export function AssetView({ asset, previewMediaId, references, availableReferenc
               }))} />}
           </div>
           <ImageGroupGallery group={group} adoptedImage={asset.adoptedImage} previewMediaId={previewMediaId}
-            onPreview={onPreview} onAdopt={onAdopt} />
+            onPreview={onPreview} onAdopt={onAdopt} onRetryItem={onRetryItem} />
           <div className="assetReferences">
             <span>参考图片</span>
             {references.map((reference) => <div className="assetReference" key={reference.media_id}>

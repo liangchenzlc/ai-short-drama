@@ -3489,7 +3489,9 @@
         "frontend/e2e/creation/fixtures/workbenchPreview.tsx",
         "frontend/e2e/creation/fixtures/workbenchPreviewApp.tsx",
         "frontend/e2e/creation/fixtures/workbenchPreviewData.ts",
-        "frontend/e2e/creation/fixtures/workbenchPreviewState.ts"
+        "frontend/e2e/creation/fixtures/workbenchPreviewState.ts",
+        "frontend/e2e/creation/fixtures/workbenchPreviewAssetRail.tsx",
+        "frontend/e2e/creation/fixtures/workbenchPreviewShotRail.tsx"
       ]
     },
     {
@@ -14634,6 +14636,32 @@
     }
   ],
   "auxiliary": [
+    {
+      "path": "frontend/e2e/creation/fixtures/workbenchPreviewAssetRail.tsx",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "shared.generation",
+        "standard.image_tools",
+        "standard.shot_video"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
+    {
+      "path": "frontend/e2e/creation/fixtures/workbenchPreviewShotRail.tsx",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "shared.generation",
+        "standard.image_tools",
+        "standard.shot_video"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
     {
       "path": "frontend/e2e/creation/fixtures/workbenchPreview.html",
       "features": [

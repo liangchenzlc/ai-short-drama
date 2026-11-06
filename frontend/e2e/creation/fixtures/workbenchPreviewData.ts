@@ -27,6 +27,11 @@ export function createPreviewData(scenario: string) {
   if (scenario === 'series') episodes.push({ id: '2', title: '', summary: '林夏沿着信中的线索寻找真相。', script: '夜晚，林夏再次来到街角。' });
   const characterGroup = group('201', 'asset', '1', [woman, womanAlternative]);
   const sceneGroup = group('202', 'asset', '2', [street]);
+  if (scenario === 'partial') {
+    characterGroup.status = 'partial';
+    characterGroup.items[1] = { ...characterGroup.items[1], media_id: null, url: null,
+      status: 'failed', error: '模拟生成失败，请重试' };
+  }
   const assets: AssetView[] = [
     { id: '1', kind: 'character', name: '林夏', description: '追寻真相的年轻记者。', tags: ['第 01 集'],
       profile: { role: '主角', gender: '女', age: '28', identity: '记者', appearance: '黑色短发，目光坚定。', personality: '冷静、敏锐，富有好奇心。' },
@@ -49,6 +54,18 @@ export function createPreviewData(scenario: string) {
       assetIds: ['1', '2'], imageGroups: [], activeGroupId: null, adoptedImage: null, imagePrompt: '', videoPrompt: '',
       videoReferences: [{ type: 'asset', assetId: '1' }, { type: 'asset', assetId: '2' }], video: null },
   ];
+  if (scenario !== 'series') shots.pop();
+  if (scenario === 'referenceLimit') {
+    for (let index = 0; index < 3; index++) {
+      const id = String(index + 4);
+      const image = media(String(index + 110), 'woman.jpg');
+      const imageGroup = group(String(index + 210), 'asset', id, [image]);
+      assets.push({ ...assets[0], id, name: '参考角色 ' + (index + 1), imageGroups: [imageGroup],
+        activeGroupId: imageGroup.id, adoptedImage: image });
+      shots[0].assetIds.push(id);
+      shots[0].videoReferences.push({ type: 'asset', assetId: id });
+    }
+  }
   if (scenario === 'batch') {
     assets.splice(0, assets.length, ...Array.from({ length: 101 }, (_, index): AssetView => ({
       id: String(index + 1), kind: 'character', name: '角色 ' + String(index + 1).padStart(3, '0'), description: '',

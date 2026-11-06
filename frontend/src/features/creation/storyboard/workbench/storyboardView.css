@@ -102,7 +102,7 @@
 }
 
 .shotImageGallery .imageGalleryCanvas {
-  height: 170px;
+  height: 120px;
 }
 
 .shotImageToggle.ant-btn {
@@ -117,7 +117,7 @@
   transition: transform 160ms ease-out;
 }
 
-.storyboardDetails > .generation-inputs,
+.shotImageComposer > .generation-inputs,
 .storyboardVideo > .generation-inputs {
   margin-top: 0;
 }
@@ -227,4 +227,11 @@
   background: transparent;
   color: var(--ink);
   cursor: pointer;
+}
+.shotAssetPicker {
+  display: grid;
+  gap: 8px;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
 }

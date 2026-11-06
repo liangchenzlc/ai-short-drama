@@ -3,15 +3,15 @@ import { GenerationComposer } from '@host/features/creation/shared/generation/Ge
 import { ImageGroupGallery } from '@host/features/media/image-groups/imageGroupGallery';
 import type { AssetView, ShotView, VideoReference } from '@host/types/creation/workspace/workbenchView';
 import type { ShotSize } from '@host/types/creation/storyboard/shots';
-import { Button, Input, InputNumber, Popover, Select } from 'antd';
+import { Button, Checkbox, Input, InputNumber, Popover, Select } from 'antd';
 import { ChevronDown, Clapperboard, Plus, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './storyboardView.css';
 
 type ShotPatch = Partial<Pick<ShotView, 'title' | 'script' | 'shotSize' | 'durationMs' | 'imagePrompt' | 'videoPrompt'>>;
 
 export function StoryboardView({ shot, assets, previewMediaId, imageStatus, videoStatus, candidates,
-  onChange, onPreview, onAdopt, onSelectGroup, onReferenceChange, onGenerateImage, onGenerateVideo, onAdoptVideo }: {
+  onChange, onAssetsChange, onPreview, onAdopt, onSelectGroup, onReferenceChange, onGenerateImage, onGenerateVideo, onAdoptVideo, onRetryItem }: {
   shot: ShotView;
   assets: AssetView[];
   previewMediaId: string | null;
@@ -19,6 +19,7 @@ export function StoryboardView({ shot, assets, previewMediaId, imageStatus, vide
   videoStatus: string;
   candidates: NonNullable<ShotView['video']>[];
   onChange: (patch: ShotPatch) => void;
+  onAssetsChange: (assetIds: string[]) => void;
   onPreview: (mediaId: string) => void;
   onAdopt: (mediaId: string) => void;
   onSelectGroup: (groupId: string) => void;
@@ -26,8 +27,15 @@ export function StoryboardView({ shot, assets, previewMediaId, imageStatus, vide
   onGenerateImage: () => void;
   onGenerateVideo: () => void;
   onAdoptVideo: (mediaId: string) => void;
+  onRetryItem?: (itemId: string) => void;
 }) {
   const [imageOpen, setImageOpen] = useState(false);
+  const imageComposer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (imageOpen) imageComposer.current?.scrollIntoView({
+      block: 'nearest', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    });
+  }, [imageOpen]);
   const [videoModel, setVideoModel] = useState<'reference' | 'text'>('reference');
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
   const previewIndex = candidates.findIndex((video) => video.mediaId === previewVideoId);
@@ -40,7 +48,7 @@ export function StoryboardView({ shot, assets, previewMediaId, imageStatus, vide
   const selectedAssets = shot.videoReferences.filter((reference) => reference.type === 'asset')
     .map((reference) => associated.find((asset) => asset.id === reference.assetId)).filter((asset) => !!asset);
   const shotReference = shot.videoReferences.find((reference) => reference.type === 'shotImage');
-  const referenceCount = shot.videoReferences.length;
+  const referenceCount = countShotVideoReferences(shot, assets);
   const blocker = videoModel === 'text' && referenceCount ? '当前模型仅支持文字，请移除参考图片或更换模型。' :
     referenceCount > 4 ? '当前模型最多支持 4 张参考图片，请移除多余图片。' : '';
 
@@ -63,7 +71,17 @@ export function StoryboardView({ shot, assets, previewMediaId, imageStatus, vide
           </div>
           <label>镜头描述<Input.TextArea aria-label="镜头描述" autoSize={{ minRows: 3 }} value={shot.script}
             onChange={(event) => onChange({ script: event.target.value })} /></label>
-          <div className="shotAssociated"><span>关联资产</span><div>{associated.map((asset) => <span key={asset.id}>{asset.name}</span>)}</div></div>
+          <div className="shotAssociated"><span>关联资产</span><div>{associated.map((asset) => <span key={asset.id}>{asset.name}</span>)}
+            <Popover trigger="click" title="关联资产" content={<div className="shotAssetPicker">
+              {assets.map((asset) => <Checkbox key={asset.id} aria-label={'关联资产：' + (asset.name || '未命名素材')}
+                checked={shot.assetIds.includes(asset.id)} onChange={(event) => onAssetsChange(event.target.checked ?
+                  [...shot.assetIds, asset.id] : shot.assetIds.filter((id) => id !== asset.id))}>
+                {asset.name || '未命名素材'}
+              </Checkbox>)}
+            </div>}>
+              <Button size="small" type="text" aria-label="关联资产" icon={<Plus size={15} />} />
+            </Popover>
+          </div></div>
           <div className="shotImageHeading"><h3>分镜图</h3>
             {shot.imageGroups.length > 1 && <Select aria-label="分镜图片组" value={shot.activeGroupId}
               onChange={onSelectGroup} options={shot.imageGroups.map((item, index) => ({
@@ -71,17 +89,17 @@ export function StoryboardView({ shot, assets, previewMediaId, imageStatus, vide
               }))} />}
           </div>
           <div className="shotImageGallery"><ImageGroupGallery group={group} adoptedImage={shot.adoptedImage}
-            previewMediaId={previewMediaId} onPreview={onPreview} onAdopt={onAdopt} /></div>
+            previewMediaId={previewMediaId} onPreview={onPreview} onAdopt={onAdopt} onRetryItem={onRetryItem} /></div>
           {image?.media_id && <Button size="small" onClick={() => onReferenceChange({ type: 'shotImage', mediaId: image.media_id! }, true)}>
             使用分镜图作为视频参考
           </Button>}
           <Button className="shotImageToggle" type="text" aria-label={imageOpen ? '收起分镜图生成' : '展开分镜图生成'}
             aria-expanded={imageOpen} icon={<ChevronDown size={15} className={imageOpen ? 'isOpen' : ''} />}
             onClick={() => setImageOpen(!imageOpen)}>生成分镜图</Button>
-          {imageOpen && <GenerationComposer prompt={shot.imagePrompt} onPrompt={(imagePrompt) => onChange({ imagePrompt })}
+          {imageOpen && <div ref={imageComposer} className="shotImageComposer"><GenerationComposer prompt={shot.imagePrompt} onPrompt={(imagePrompt) => onChange({ imagePrompt })}
             model={<span>演示图片模型</span>} sendDisabled={false} busy={false} onSend={onGenerateImage}
             promptInput={(id) => <AssetPromptInput id={id} ariaLabel="分镜图片提示词" value={shot.imagePrompt}
-              references={imageReferences} onChange={(imagePrompt) => onChange({ imagePrompt })} />} />}
+              references={imageReferences} onChange={(imagePrompt) => onChange({ imagePrompt })} />} /></div>}
           {imageStatus && <span role="status" aria-label="分镜图生成状态">{imageStatus}</span>}
         </div>
         <div className="storyboardVideo">
@@ -104,11 +122,11 @@ export function StoryboardView({ shot, assets, previewMediaId, imageStatus, vide
           <div className="shotVideoReferences"><span>视频参考</span>
             {selectedAssets.map((asset) => <div className="shotReference" key={asset.id}>
               {asset.adoptedImage?.url && <img src={asset.adoptedImage.url} alt="" />}
-              <span>{asset.name}</span>
+              <span>{asset.name}{asset.adoptedImage ? '' : ' · 缺图'}</span>
               <button type="button" aria-label={'移除参考：' + asset.name}
                 onClick={() => onReferenceChange({ type: 'asset', assetId: asset.id }, false)}><X size={12} /></button>
             </div>)}
-            {associated.filter((asset) => !asset.adoptedImage).map((asset) =>
+            {associated.filter((asset) => !asset.adoptedImage && !selectedAssets.some((selected) => selected.id === asset.id)).map((asset) =>
               <span key={asset.id}>{asset.name} · 缺图</span>)}
             {shotReference && <div className="shotReference"><span>分镜图</span>
               <button type="button" aria-label="移除参考：分镜图"
@@ -131,4 +149,9 @@ export function StoryboardView({ shot, assets, previewMediaId, imageStatus, vide
       </div>
     </section>
   );
+}
+
+export function countShotVideoReferences(shot: ShotView, assets: AssetView[]) {
+  return shot.videoReferences.filter((reference) => reference.type === 'shotImage' ||
+    (shot.assetIds.includes(reference.assetId) && assets.some((asset) => asset.id === reference.assetId && asset.adoptedImage))).length;
 }

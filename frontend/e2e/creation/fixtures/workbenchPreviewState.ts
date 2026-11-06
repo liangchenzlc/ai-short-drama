@@ -1,8 +1,9 @@
 import { remapAssetPromptReferences } from '@host/features/creation/assets/images/asset-prompt-references';
 import type { AssetPromptReference } from '@host/types/creation/assets/images/asset-prompt-references';
 import type { AssetView, BatchItemView, EpisodeView, ShotView, VideoReference } from '@host/types/creation/workspace/workbenchView';
+import type { ImageGroup, ImageMedia } from '@host/types/media/image-groups';
 import type { BatchScene } from '@host/types/generations/batches/requests';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPreviewData, group, media } from './workbenchPreviewData';
 
 type OutlineDraft = Pick<EpisodeView, 'title' | 'summary'>;
@@ -13,13 +14,15 @@ export function useWorkbenchPreviewState() {
   const [story, setStory] = useState(initial.story);
   const [episodes, setEpisodes] = useState(initial.episodes);
   const [assets, setAssets] = useState(initial.assets);
+  const assetsRef = useRef(assets);
+  useEffect(() => { assetsRef.current = assets; }, [assets]);
   const [shots, setShots] = useState(initial.shots);
   const [episodeId, setEpisodeId] = useState(initial.episodes[0].id);
   const [assetId, setAssetId] = useState(initial.assets[0].id);
   const [shotId, setShotId] = useState(initial.shots[0].id);
   const [outlineDraft, setOutlineDraft] = useState<OutlineDraft[] | null>(null);
   const [previewByAsset, setPreviewByAsset] = useState<Record<string, string>>({});
-  const [assetReferences, setAssetReferences] = useState<Record<string, AssetPromptReference[]>>(() => {
+  const [assetReferences, setAssetReferences] = useState<Record<string, AssetPromptReference[]>>((): Record<string, AssetPromptReference[]> => {
     const scene = initial.assets.find((asset) => asset.name === '咖啡馆');
     return scene?.adoptedImage ? { '1': [{ ...scene.adoptedImage, name: scene.name }] } : {};
   });
@@ -30,11 +33,72 @@ export function useWorkbenchPreviewState() {
   const [videoCandidates, setVideoCandidates] = useState<Record<string, NonNullable<ShotView['video']>[]>>({});
   const [batches, setBatches] = useState<PreviewBatch[]>([]);
   const nextEpisodeId = useRef(Math.max(...initial.episodes.map((episode) => Number(episode.id))) + 1);
+  const nextAssetId = useRef(Math.max(...initial.assets.map((asset) => Number(asset.id))) + 1);
+  const nextShotId = useRef(Math.max(...initial.shots.map((shot) => Number(shot.id))) + 1);
   const newEpisode = (draft: OutlineDraft = { title: '', summary: '' }): EpisodeView =>
     ({ id: String(nextEpisodeId.current++), ...draft, script: '' });
 
+  function addAsset() {
+    const id = String(nextAssetId.current++);
+    const asset: AssetView = { id, kind: 'character', name: '', description: '', tags: [],
+      profile: { role: '', gender: '', age: '', identity: '', appearance: '', personality: '' },
+      imageGroups: [], activeGroupId: null, adoptedImage: null, imagePrompt: '' };
+    setAssets((current) => [...current, asset]);
+    setAssetId(id);
+  }
+  function removeAsset(id: string) {
+    const removed = assets.find((asset) => asset.id === id)!;
+    const remainingAssets = assets.filter((asset) => asset.id !== id);
+    const mediaIds = new Set(removed.imageGroups.flatMap((imageGroup) => imageGroup.items.flatMap((item) => item.media_id ? [item.media_id] : [])));
+    if (removed.adoptedImage) mediaIds.add(removed.adoptedImage.media_id);
+    const remainingReferences = Object.fromEntries(Object.entries(assetReferences)
+      .filter(([assetId]) => assetId !== id)
+      .map(([assetId, references]) => [assetId, references.filter((reference) => !mediaIds.has(reference.media_id))]));
+    setAssets((current) => current.filter((asset) => asset.id !== id).map((asset) => ({ ...asset,
+      imagePrompt: remapAssetPromptReferences(asset.imagePrompt, assetReferences[asset.id] ?? [], remainingReferences[asset.id] ?? []),
+    })));
+    setAssetReferences(remainingReferences);
+    setShots((current) => current.map((shot) => ({ ...shot, assetIds: shot.assetIds.filter((assetId) => assetId !== id),
+      imagePrompt: remapAssetPromptReferences(shot.imagePrompt, shotPromptReferences(assets, shot.assetIds),
+        shotPromptReferences(remainingAssets, shot.assetIds)),
+      videoReferences: shot.videoReferences.filter((reference) => reference.type !== 'asset' || reference.assetId !== id) })));
+  }
+  function addShot() {
+    const id = String(nextShotId.current++);
+    const shot: ShotView = { id, episodeId, position: shots.filter((item) => item.episodeId === episodeId).length + 1,
+      title: '', script: '', shotSize: null, durationMs: 5000, assetIds: [], imageGroups: [],
+      activeGroupId: null, adoptedImage: null, imagePrompt: '', videoPrompt: '', videoReferences: [], video: null };
+    setShots((current) => [...current, shot]);
+    setShotId(id);
+  }
+  function removeShot(id: string) {
+    setShots((current) => {
+      let position = 0;
+      return current.filter((shot) => shot.id !== id).map((shot) =>
+        shot.episodeId === episodeId ? { ...shot, position: ++position } : shot);
+    });
+  }
+  function changeShotAssets(id: string, assetIds: string[]) {
+    const shot = shots.find((item) => item.id === id);
+    if (!shot) return;
+    const retained = shot.videoReferences.filter((reference) => reference.type !== 'asset' || assetIds.includes(reference.assetId));
+    const added: VideoReference[] = assetIds.filter((assetId) => !shot.assetIds.includes(assetId) &&
+      assets.some((asset) => asset.id === assetId && asset.kind !== 'prop'))
+      .map((assetId) => ({ type: 'asset', assetId }));
+    changeShot(id, { assetIds, videoReferences: [...retained, ...added],
+      imagePrompt: remapAssetPromptReferences(shot.imagePrompt, shotPromptReferences(assets, shot.assetIds), shotPromptReferences(assets, assetIds)) });
+  }
   function changeAsset(id: string, patch: Partial<AssetView>) {
+    if (patch.adoptedImage !== undefined) {
+      remapShotImagePrompts(assets, assets.map((asset) => asset.id === id ? { ...asset, ...patch } : asset));
+    }
     setAssets((current) => current.map((asset) => asset.id === id ? { ...asset, ...patch } : asset));
+  }
+  function remapShotImagePrompts(before: AssetView[], after: AssetView[]) {
+    setShots((current) => current.map((shot) => ({ ...shot,
+      imagePrompt: remapAssetPromptReferences(shot.imagePrompt, shotPromptReferences(before, shot.assetIds),
+        shotPromptReferences(after, shot.assetIds)),
+    })));
   }
   function changeAssetReferences(id: string, references: AssetPromptReference[]) {
     const asset = assets.find((item) => item.id === id);
@@ -120,6 +184,25 @@ export function useWorkbenchPreviewState() {
     setVideoStatuses((current) => ({ ...current, [id]: '已采用' }));
   }
 
+  function retryImageItem(kind: 'asset' | 'shot', targetId: string, itemId: string) {
+    const image = media(String(nextMediaId.current++), kind === 'asset' ? 'camera.jpg' : 'street.jpg');
+    function update(status: 'generating' | 'ready', result?: ImageMedia) {
+      const updateGroups = (groups: ImageGroup[]) => groups.map((imageGroup) => {
+        if (!imageGroup.items.some((item) => item.id === itemId)) return imageGroup;
+        const items = imageGroup.items.map((item) => item.id === itemId ?
+          { ...item, ...result, status, error: null } : item);
+        return { ...imageGroup, items, status: status === 'generating' ? 'generating' as const :
+          items.some((item) => item.status === 'failed') ? 'partial' as const : 'completed' as const };
+      });
+      if (kind === 'asset') setAssets((current) => current.map((item) =>
+        item.id === targetId ? { ...item, imageGroups: updateGroups(item.imageGroups) } : item));
+      else setShots((current) => current.map((item) =>
+        item.id === targetId ? { ...item, imageGroups: updateGroups(item.imageGroups) } : item));
+    }
+    update('generating');
+    setTimeout(() => update('ready', image), 300);
+  }
+
   function applyBatchResults(scene: BatchScene, ids: string[]) {
     if (!ids.length) return;
     if (scene === 'asset_image') {
@@ -127,6 +210,13 @@ export function useWorkbenchPreviewState() {
         const image = media(String(nextMediaId.current++), 'woman.jpg');
         return [id, { image, group: group(String(nextMediaId.current++), 'asset', id, [image]) }] as const;
       }));
+      const currentAssets = assetsRef.current;
+      const nextAssets = currentAssets.map((item) => {
+        const result = results.get(item.id);
+        return result ? { ...item, adoptedImage: item.adoptedImage ?? result.image } : item;
+      });
+      remapShotImagePrompts(currentAssets, nextAssets);
+      assetsRef.current = nextAssets;
       setAssets((current) => current.map((item) => {
         const result = results.get(item.id);
         return result ? { ...item, imageGroups: [result.group, ...item.imageGroups],
@@ -230,7 +320,8 @@ export function useWorkbenchPreviewState() {
     if (!outlineDraft) return;
     const fillsFirst = !episodes[0].summary.trim();
     const drafts = fillsFirst ? outlineDraft.slice(1) : outlineDraft;
-    const first = fillsFirst ? { ...episodes[0], ...outlineDraft[0] } : episodes[0];
+    const first = fillsFirst ? { ...episodes[0], summary: outlineDraft[0].summary,
+      title: episodes[0].title || outlineDraft[0].title } : episodes[0];
     setEpisodes([first, ...episodes.slice(1), ...drafts.map((draft) => newEpisode(draft))]);
     setOutlineDraft(null);
   }
@@ -240,5 +331,10 @@ export function useWorkbenchPreviewState() {
     outlineDraft, setOutlineDraft, addEpisode, changeEpisode, moveEpisode, deleteEpisode, generateOutlines, applyOutlines,
     previewByAsset, setPreviewByAsset, assetReferences, changeAsset, changeAssetReferences,
     selectAssetGroup, adoptAssetImage, generateAssetImage, previewByShot, setPreviewByShot, imageStatuses, videoStatuses,
-    videoCandidates, changeShot, changeVideoReference, selectShotGroup, adoptShotImage, generateShotImage, generateShotVideo, adoptShotVideo, batches, startBatch, retryBatch };
+    videoCandidates, changeShot, changeShotAssets, changeVideoReference, selectShotGroup, adoptShotImage, generateShotImage, generateShotVideo, adoptShotVideo, batches, startBatch, retryBatch, retryImageItem, addAsset, removeAsset, addShot, removeShot };
+}
+
+function shotPromptReferences(assets: AssetView[], assetIds: string[]): AssetPromptReference[] {
+  return assets.filter((asset) => assetIds.includes(asset.id) && asset.adoptedImage)
+    .map((asset) => ({ ...asset.adoptedImage!, media_id: asset.id, name: asset.name }));
 }

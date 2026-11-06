@@ -43,7 +43,7 @@ export function EpisodeSelector({ episodes, selectedId, onSelect, onAdd, onRenam
                 disabled={position === 0} onClick={() => onMove(episode.id, -1)} />
               <Button type="text" size="small" aria-label={'下移' + episodeLabel(position)} icon={<ArrowDown size={13} />}
                 disabled={position === episodes.length - 1} onClick={() => onMove(episode.id, 1)} />
-              <Popconfirm title="删除分集？" description="该集的剧本和分镜也会删除，无法撤销。"
+              <Popconfirm title="删除分集？" description="该集概要、剧本、分镜和成片数据都会删除，无法撤销；共享资产保留。"
                 okText="删除" cancelText="取消" onConfirm={() => onDelete(episode.id)}>
                 <Button type="text" size="small" danger aria-label={'删除' + episodeLabel(position)} icon={<Trash2 size={13} />} />
               </Popconfirm>

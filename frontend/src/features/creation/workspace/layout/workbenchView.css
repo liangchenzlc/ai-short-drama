@@ -7,44 +7,6 @@
   display: block;
 }
 
-.workbenchResourceRail {
-  box-sizing: border-box;
-  height: 100%;
-  padding: 20px 14px;
-  border: 1px solid var(--hair);
-  border-radius: 10px;
-  background: var(--surface);
-}
-
-.workbenchResourceRail {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow-y: auto;
-}
-
-.workbenchResourceRail h2 {
-  margin: 0 0 14px;
-  padding: 0 8px;
-  font-size: 15px;
-}
-
-.workbenchResourceRail button {
-  padding: 10px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--sub);
-  text-align: left;
-  cursor: pointer;
-}
-
-.workbenchResourceRail button:hover,
-.workbenchResourceRail button[aria-current='true'] {
-  background: var(--surface-hover);
-  color: var(--ink);
-}
-
 .workbenchEmptyPanel {
   display: grid;
   place-items: center;
