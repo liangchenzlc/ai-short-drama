@@ -1,0 +1,198 @@
+.writingView {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.writingViewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.writingTabs {
+  display: flex;
+  align-self: stretch;
+  gap: 24px;
+}
+
+.writingTabs button {
+  position: relative;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--sub);
+  cursor: pointer;
+}
+
+.writingTabs button[aria-selected='true'] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.writingTabs button[aria-selected='true']::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--ink);
+  content: '';
+}
+
+.writingOutline {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.writingOutlineInner {
+  display: grid;
+  gap: 22px;
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 28px 32px 48px;
+}
+
+.writingOutlineTitle,
+.writingSectionTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.writingOutlineTitle h1,
+.writingSectionTitle h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.writingOutlineTitle span,
+.writingSectionTitle span {
+  color: var(--sub);
+  font-size: 12px;
+}
+
+.writingOutlineTitle span {
+  display: block;
+  margin-top: 6px;
+}
+
+.writingOutlineInner label,
+.outlineDialog label {
+  display: grid;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.writingSectionTitle {
+  margin-bottom: 12px;
+}
+
+.writingSectionTitle h2 {
+  font-size: 15px;
+}
+
+.writingEpisode {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--hair);
+}
+
+.writingEpisode strong {
+  padding-top: 8px;
+  font-weight: 500;
+}
+
+.writingScript {
+  flex: 1;
+}
+
+.writingScript.sd-desk > .sd-doc {
+  --sd-inline: 32px;
+}
+
+.episodeMenu {
+  width: 320px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.episodeMenuRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.episodeMenuRow > button[role='menuitem'] {
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.episodeMenuRow > button[role='menuitem']:hover {
+  background: var(--surface-hover);
+}
+
+.episodeMenuActions {
+  display: flex;
+}
+
+.episodeMenuActions .ant-btn {
+  width: 26px;
+  min-width: 26px;
+}
+
+.outlineDialog {
+  display: grid;
+  gap: 14px;
+  width: 480px;
+  max-width: calc(100vw - 80px);
+}
+
+.outlineDialog > label {
+  grid-template-columns: 1fr 100px;
+  align-items: center;
+}
+
+.outlineDialog p {
+  margin: 0;
+  color: var(--sub);
+}
+
+.outlineDrafts {
+  display: grid;
+  gap: 12px;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.outlineDialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

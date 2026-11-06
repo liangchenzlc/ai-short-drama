@@ -1,5 +1,7 @@
 import { CreativeAssistantPanel } from '@host/features/assistant/panel/CreativeAssistantPanel';
 import { CreationEditorSlot, CreationWorkspace } from '@host/features/creation/workspace/layout/CreationWorkspace';
+import { EpisodeSelector } from '@host/features/creation/workspace/layout/episodeSelector';
+import { WritingView } from '@host/features/creation/writing/editor/writingView';
 import { TopStepNav } from '@host/features/creation/workspace/navigation/TopStepNav';
 import type { CreationStage } from '@host/types/creation/workspace/model';
 import { Button } from 'antd';
@@ -18,6 +20,9 @@ export function WorkbenchPreviewApp() {
       <header className="creation-top">
         <div className="creation-project-location">
           <span className="creation-project-name">未寄出的信</span>
+          {stage !== 'assembly' && <EpisodeSelector episodes={state.episodes} selectedId={state.episodeId}
+            onSelect={state.setEpisodeId} onAdd={state.addEpisode}
+            onRename={(id, title) => state.changeEpisode(id, { title })} onMove={state.moveEpisode} onDelete={state.deleteEpisode} />}
           <span role="status" aria-label="演示数据">演示数据 · 刷新重置</span>
         </div>
         <div className="creation-project-actions">
@@ -29,7 +34,12 @@ export function WorkbenchPreviewApp() {
         <CreationWorkspace stage={stage} assistantOpen={assistantOpen} workRequest={0} subject={null} onSubject={() => {}}
           assistantPanel={<CreativeAssistantPanel layout="standard" projectId="1" projectTitle="未寄出的信" open={assistantOpen}
             readOnly onClose={() => setAssistantOpen(false)} onOpenModelSettings={() => {}} prepareContext={async () => null} />}>
-          {stage === 'source' && <section className="workbenchSourcePlaceholder"><h1>剧本创作</h1><p>大纲与剧本</p></section>}
+          {stage === 'source' && <WritingView story={state.story} episodes={state.episodes} selectedId={state.episodeId}
+            outlineDraft={state.outlineDraft} onStoryChange={(patch) => state.setStory((current) => ({ ...current, ...patch }))}
+            onEpisodeChange={state.changeEpisode} onAdd={state.addEpisode} onGenerateOutlines={state.generateOutlines}
+            onEditOutline={(index, patch) => state.setOutlineDraft((current) =>
+              current?.map((item, position) => position === index ? { ...item, ...patch } : item) ?? null)}
+            onApplyOutlines={state.applyOutlines} onDiscardOutlines={() => state.setOutlineDraft(null)} />}
           {stage === 'assets' && <>
             <aside className="workbenchResourceRail" aria-label="资产列表">
               <h2>资产生成</h2>
