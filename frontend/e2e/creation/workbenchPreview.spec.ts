@@ -76,3 +76,31 @@ test('AI 概要采用空白首集并追加其余分集', async ({ page }) => {
   await expect(first).toHaveValue('用户已经写好的概要');
   await expect(page.getByRole('list', { name: '分集概要' }).getByRole('listitem')).toHaveCount(5);
 });
+test('角色画像和图片组区分查看与主图', async ({ page }) => {
+  await page.goto(preview + '?scenario=series');
+  await page.getByRole('navigation', { name: '创作流程' })
+    .getByRole('button', { name: '资产生成', exact: true }).click();
+  await page.getByRole('button', { name: '林夏', exact: true }).click();
+  await expect(page.getByLabel('姓名', { exact: true })).toHaveValue('林夏');
+  await expect(page.getByLabel('身份', { exact: true })).toHaveValue('记者');
+  const imageGeometry = await page.locator('.imageGalleryCanvas').evaluate((canvas) => {
+    const image = canvas.querySelector('img')!;
+    return { image: image.getBoundingClientRect().height, canvas: canvas.getBoundingClientRect().height };
+  });
+  expect(imageGeometry.image).toBeLessThanOrEqual(imageGeometry.canvas + 1);
+  await page.getByRole('button', { name: '查看图片 2', exact: true }).click();
+  await expect(page.getByRole('img', { name: '当前查看图片 2' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '图片 1，主图' })).toBeVisible();
+  await page.getByRole('button', { name: '设为主图', exact: true }).click();
+  await expect(page.getByRole('button', { name: '图片 2，主图' })).toBeVisible();
+  const prompt = page.getByRole('textbox', { name: '资产图片提示词' });
+  await prompt.fill('@');
+  await expect(page.getByRole('listbox', { name: '引用参考图片' })).toBeVisible();
+  const tags = page.getByRole('combobox', { name: '资产标签' });
+  await tags.fill('第 02 集');
+  await tags.press('Enter');
+  await expect(page.getByRole('button', { name: '图片 2，主图' })).toBeVisible();
+  await page.getByRole('button', { name: '咖啡馆', exact: true }).click();
+  await page.getByRole('button', { name: '林夏', exact: true }).click();
+  await expect(page.getByRole('button', { name: '图片 2，主图' })).toBeVisible();
+});

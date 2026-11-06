@@ -4,7 +4,7 @@ import { Image as ImageIcon } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import './asset-prompt-input.css';
-export function AssetPromptInput({ id, value, references, disabled = false, maxLength = 4000, onChange }: Props) {
+export function AssetPromptInput({ id, value, references, ariaLabel = '画面要求', disabled = false, maxLength = 4000, onChange }: Props) {
   const editor = useRef<HTMLDivElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
   const composing = useRef(false);
@@ -201,7 +201,7 @@ export function AssetPromptInput({ id, value, references, disabled = false, maxL
         ref={editor}
         className="asset-prompt-editor"
         role="textbox"
-        aria-label="画面要求"
+        aria-label={ariaLabel}
         aria-multiline="true"
         aria-disabled={disabled}
         aria-readonly={disabled}

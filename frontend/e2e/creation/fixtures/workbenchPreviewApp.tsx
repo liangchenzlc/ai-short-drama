@@ -1,3 +1,4 @@
+import { AssetView } from '@host/features/creation/assets/editor/assetView';
 import { CreativeAssistantPanel } from '@host/features/assistant/panel/CreativeAssistantPanel';
 import { CreationEditorSlot, CreationWorkspace } from '@host/features/creation/workspace/layout/CreationWorkspace';
 import { EpisodeSelector } from '@host/features/creation/workspace/layout/episodeSelector';
@@ -13,6 +14,9 @@ export function WorkbenchPreviewApp() {
   const state = useWorkbenchPreviewState();
   const [stage, setStage] = useState<CreationStage>('source');
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const asset = state.assets.find((item) => item.id === state.assetId) ?? state.assets[0];
+  const availableReferences = state.assets.filter((item) => item.id !== asset.id && item.adoptedImage)
+    .map((item) => ({ ...item.adoptedImage!, name: item.name }));
 
   return (
     <div className="creation-page web-episode workbenchPreview">
@@ -46,7 +50,15 @@ export function WorkbenchPreviewApp() {
               {state.assets.map((asset) => <button type="button" key={asset.id} aria-current={state.assetId === asset.id}
                 onClick={() => state.setAssetId(asset.id)}>{asset.name}</button>)}
             </aside>
-            <CreationEditorSlot stage="assets"><div className="workbenchEmptyPanel">选择资产，开始创作</div></CreationEditorSlot>
+            <CreationEditorSlot stage="assets"><AssetView asset={asset}
+              previewMediaId={state.previewByAsset[asset.id] ?? asset.adoptedImage?.media_id ?? null}
+              references={state.assetReferences[asset.id] ?? []} availableReferences={availableReferences}
+              onChange={(patch) => state.changeAsset(asset.id, patch)}
+              onPreview={(id) => state.setPreviewByAsset((current) => ({ ...current, [asset.id]: id }))}
+              onAdopt={(id) => state.adoptAssetImage(asset.id, id)}
+              onSelectGroup={(id) => state.selectAssetGroup(asset.id, id)}
+              onReferencesChange={(references) => state.changeAssetReferences(asset.id, references)}
+              onGenerate={() => state.generateAssetImage(asset.id)} /></CreationEditorSlot>
           </>}
           {stage === 'storyboard' && <>
             <aside className="workbenchResourceRail" aria-label="分镜列表">
