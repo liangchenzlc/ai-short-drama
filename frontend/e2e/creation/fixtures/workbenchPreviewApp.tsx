@@ -1,3 +1,4 @@
+import { StoryboardView } from '@host/features/creation/storyboard/workbench/storyboardView';
 import { AssetView } from '@host/features/creation/assets/editor/assetView';
 import { CreativeAssistantPanel } from '@host/features/assistant/panel/CreativeAssistantPanel';
 import { CreationEditorSlot, CreationWorkspace } from '@host/features/creation/workspace/layout/CreationWorkspace';
@@ -15,6 +16,8 @@ export function WorkbenchPreviewApp() {
   const [stage, setStage] = useState<CreationStage>('source');
   const [assistantOpen, setAssistantOpen] = useState(false);
   const asset = state.assets.find((item) => item.id === state.assetId) ?? state.assets[0];
+  const episodeShots = state.shots.filter((item) => item.episodeId === state.episodeId);
+  const shot = episodeShots.find((item) => item.id === state.shotId) ?? episodeShots[0];
   const availableReferences = state.assets.filter((item) => item.id !== asset.id && item.adoptedImage)
     .map((item) => ({ ...item.adoptedImage!, name: item.name }));
 
@@ -63,12 +66,22 @@ export function WorkbenchPreviewApp() {
           {stage === 'storyboard' && <>
             <aside className="workbenchResourceRail" aria-label="分镜列表">
               <h2>分镜制作</h2>
-              {state.shots.filter((shot) => shot.episodeId === state.episodeId).map((shot) =>
-                <button type="button" key={shot.id} onClick={() => state.setShotId(shot.id)}>
+              {episodeShots.map((shot) =>
+                <button type="button" key={shot.id} aria-current={shot.id === state.shotId} onClick={() => state.setShotId(shot.id)}>
                   镜头 {String(shot.position).padStart(2, '0')}
                 </button>)}
             </aside>
-            <CreationEditorSlot stage="storyboard"><div className="workbenchEmptyPanel">选择镜头，开始创作</div></CreationEditorSlot>
+            <CreationEditorSlot stage="storyboard">{shot ? <StoryboardView shot={shot} assets={state.assets}
+              previewMediaId={state.previewByShot[shot.id] ?? shot.adoptedImage?.media_id ?? null}
+              imageStatus={state.imageStatuses[shot.id] ?? ''} videoStatus={state.videoStatuses[shot.id] ?? ''}
+              candidates={state.videoCandidates[shot.id] ?? []}
+              onChange={(patch) => state.changeShot(shot.id, patch)}
+              onPreview={(id) => state.setPreviewByShot((current) => ({ ...current, [shot.id]: id }))}
+              onAdopt={(id) => state.adoptShotImage(shot.id, id)} onSelectGroup={(id) => state.selectShotGroup(shot.id, id)}
+              onReferenceChange={(reference, selected) => state.changeVideoReference(shot.id, reference, selected)}
+              onGenerateImage={() => state.generateShotImage(shot.id)}
+              onGenerateVideo={() => state.generateShotVideo(shot.id)} onAdoptVideo={(id) => state.adoptShotVideo(shot.id, id)} /> :
+              <div className="workbenchEmptyPanel">本集暂无镜头</div>}</CreationEditorSlot>
           </>}
           {stage === 'assembly' && <div className="workbenchEmptyPanel">本次不预览成片</div>}
         </CreationWorkspace>

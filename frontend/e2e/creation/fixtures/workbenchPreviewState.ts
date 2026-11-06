@@ -1,6 +1,6 @@
 import { remapAssetPromptReferences } from '@host/features/creation/assets/images/asset-prompt-references';
 import type { AssetPromptReference } from '@host/types/creation/assets/images/asset-prompt-references';
-import type { AssetView, EpisodeView } from '@host/types/creation/workspace/workbenchView';
+import type { AssetView, EpisodeView, ShotView, VideoReference } from '@host/types/creation/workspace/workbenchView';
 import { useRef, useState } from 'react';
 import { createPreviewData, group, media } from './workbenchPreviewData';
 
@@ -22,6 +22,10 @@ export function useWorkbenchPreviewState() {
     return scene?.adoptedImage ? { '1': [{ ...scene.adoptedImage, name: scene.name }] } : {};
   });
   const nextMediaId = useRef(1000);
+  const [previewByShot, setPreviewByShot] = useState<Record<string, string>>({});
+  const [imageStatuses, setImageStatuses] = useState<Record<string, string>>({});
+  const [videoStatuses, setVideoStatuses] = useState<Record<string, string>>({});
+  const [videoCandidates, setVideoCandidates] = useState<Record<string, NonNullable<ShotView['video']>[]>>({});
   const nextEpisodeId = useRef(Math.max(...initial.episodes.map((episode) => Number(episode.id))) + 1);
   const newEpisode = (draft: OutlineDraft = { title: '', summary: '' }): EpisodeView =>
     ({ id: String(nextEpisodeId.current++), ...draft, script: '' });
@@ -56,6 +60,61 @@ export function useWorkbenchPreviewState() {
     changeAsset(id, { imageGroups: [generated, ...asset.imageGroups], activeGroupId: generated.id,
       adoptedImage: asset.adoptedImage ?? images[0] });
     setPreviewByAsset((current) => ({ ...current, [id]: images[0].media_id }));
+  }
+
+  function changeShot(id: string, patch: Partial<ShotView>) {
+    setShots((current) => current.map((shot) => shot.id === id ? { ...shot, ...patch } : shot));
+  }
+  function changeVideoReference(id: string, reference: VideoReference, selected: boolean) {
+    const shot = shots.find((item) => item.id === id);
+    if (!shot) return;
+    const same = (item: VideoReference) => item.type === reference.type &&
+      (item.type === 'asset' && reference.type === 'asset' ? item.assetId === reference.assetId :
+        item.type === 'shotImage' && reference.type === 'shotImage' && item.mediaId === reference.mediaId);
+    const remaining = shot.videoReferences.filter((item) => !same(item) &&
+      !(selected && reference.type === 'shotImage' && item.type === 'shotImage'));
+    changeShot(id, { videoReferences: selected ? [...remaining, reference] : remaining });
+  }
+  function selectShotGroup(id: string, groupId: string) {
+    const selected = shots.find((item) => item.id === id)?.imageGroups.find((item) => item.id === groupId);
+    changeShot(id, { activeGroupId: groupId });
+    const first = selected?.items.find((item) => item.media_id)?.media_id;
+    if (first) setPreviewByShot((current) => ({ ...current, [id]: first }));
+  }
+  function adoptShotImage(id: string, mediaId: string) {
+    const item = shots.find((shot) => shot.id === id)?.imageGroups.flatMap((imageGroup) => imageGroup.items)
+      .find((image) => image.media_id === mediaId);
+    if (item?.media_id) changeShot(id, { adoptedImage: {
+      media_id: item.media_id, url: item.url, width: item.width, height: item.height,
+    } });
+  }
+  function generateShotImage(id: string) {
+    const shot = shots.find((item) => item.id === id);
+    if (!shot) return;
+    const images = ['street.jpg', 'camera.jpg'].map((file) => media(String(nextMediaId.current++), file));
+    const generated = group(String(nextMediaId.current++), 'shot', id, images);
+    changeShot(id, { imageGroups: [generated, ...shot.imageGroups], activeGroupId: generated.id,
+      adoptedImage: shot.adoptedImage ?? images[0] });
+    setPreviewByShot((current) => ({ ...current, [id]: images[0].media_id }));
+    setImageStatuses((current) => ({ ...current, [id]: '已完成' }));
+  }
+  function generateShotVideo(id: string) {
+    const shot = shots.find((item) => item.id === id);
+    if (!shot) return;
+    const video = { mediaId: String(nextMediaId.current++), url: '/.runtime/timeline-fixture.mp4' };
+    if (shot.video) setVideoCandidates((current) => ({ ...current, [id]: [...(current[id] ?? []), video] }));
+    else changeShot(id, { video });
+    setVideoStatuses((current) => ({ ...current, [id]: '已完成' }));
+  }
+  function adoptShotVideo(id: string, mediaId: string) {
+    const shot = shots.find((item) => item.id === id);
+    const candidate = videoCandidates[id]?.find((item) => item.mediaId === mediaId);
+    if (!shot || !candidate) return;
+    setVideoCandidates((current) => ({ ...current, [id]: [
+      ...(current[id] ?? []).filter((item) => item.mediaId !== mediaId), ...(shot.video ? [shot.video] : []),
+    ] }));
+    changeShot(id, { video: candidate });
+    setVideoStatuses((current) => ({ ...current, [id]: '已采用' }));
   }
 
   function addEpisode() {
@@ -97,5 +156,6 @@ export function useWorkbenchPreviewState() {
     episodeId, setEpisodeId, assetId, setAssetId, shotId, setShotId,
     outlineDraft, setOutlineDraft, addEpisode, changeEpisode, moveEpisode, deleteEpisode, generateOutlines, applyOutlines,
     previewByAsset, setPreviewByAsset, assetReferences, changeAsset, changeAssetReferences,
-    selectAssetGroup, adoptAssetImage, generateAssetImage };
+    selectAssetGroup, adoptAssetImage, generateAssetImage, previewByShot, setPreviewByShot, imageStatuses, videoStatuses,
+    videoCandidates, changeShot, changeVideoReference, selectShotGroup, adoptShotImage, generateShotImage, generateShotVideo, adoptShotVideo };
 }

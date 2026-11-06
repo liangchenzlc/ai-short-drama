@@ -104,3 +104,44 @@ test('角色画像和图片组区分查看与主图', async ({ page }) => {
   await page.getByRole('button', { name: '林夏', exact: true }).click();
   await expect(page.getByRole('button', { name: '图片 2，主图' })).toBeVisible();
 });
+test('分镜图展开编辑且视频参考可移除', async ({ page }) => {
+  await page.goto(preview + '?scenario=series');
+  await page.getByRole('navigation', { name: '创作流程' })
+    .getByRole('button', { name: '分镜制作', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '视频提示词' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '分镜图片提示词' })).toHaveCount(0);
+  await page.getByRole('button', { name: '展开分镜图生成' }).click();
+  const useImageButton = page.getByRole('button', { name: '使用分镜图作为视频参考' });
+  expect((await useImageButton.boundingBox())!.height).toBeGreaterThanOrEqual(28);
+  const imagePrompt = page.getByRole('textbox', { name: '分镜图片提示词' });
+  await imagePrompt.fill('逆光，镜头缓慢推进');
+  await page.getByRole('button', { name: '收起分镜图生成' }).click();
+  await page.getByRole('button', { name: '展开分镜图生成' }).click();
+  await expect(imagePrompt).toHaveText('逆光，镜头缓慢推进');
+  await page.getByRole('button', { name: '移除参考：林夏' }).click();
+  await expect(page.getByRole('button', { name: '移除参考：林夏' })).toHaveCount(0);
+  await page.getByRole('button', { name: '镜头 02', exact: true }).click();
+  await page.getByRole('button', { name: '镜头 01', exact: true }).click();
+  await expect(page.getByRole('button', { name: '移除参考：林夏' })).toHaveCount(0);
+  await page.getByRole('button', { name: '使用分镜图作为视频参考' }).click();
+  await expect(page.getByRole('button', { name: '移除参考：分镜图' })).toBeVisible();
+});
+
+test('两种视频路径保留当前视频', async ({ page }) => {
+  await page.goto(preview + '?scenario=series');
+  await page.getByRole('navigation', { name: '创作流程' })
+    .getByRole('button', { name: '分镜制作', exact: true }).click();
+  await expect(page.getByRole('button', { name: '移除参考：林夏' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '移除参考：分镜图' })).toHaveCount(0);
+  await page.getByRole('button', { name: '生成视频', exact: true }).click();
+  await expect(page.getByRole('status', { name: '视频生成状态' })).toHaveText('已完成');
+  await page.getByRole('button', { name: '使用分镜图作为视频参考' }).click();
+  await expect(page.getByRole('button', { name: '移除参考：分镜图' })).toBeVisible();
+  await page.getByRole('button', { name: '生成视频', exact: true }).click();
+  await expect(page.getByRole('status', { name: '视频生成状态' })).toHaveText('已完成');
+  await expect(page.getByText('候选视频 1', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '预览候选视频 1' }).click();
+  await expect(page.getByText('正在预览候选视频 1', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '采用候选视频 1' }).click();
+  await expect(page.getByRole('status', { name: '视频生成状态' })).toHaveText('已采用');
+});
