@@ -880,7 +880,7 @@ export function StoryboardWorkspace({
             </Button>
           </h3>
           <div className="storyboard-heading-actions">
-            <ResourceViewToggle value={view} onChange={setView} />
+            <ResourceViewToggle value={view} onChange={setView} options={['list', 'grid']} />
             <Button
               type="text"
               aria-label="查看分镜提取记录"

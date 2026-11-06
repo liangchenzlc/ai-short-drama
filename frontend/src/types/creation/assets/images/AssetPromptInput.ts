@@ -2,6 +2,7 @@ import type { AssetPromptReference } from '@host/types/creation/assets/images/as
 
 export type Props = {
   id?: string;
+  ariaLabel?: string;
   value: string;
   references: AssetPromptReference[];
   disabled?: boolean;

@@ -1,0 +1,15 @@
+.workbenchPreview .creation-project-location [role='status'] {
+  color: var(--sub);
+  font-size: 12px;
+}
+
+.workbenchPreview .standard-creation-layout.is-source .standard-creation-work {
+  display: block;
+}
+
+.workbenchEmptyPanel {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--sub);
+}

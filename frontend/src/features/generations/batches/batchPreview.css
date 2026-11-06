@@ -1,0 +1,41 @@
+.batchPreviewDialog {
+  display: grid;
+  gap: 18px;
+  width: 440px;
+  max-width: calc(100vw - 80px);
+}
+
+.batchPreviewSummary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.batchPreviewSummary strong {
+  font-size: 22px;
+}
+
+.batchPreviewSummary span,
+.batchPreviewDialog p {
+  color: var(--sub);
+}
+
+.batchPreviewDialog label {
+  display: grid;
+  gap: 8px;
+}
+
+.batchPreviewDialog .ant-radio-group {
+  display: grid;
+  gap: 8px;
+}
+
+.batchPreviewDialog p {
+  margin: 0;
+}
+
+.batchPreviewDialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

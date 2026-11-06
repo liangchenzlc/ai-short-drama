@@ -3472,6 +3472,29 @@
   },
   "tests": [
     {
+      "path": "frontend/e2e/creation/workbenchPreview.spec.ts",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "shared.generation",
+        "standard.image_tools",
+        "standard.shot_video"
+      ],
+      "runner": "playwright",
+      "level": "browser",
+      "requires": [],
+      "support": [
+        "frontend/e2e/creation/fixtures/workbenchPreview.html",
+        "frontend/e2e/creation/fixtures/workbenchPreview.tsx",
+        "frontend/e2e/creation/fixtures/workbenchPreviewApp.tsx",
+        "frontend/e2e/creation/fixtures/workbenchPreviewData.ts",
+        "frontend/e2e/creation/fixtures/workbenchPreviewState.ts",
+        "frontend/e2e/creation/fixtures/workbenchPreviewAssetRail.tsx",
+        "frontend/e2e/creation/fixtures/workbenchPreviewShotRail.tsx"
+      ]
+    },
+    {
       "path": "frontend/canvas/e2e/document/branding.test.mjs",
       "features": ["shared.branding"],
       "runner": "canvas-browser",
@@ -14613,6 +14636,97 @@
     }
   ],
   "auxiliary": [
+    {
+      "path": "frontend/e2e/creation/fixtures/workbenchPreviewAssetRail.tsx",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "shared.generation",
+        "standard.image_tools",
+        "standard.shot_video"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
+    {
+      "path": "frontend/e2e/creation/fixtures/workbenchPreviewShotRail.tsx",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "shared.generation",
+        "standard.image_tools",
+        "standard.shot_video"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
+    {
+      "path": "frontend/e2e/creation/fixtures/workbenchPreview.html",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "shared.generation",
+        "standard.image_tools",
+        "standard.shot_video"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
+    {
+      "path": "frontend/e2e/creation/fixtures/workbenchPreview.tsx",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "shared.generation",
+        "standard.image_tools",
+        "standard.shot_video"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
+    {
+      "path": "frontend/e2e/creation/fixtures/workbenchPreviewApp.tsx",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "shared.generation",
+        "standard.image_tools",
+        "standard.shot_video"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
+    {
+      "path": "frontend/e2e/creation/fixtures/workbenchPreviewData.ts",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "shared.generation",
+        "standard.image_tools",
+        "standard.shot_video"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
+    {
+      "path": "frontend/e2e/creation/fixtures/workbenchPreviewState.ts",
+      "features": [
+        "standard.writing",
+        "standard.assets",
+        "standard.storyboard",
+        "shared.generation",
+        "standard.image_tools",
+        "standard.shot_video"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
     {
       "path": ".gitattributes",
       "features": [

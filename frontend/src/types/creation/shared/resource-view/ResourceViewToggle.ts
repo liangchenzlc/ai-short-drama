@@ -1,1 +1,1 @@
-export type ResourceView = 'grid' | 'list';
+export type ResourceView = 'single' | 'grid' | 'list';

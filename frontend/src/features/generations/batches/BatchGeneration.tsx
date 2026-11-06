@@ -1,3 +1,4 @@
+import { useBatchSelectionState } from '@host/features/generations/batches/useBatchSelectionState';
 import { generationBatches } from '@host/api/generations/batches/requests';
 import { errorMessage } from '@host/api/http';
 import { ConfigSelect } from '@host/features/ai-config/selection/ModelSelect';
@@ -52,10 +53,7 @@ const ongoing = (status: string) => ['running', 'paused', 'needs_review', 'cance
 
 export function useBatchSelection(scope: string) {
   const [enabled, setEnabled] = useState(false);
-  const [ids, setIds] = useState<string[]>([]);
-  useEffect(() => {
-    setIds([]);
-  }, [scope]);
+  const selection = useBatchSelectionState(scope);
   useEffect(() => {
     const controller = new AbortController();
     void generationBatches
@@ -66,15 +64,8 @@ export function useBatchSelection(scope: string) {
       .catch(() => {});
     return () => controller.abort();
   }, []);
-  return {
-    enabled,
-    ids,
-    setIds,
-    toggle: (id: string, checked: boolean) =>
-      setIds((current) => (checked ? [...new Set([...current, id])] : current.filter((value) => value !== id))),
-  };
+  return { enabled, ...selection };
 }
-
 export function BatchLauncher({
   scope,
   selection,

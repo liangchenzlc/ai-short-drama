@@ -1,0 +1,159 @@
+.assetView {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.assetViewHeader,
+.assetMediaHeading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.assetViewHeader {
+  flex-shrink: 0;
+  min-height: 54px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.assetViewHeader h2,
+.assetDetails h3,
+.assetMedia h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.assetViewHeader span {
+  color: var(--sub);
+  font-size: 12px;
+}
+
+.assetViewBody {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(320px, 1.1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.assetDetails,
+.assetMedia {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.assetDetails {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  border-right: 1px solid var(--hair);
+}
+
+.assetDetails label {
+  display: grid;
+  gap: 7px;
+  color: var(--sub);
+  font-size: 12px;
+}
+
+.assetDetails label .ant-select {
+  width: 100%;
+}
+
+.assetFieldRow {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 0.8fr;
+  gap: 10px;
+}
+
+.assetMedia {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.assetMediaHeading {
+  justify-content: space-between;
+  min-height: 24px;
+}
+
+.assetMediaHeading .ant-select {
+  min-width: 120px;
+}
+
+.assetReferences {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  color: var(--sub);
+  font-size: 12px;
+}
+
+.assetReference {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 5px;
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+
+.assetReference img,
+.assetReferenceMenu img {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.assetReference button {
+  display: grid;
+  place-items: center;
+  padding: 1px;
+  border: 0;
+  background: transparent;
+  color: var(--sub);
+  cursor: pointer;
+}
+
+.assetReferenceMenu {
+  display: grid;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.assetReferenceMenu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.assetReferenceMenu button:hover {
+  background: var(--surface-hover);
+}
+
+.assetMedia > .generation-inputs {
+  margin-top: 0;
+}
+
+.assetMedia .generation-composer {
+  display: flex;
+  flex-direction: column;
+  min-height: 210px;
+}
