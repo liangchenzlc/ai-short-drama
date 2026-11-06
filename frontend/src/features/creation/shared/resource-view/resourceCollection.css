@@ -1,0 +1,163 @@
+.resourceCollection {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.resourceCollectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  min-height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.resourceCollectionFilters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.resourceSelectionCount {
+  flex-shrink: 0;
+  color: var(--sub);
+  font-size: 12px;
+}
+
+.resourceCollectionSingle {
+  flex: 1;
+  min-height: 0;
+}
+
+.resourceCollectionItems {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.resourceCollectionItems.isGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  align-content: start;
+  gap: 14px;
+}
+
+.resourceCollectionItems.isList {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.resourceCollectionItem {
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.resourceCollectionItem > .ant-checkbox-wrapper {
+  position: absolute;
+  z-index: 1;
+  top: 9px;
+  left: 9px;
+}
+
+.resourceItemBody {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.resourceItemBody:hover {
+  background: var(--surface-hover);
+}
+
+.resourceItemBody:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -2px;
+}
+
+.isGrid .resourceItemBody {
+  flex-direction: column;
+}
+
+.resourceItemImage {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: #111;
+  color: var(--sub);
+}
+
+.isGrid .resourceItemImage {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+}
+
+.isList .resourceItemImage {
+  width: 72px;
+  height: 64px;
+  margin-left: 38px;
+}
+
+.resourceItemImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.resourceItemText {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.resourceItemText strong,
+.resourceItemDescription {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resourceItemDescription,
+.resourceItemStatus {
+  color: var(--sub);
+  font-size: 12px;
+}
+
+.isGrid .resourceItemDescription {
+  display: none;
+}
+
+.resourceCollectionEmpty {
+  padding: 32px;
+  color: var(--sub);
+  text-align: center;
+}
+.resourceCollectionFilters > .ant-input-affix-wrapper {
+  width: 150px;
+}
+
+.resourceCollectionFilters > .ant-select {
+  width: 110px;
+}

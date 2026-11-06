@@ -145,3 +145,29 @@ test('两种视频路径保留当前视频', async ({ page }) => {
   await page.getByRole('button', { name: '采用候选视频 1' }).click();
   await expect(page.getByRole('status', { name: '视频生成状态' })).toHaveText('已采用');
 });
+test('视图切换保留勾选', async ({ page }) => {
+  await page.goto(preview + '?scenario=series');
+  await page.getByRole('navigation', { name: '创作流程' })
+    .getByRole('button', { name: '资产生成', exact: true }).click();
+  await page.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await page.getByRole('checkbox', { name: '选择资产：林夏' }).check();
+  await page.getByRole('button', { name: '列表展示', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: '选择资产：林夏' })).toBeChecked();
+  await page.getByRole('button', { name: '单卡展示', exact: true }).click();
+  await expect(page.getByText('已选 1 项', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /上一个|下一个/ })).toHaveCount(0);
+});
+
+test('分镜勾选跨视图保留并在切集后清除', async ({ page }) => {
+  await page.goto(preview + '?scenario=series');
+  await page.getByRole('navigation', { name: '创作流程' })
+    .getByRole('button', { name: '分镜制作', exact: true }).click();
+  await page.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await page.getByRole('checkbox', { name: '选择分镜：01' }).check();
+  await page.getByRole('button', { name: '列表展示', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: '选择分镜：01' })).toBeChecked();
+  await page.getByRole('button', { name: '当前分集：第 01 集' }).click();
+  await page.getByRole('menuitem', { name: '第 02 集', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: '选择分镜：01' })).not.toBeChecked();
+  await expect(page.getByText('已选 0 项', { exact: true })).toBeVisible();
+});

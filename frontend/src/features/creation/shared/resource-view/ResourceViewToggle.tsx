@@ -2,8 +2,9 @@ import { useAuth } from '@host/features/identity/session/AuthSession';
 import { accountStorage } from '@host/features/identity/storage/account-storage';
 import type { ResourceView } from '@host/types/creation/shared/resource-view/ResourceViewToggle';
 import { Button, Tooltip } from 'antd';
-import { LayoutGrid, List } from 'lucide-react';
+import { LayoutGrid, List, Square } from 'lucide-react';
 import { useState } from 'react';
+
 export function useResourceView(surface: 'assets' | 'storyboard') {
   const { user } = useAuth();
   const storage = accountStorage(user?.id ?? 'anonymous');
@@ -28,29 +29,25 @@ export function useResourceView(surface: 'assets' | 'storyboard') {
   ] as const;
 }
 
-export function ResourceViewToggle({
-  value,
-  onChange,
-}: {
+export function ResourceViewToggle({ value, onChange, options }: {
   value: ResourceView;
   onChange: (value: ResourceView) => void;
+  options: ResourceView[];
 }) {
+  const views = {
+    single: { label: '单卡展示', icon: Square },
+    grid: { label: '宫格展示', icon: LayoutGrid },
+    list: { label: '列表展示', icon: List },
+  };
   return (
     <div className="resource-view-toggle" role="group" aria-label="展示方式">
-      {[
-        { key: 'list', label: '列表展示', icon: List },
-        { key: 'grid', label: '宫格展示', icon: LayoutGrid },
-      ].map(({ key, label, icon: ViewIcon }) => (
-        <Tooltip key={key} title={label} trigger={['hover', 'focus']}>
-          <Button
-            type="text"
-            aria-label={label}
-            aria-pressed={value === key}
-            icon={<ViewIcon size={15} aria-hidden="true" />}
-            onClick={() => onChange(key as ResourceView)}
-          />
-        </Tooltip>
-      ))}
+      {options.map((key) => {
+        const { label, icon: ViewIcon } = views[key];
+        return <Tooltip key={key} title={label} trigger={['hover', 'focus']}>
+          <Button type="text" aria-label={label} aria-pressed={value === key}
+            icon={<ViewIcon size={15} aria-hidden="true" />} onClick={() => onChange(key)} />
+        </Tooltip>;
+      })}
     </div>
   );
 }

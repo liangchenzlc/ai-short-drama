@@ -611,7 +611,7 @@ function ScopedProjectAssets({
           <small>{categoryCounts ? categoryCounts.all + drafts.length : '—'}</small>
         </h2>
         <div className="standard-assets-tools">
-          <ResourceViewToggle value={view} onChange={setView} />
+          <ResourceViewToggle value={view} onChange={setView} options={['list', 'grid']} />
           {toolbar}
         </div>
       </header>
