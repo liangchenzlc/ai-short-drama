@@ -171,3 +171,46 @@ test('分镜勾选跨视图保留并在切集后清除', async ({ page }) => {
   await expect(page.getByRole('checkbox', { name: '选择分镜：01' })).not.toBeChecked();
   await expect(page.getByText('已选 0 项', { exact: true })).toBeVisible();
 });
+test('批量包含全部筛选结果且可重试失败项', async ({ page }) => {
+  await page.goto(preview + '?scenario=batch');
+  await page.getByRole('navigation', { name: '创作流程' })
+    .getByRole('button', { name: '资产生成', exact: true }).click();
+  await page.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await page.getByRole('combobox', { name: '标签筛选' }).click();
+  await page.getByRole('combobox', { name: '标签筛选' }).press('Enter');
+  await page.getByRole('checkbox', { name: '全选筛选结果' }).check();
+  await expect(page.getByText('已选 101 项', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '批量生成图片', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '批量生成' });
+  await expect(dialog).toContainText('101 项');
+  await dialog.getByRole('button', { name: '确认生成', exact: true }).click();
+  await expect(page.getByText('完成 100 · 失败 1', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '重试失败项', exact: true }).click();
+  await expect(page.getByText('完成 101 · 失败 0', { exact: true })).toBeVisible();
+});
+test('分镜批量任务保留所属分集且不访问真实服务', async ({ page }) => {
+  const blocked: string[] = [];
+  const origin = new URL(test.info().project.use.baseURL as string).origin;
+  await page.route('**/*', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.origin === origin && !url.pathname.startsWith('/api/')) return route.continue();
+    blocked.push(url.href);
+    await route.abort();
+  });
+  await page.goto(preview + '?scenario=series');
+  await page.getByRole('navigation', { name: '创作流程' })
+    .getByRole('button', { name: '分镜制作', exact: true }).click();
+  await page.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await page.getByRole('checkbox', { name: '选择分镜：02' }).check();
+  await page.getByRole('button', { name: '批量生成视频', exact: true }).click();
+  await page.getByRole('dialog', { name: '批量生成' })
+    .getByRole('button', { name: '确认生成', exact: true }).click();
+  await page.getByRole('button', { name: '当前分集：第 01 集' }).click();
+  await page.getByRole('menuitem', { name: '第 02 集', exact: true }).click();
+  await expect(page.getByText('完成 1 · 失败 0', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '当前分集：第 02 集' }).click();
+  await page.getByRole('menuitem', { name: '第 01 集', exact: true }).click();
+  await expect(page.getByText('完成 1 · 失败 0', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '打开镜头 02' })).toContainText('视频已生成');
+  expect(blocked).toEqual([]);
+});

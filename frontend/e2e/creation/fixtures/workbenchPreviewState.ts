@@ -1,10 +1,12 @@
 import { remapAssetPromptReferences } from '@host/features/creation/assets/images/asset-prompt-references';
 import type { AssetPromptReference } from '@host/types/creation/assets/images/asset-prompt-references';
-import type { AssetView, EpisodeView, ShotView, VideoReference } from '@host/types/creation/workspace/workbenchView';
+import type { AssetView, BatchItemView, EpisodeView, ShotView, VideoReference } from '@host/types/creation/workspace/workbenchView';
+import type { BatchScene } from '@host/types/generations/batches/requests';
 import { useRef, useState } from 'react';
 import { createPreviewData, group, media } from './workbenchPreviewData';
 
 type OutlineDraft = Pick<EpisodeView, 'title' | 'summary'>;
+type PreviewBatch = { id: string; scene: BatchScene; episodeId: string | null; items: BatchItemView[] };
 
 export function useWorkbenchPreviewState() {
   const [initial] = useState(() => createPreviewData(new URLSearchParams(window.location.search).get('scenario') ?? 'single'));
@@ -26,6 +28,7 @@ export function useWorkbenchPreviewState() {
   const [imageStatuses, setImageStatuses] = useState<Record<string, string>>({});
   const [videoStatuses, setVideoStatuses] = useState<Record<string, string>>({});
   const [videoCandidates, setVideoCandidates] = useState<Record<string, NonNullable<ShotView['video']>[]>>({});
+  const [batches, setBatches] = useState<PreviewBatch[]>([]);
   const nextEpisodeId = useRef(Math.max(...initial.episodes.map((episode) => Number(episode.id))) + 1);
   const newEpisode = (draft: OutlineDraft = { title: '', summary: '' }): EpisodeView =>
     ({ id: String(nextEpisodeId.current++), ...draft, script: '' });
@@ -117,6 +120,86 @@ export function useWorkbenchPreviewState() {
     setVideoStatuses((current) => ({ ...current, [id]: '已采用' }));
   }
 
+  function applyBatchResults(scene: BatchScene, ids: string[]) {
+    if (!ids.length) return;
+    if (scene === 'asset_image') {
+      const results = new Map(ids.map((id) => {
+        const image = media(String(nextMediaId.current++), 'woman.jpg');
+        return [id, { image, group: group(String(nextMediaId.current++), 'asset', id, [image]) }] as const;
+      }));
+      setAssets((current) => current.map((item) => {
+        const result = results.get(item.id);
+        return result ? { ...item, imageGroups: [result.group, ...item.imageGroups],
+          activeGroupId: result.group.id, adoptedImage: item.adoptedImage ?? result.image } : item;
+      }));
+      return;
+    }
+    if (scene === 'shot_image') {
+      const results = new Map(ids.map((id) => {
+        const image = media(String(nextMediaId.current++), 'street.jpg');
+        return [id, { image, group: group(String(nextMediaId.current++), 'shot', id, [image]) }] as const;
+      }));
+      setShots((current) => current.map((item) => {
+        const result = results.get(item.id);
+        return result ? { ...item, imageGroups: [result.group, ...item.imageGroups],
+          activeGroupId: result.group.id, adoptedImage: item.adoptedImage ?? result.image } : item;
+      }));
+      return;
+    }
+    const results = new Map(ids.map((id) => [id, {
+      mediaId: String(nextMediaId.current++), url: '/.runtime/timeline-fixture.mp4',
+    }] as const));
+    setShots((current) => current.map((item) => {
+      const result = results.get(item.id);
+      return result && !item.video ? { ...item, video: result } : item;
+    }));
+    const existing = shots.filter((item) => results.has(item.id) && item.video);
+    if (existing.length) setVideoCandidates((current) => {
+      const next = { ...current };
+      for (const item of existing) next[item.id] = [...(next[item.id] ?? []), results.get(item.id)!];
+      return next;
+    });
+  }
+  function scheduleBatch(batch: PreviewBatch, targets: string[], failLast: boolean) {
+    const chunks = Array.from({ length: Math.ceil(targets.length / 100) }, (_, index) =>
+      targets.slice(index * 100, index * 100 + 100));
+    chunks.forEach((chunk, index) => {
+      const chosen = new Set(chunk);
+      setTimeout(() => setBatches((current) => current.map((item) => item.id !== batch.id ? item : {
+        ...item, items: item.items.map((entry) => chosen.has(entry.targetId) ? { ...entry, status: 'running' } : entry),
+      })), 100 + index * 80);
+      setTimeout(() => {
+        const failedId = failLast && index === chunks.length - 1 ? chunk[chunk.length - 1] : null;
+        setBatches((current) => current.map((item) => item.id !== batch.id ? item : {
+          ...item, items: item.items.map((entry) => !chosen.has(entry.targetId) ? entry : {
+            ...entry, status: entry.targetId === failedId ? 'failed' : 'succeeded',
+            error: entry.targetId === failedId ? '模拟生成失败，请重试' : '',
+          }),
+        }));
+        applyBatchResults(batch.scene, chunk.filter((id) => id !== failedId));
+      }, 350 + index * 150);
+    });
+  }
+  function startBatch(scene: BatchScene, targets: string[]) {
+    const batchId = String(nextMediaId.current++);
+    const scopeEpisode = scene === 'asset_image' ? null : episodeId;
+    const batch: PreviewBatch = { id: batchId, scene, episodeId: scopeEpisode, items: targets.map((targetId) => ({
+      id: String(nextMediaId.current++), targetId, scene, episodeId: scopeEpisode, status: 'queued', error: '',
+    })) };
+    setBatches((current) => [batch, ...current]);
+    scheduleBatch(batch, targets, targets.length > 100);
+  }
+  function retryBatch(batchId: string) {
+    const batch = batches.find((item) => item.id === batchId);
+    if (!batch) return;
+    const targets = batch.items.filter((item) => item.status === 'failed').map((item) => item.targetId);
+    const chosen = new Set(targets);
+    setBatches((current) => current.map((item) => item.id !== batchId ? item : {
+      ...item, items: item.items.map((entry) => chosen.has(entry.targetId) ? { ...entry, status: 'queued', error: '' } : entry),
+    }));
+    scheduleBatch(batch, targets, false);
+  }
+
   function addEpisode() {
     setEpisodes((current) => [...current, newEpisode()]);
   }
@@ -157,5 +240,5 @@ export function useWorkbenchPreviewState() {
     outlineDraft, setOutlineDraft, addEpisode, changeEpisode, moveEpisode, deleteEpisode, generateOutlines, applyOutlines,
     previewByAsset, setPreviewByAsset, assetReferences, changeAsset, changeAssetReferences,
     selectAssetGroup, adoptAssetImage, generateAssetImage, previewByShot, setPreviewByShot, imageStatuses, videoStatuses,
-    videoCandidates, changeShot, changeVideoReference, selectShotGroup, adoptShotImage, generateShotImage, generateShotVideo, adoptShotVideo };
+    videoCandidates, changeShot, changeVideoReference, selectShotGroup, adoptShotImage, generateShotImage, generateShotVideo, adoptShotVideo, batches, startBatch, retryBatch };
 }

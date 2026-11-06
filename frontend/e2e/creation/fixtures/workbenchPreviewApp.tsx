@@ -1,3 +1,6 @@
+import { BatchPreview } from '@host/features/generations/batches/batchPreview';
+import { BatchToolbar } from '@host/features/generations/batches/batchToolbar';
+import { useBatchSelectionState } from '@host/features/generations/batches/useBatchSelectionState';
 import { CreativeAssistantPanel } from '@host/features/assistant/panel/CreativeAssistantPanel';
 import { AssetView } from '@host/features/creation/assets/editor/assetView';
 import { ResourceCollection } from '@host/features/creation/shared/resource-view/resourceCollection';
@@ -8,9 +11,11 @@ import { TopStepNav } from '@host/features/creation/workspace/navigation/TopStep
 import { WritingView } from '@host/features/creation/writing/editor/writingView';
 import type { ResourceView } from '@host/types/creation/shared/resource-view/ResourceViewToggle';
 import type { CreationStage } from '@host/types/creation/workspace/model';
+import type { BatchItemView } from '@host/types/creation/workspace/workbenchView';
+import type { BatchScene } from '@host/types/generations/batches/requests';
 import { Button, Input, Select } from 'antd';
 import { Sparkles } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useWorkbenchPreviewState } from './workbenchPreviewState';
 
 export function WorkbenchPreviewApp() {
@@ -19,13 +24,16 @@ export function WorkbenchPreviewApp() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assetMode, setAssetMode] = useState<ResourceView>('single');
   const [shotMode, setShotMode] = useState<ResourceView>('single');
-  const [assetSelected, setAssetSelected] = useState<string[]>([]);
-  const [shotSelected, setShotSelected] = useState<string[]>([]);
+  const assetSelection = useBatchSelectionState('assets');
+  const shotSelection = useBatchSelectionState(state.episodeId);
+  const assetSelected = assetSelection.ids;
+  const shotSelected = shotSelection.ids;
+  const [batchDialog, setBatchDialog] = useState<BatchScene | null>(null);
   const [assetQuery, setAssetQuery] = useState('');
   const [shotQuery, setShotQuery] = useState('');
   const [tag, setTag] = useState<string>();
   const [kind, setKind] = useState<string>();
-  useEffect(() => { setShotSelected([]); }, [state.episodeId]);
+
 
   const asset = state.assets.find((item) => item.id === state.assetId) ?? state.assets[0];
   const filteredAssets = state.assets.filter((item) => (!kind || item.kind === kind) && (!tag || item.tags.includes(tag)) &&
@@ -35,8 +43,14 @@ export function WorkbenchPreviewApp() {
   const shot = episodeShots.find((item) => item.id === state.shotId) ?? episodeShots[0];
   const availableReferences = state.assets.filter((item) => item.id !== asset.id && item.adoptedImage)
     .map((item) => ({ ...item.adoptedImage!, name: item.name }));
-  const toggle = (set: (update: (current: string[]) => string[]) => void, id: string, checked: boolean) =>
-    set((current) => checked ? [...new Set([...current, id])] : current.filter((item) => item !== id));
+  const assetBatch = state.batches.find((item) => item.scene === 'asset_image');
+  const shotBatch = state.batches.find((item) => item.scene !== 'asset_image' && item.episodeId === state.episodeId);
+  const dialogSelection = batchDialog === 'asset_image' ? assetSelected : shotSelected;
+  const missingIds = dialogSelection.filter((id) => {
+    if (batchDialog === 'asset_image') return !state.assets.find((item) => item.id === id)?.adoptedImage;
+    const item = state.shots.find((value) => value.id === id);
+    return batchDialog === 'shot_image' ? !item?.adoptedImage : !item?.video;
+  });
 
   return (
     <div className="creation-page web-episode workbenchPreview">
@@ -71,8 +85,11 @@ export function WorkbenchPreviewApp() {
                 onClick={() => { state.setAssetId(item.id); setAssetMode('single'); }}>{item.name}</button>)}
             </aside>
             <CreationEditorSlot stage="assets"><ResourceCollection title="资产工作区" mode={assetMode}
-              selectedIds={assetSelected} onMode={setAssetMode} onToggle={(id, checked) => toggle(setAssetSelected, id, checked)}
+              selectedIds={assetSelected} onMode={setAssetMode} onToggle={assetSelection.toggle}
               onOpen={(id) => { state.setAssetId(id); setAssetMode('single'); }}
+              toolbar={<BatchToolbar filteredIds={filteredAssets.map((item) => item.id)} selectedIds={assetSelected}
+                items={assetBatch?.items ?? []} scenes={['asset_image']} onSelect={assetSelection.setIds}
+                onLaunch={setBatchDialog} onRetry={() => assetBatch && state.retryBatch(assetBatch.id)} />}
               filters={<><Input aria-label="搜索资产" placeholder="搜索资产" value={assetQuery}
                 onChange={(event) => setAssetQuery(event.target.value)} allowClear />
                 <Select aria-label="资产类型" placeholder="全部类型" value={kind} allowClear onChange={setKind}
@@ -81,7 +98,7 @@ export function WorkbenchPreviewApp() {
                   onChange={setTag} options={[...new Set(state.assets.flatMap((item) => item.tags))]
                     .map((value) => ({ value, label: value }))} /></>}
               items={filteredAssets.map((item) => ({ id: item.id, label: item.name, selectionLabel: '选择资产：' + item.name,
-                description: item.description, image: item.adoptedImage?.url ?? null, status: item.adoptedImage ? '已生成' : '未生成' }))}>
+                description: item.description, image: item.adoptedImage?.url ?? null, status: batchStatus(assetBatch?.items ?? [], item.id) || (item.adoptedImage ? '已生成' : '未生成') }))}>
               <AssetView asset={asset} previewMediaId={state.previewByAsset[asset.id] ?? asset.adoptedImage?.media_id ?? null}
                 references={state.assetReferences[asset.id] ?? []} availableReferences={availableReferences}
                 onChange={(patch) => state.changeAsset(asset.id, patch)}
@@ -100,15 +117,18 @@ export function WorkbenchPreviewApp() {
               </button>)}
             </aside>
             <CreationEditorSlot stage="storyboard"><ResourceCollection title="分镜工作区" mode={shotMode}
-              selectedIds={shotSelected} onMode={setShotMode} onToggle={(id, checked) => toggle(setShotSelected, id, checked)}
+              selectedIds={shotSelected} onMode={setShotMode} onToggle={shotSelection.toggle}
               onOpen={(id) => { state.setShotId(id); setShotMode('single'); }}
+              toolbar={<BatchToolbar filteredIds={filteredShots.map((item) => item.id)} selectedIds={shotSelected}
+                items={shotBatch?.items ?? []} scenes={['shot_image', 'shot_video']} onSelect={shotSelection.setIds}
+                onLaunch={setBatchDialog} onRetry={() => shotBatch && state.retryBatch(shotBatch.id)} />}
               filters={<Input aria-label="搜索分镜" placeholder="搜索分镜" value={shotQuery}
                 onChange={(event) => setShotQuery(event.target.value)} allowClear />}
               items={filteredShots.map((item) => {
                 const number = String(item.position).padStart(2, '0');
                 return { id: item.id, label: '镜头 ' + number, selectionLabel: '选择分镜：' + number,
                   description: item.title + ' · ' + item.script, image: item.adoptedImage?.url ?? null,
-                  status: ({ wide_shot: '远景', full_shot: '全景', medium_shot: '中景', close_up: '特写',
+                  status: (batchStatus(shotBatch?.items ?? [], item.id) ? batchStatus(shotBatch?.items ?? [], item.id) + ' · ' : '') + ({ wide_shot: '远景', full_shot: '全景', medium_shot: '中景', close_up: '特写',
                     extreme_close_up: '大特写', two_shot: '双人镜头' }[item.shotSize ?? 'medium_shot']) +
                     ' · ' + item.durationMs / 1000 + ' 秒 · ' +
                     (item.adoptedImage ? '分镜图已生成' : '无分镜图') + ' · ' + (item.video ? '视频已生成' : '无视频') };
@@ -128,6 +148,14 @@ export function WorkbenchPreviewApp() {
           {stage === 'assembly' && <div className="workbenchEmptyPanel">本次不预览成片</div>}
         </CreationWorkspace>
       </div>
+      {batchDialog && <BatchPreview scene={batchDialog} selectedIds={dialogSelection} missingIds={missingIds}
+        onClose={() => setBatchDialog(null)} onConfirm={(ids) => { state.startBatch(batchDialog, ids); setBatchDialog(null); }} />}
     </div>
   );
+}
+
+function batchStatus(items: BatchItemView[], targetId: string) {
+  const item = items.find((entry) => entry.targetId === targetId);
+  if (!item) return '';
+  return ({ idle: '待生成', queued: '排队中', running: '生成中', succeeded: '已完成', failed: '失败：' + item.error })[item.status];
 }
