@@ -215,27 +215,6 @@ test('asset card deletion blocks an unsaved conflict and preserves its draft', a
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
 });
 
-test('local asset card deletion removes only a confirmed local draft and protects unknown creation', async ({ page }) => {
-  const data = await assetDeletionFixture(page);
-  await page.addInitScript(() => {
-    localStorage.setItem('short-drama:asset-drafts:v1:anonymous:10', JSON.stringify([{ id: 'draft:unknown-create', kind: 'scene', name: '待核对草稿', label: '', description: '', prompt: '', tags: [], scene_time: '', status: 'unknown', message: '创建结果待核对', attempt: { key: 'unknown-create', body: { kind: 'scene', name: '待核对草稿', label: '', description: '', prompt: '', tags: [], scene_time: '' } } }]));
-  });
-  await page.goto(`${root}/assets?asset=501`);
-  await page.getByRole('button', { name: '待核对草稿卡片更多操作', exact: true }).click();
-  await expect(page.getByRole('menuitem', { name: '删除素材', exact: true })).toHaveAttribute('aria-disabled', 'true');
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: '创建资产', exact: true }).click();
-  await page.getByRole('button', { name: '未命名素材卡片更多操作', exact: true }).click();
-  await page.getByRole('menuitem', { name: '删除素材', exact: true }).click();
-  await page.getByRole('dialog', { name: '删除素材草稿', exact: true }).getByRole('button', { name: '删除草稿', exact: true }).click();
-  await expect(page.getByRole('button', { name: '未命名素材卡片更多操作', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '待核对草稿卡片更多操作', exact: true })).toBeVisible();
-  expect(data.removals).toEqual([]);
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('short-drama:asset-drafts:v1:anonymous:10')!));
-  expect(stored).toHaveLength(1); expect(stored[0].attempt.key).toBe('unknown-create');
-  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
-});
-
 async function referenceFixture(page: Page) {
   const data = await fixture(page, true, String(test.info().project.use.baseURL));
   const privateIds = ['9901', '9902', '9903'];
@@ -302,7 +281,6 @@ test('desktop asset options and compact model selection save privately and resto
   } }));
   await page.setViewportSize({ width: 1280, height: 844 });
   await page.goto(`${root}/assets`);
-  const settingsTrigger = page.getByRole('button', { name: '展开生成设置', exact: true });
   const settings = page.locator('.standard-object-settings[aria-label="素材生成设置"]');
   const prompt = settings.getByRole('textbox', { name: '画面要求', exact: true });
   await prompt.fill('仅保留在本人的桌面素材设置');
@@ -322,9 +300,6 @@ test('desktop asset options and compact model selection save privately and resto
   await expect.poll(() => data.creationDrafts.get('501:asset_image')?.image_settings?.count).toBe(2);
   await page.keyboard.press('Escape');
   await expect(options).toBeHidden(); await expect(settings).toBeVisible(); await expect(output).toBeFocused();
-  await settings.getByRole('button', { name: '关闭生成设置', exact: true }).click();
-  await expect(settings).toBeHidden(); await expect(settingsTrigger).toBeFocused();
-  await settingsTrigger.click();
   await expect(prompt).toHaveText('仅保留在本人的桌面素材设置');
   await expect(model.locator('.ant-select-selection-item')).toHaveText('生图模型 2 · 长名称');
   await expect(output).toContainText('2张');
@@ -427,7 +402,6 @@ test('personal generation input and visible parameters save separately and freez
   await expect(options).toBeHidden();
   await expect(output).toHaveAttribute('aria-expanded', 'false');
   await expect(output).toBeFocused();
-  await expect(page.getByRole('button', { name: '关闭生成设置', exact: true })).toBeVisible();
   await output.press('Enter');
   await expect(options).toBeVisible();
   await options.getByRole('button', { name: '关闭生成选项', exact: true }).click();
@@ -804,7 +778,6 @@ test('desktop asset reference keyboard selection and Escape preserve the setting
   const data = await referenceFixture(page);
   await page.setViewportSize({ width: 1280, height: 640 });
   await page.goto(`${root}/assets`);
-  const trigger = page.getByRole('button', { name: '展开生成设置', exact: true });
   const settings = page.locator('.standard-object-settings[aria-label="素材生成设置"]');
   const prompt = settings.getByRole('textbox', { name: '画面要求', exact: true });
   const menu = page.getByRole('listbox', { name: '引用参考图片', exact: true });
@@ -822,9 +795,6 @@ test('desktop asset reference keyboard selection and Escape preserve the setting
   await prompt.press('Escape');
   await expect(menu).toBeHidden(); await expect(settings).toBeVisible(); await expect(prompt).toBeFocused();
   await prompt.press('Escape'); await expect(settings).toBeVisible();
-  await settings.getByRole('button', { name: '关闭生成设置', exact: true }).click();
-  await expect(settings).toBeHidden(); await expect(trigger).toBeFocused();
-  await trigger.click();
   await expect(prompt.locator('[data-asset-prompt-token="@图片4"]')).toHaveCount(1);
   await expect.poll(() => data.creationDrafts.get('501:asset_image')?.input_text).toBe('桌面 @图片4 @');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

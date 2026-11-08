@@ -703,14 +703,6 @@
 .standard-asset-save-feedback + .standard-asset-references {
   margin-top: 12px;
 }
-.standard-local-asset-discard.ant-btn {
-  align-self: flex-start;
-  height: 28px;
-  min-height: 28px;
-  margin-top: 12px;
-  padding-inline: 0;
-  font-size: 11px;
-}
 .standard-asset-history-actions {
   margin-right: auto;
 }

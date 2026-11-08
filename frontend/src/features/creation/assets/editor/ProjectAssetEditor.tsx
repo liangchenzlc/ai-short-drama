@@ -34,37 +34,15 @@ import type { LocalAssetDraft } from '@host/types/creation/assets/sessions/local
 import type { CreationDraftValue } from '@host/types/creation/drafts/requests';
 import type { NavigationBarrier } from '@host/types/creation/writing/sessions/writing-navigation';
 import { Alert, Button, Popover, Skeleton, Upload } from 'antd';
-import { Check, History, MoreHorizontal, PanelRightClose, PanelRightOpen, Trash2, X } from 'lucide-react';
+import { Check, History, MoreHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 const labels = { character: '角色', scene: '场景', prop: '道具' };
-
-function useSettingsPanel() {
-  const controls = useCreationControls();
-  const [open, setOpen] = useState(true);
-  const pane = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const reveal = () => {
-    controls.revealPanel?.();
-    setOpen(true);
-  };
-  return {
-    open,
-    pane,
-    trigger,
-    reveal,
-    close: () => {
-      setOpen(false);
-      trigger.current?.focus();
-    },
-  };
-}
 
 export function LocalAssetEditor({
   draft,
   readOnly,
   onChange,
   onRetry,
-  onRemove,
   registerBarrier,
   onUploadBusyChange,
   onReferencesChange,
@@ -73,23 +51,20 @@ export function LocalAssetEditor({
   readOnly: boolean;
   onChange: (value: Partial<LocalAssetDraft>) => void;
   onRetry: () => void;
-  onRemove: () => void;
   registerBarrier: (barrier: NavigationBarrier | null) => void;
   onUploadBusyChange: (busy: boolean) => void;
   onReferencesChange: (ids: string[], references: AssetReferenceChange) => void;
 }) {
-  const settings = useSettingsPanel();
+  const controls = useCreationControls();
   const [modelFeedback, setModelFeedback] = useState<HTMLDivElement | null>(null);
   const [referenceImages, setReferenceImages] = useState<AssetPromptReference[]>([]);
   const editor = useRef<HTMLElement>(null);
   const value = draft.generation ?? emptyAssetGeneration;
   const ignoredReferenceState = useCallback(() => {}, []);
-  const [uploadBusy, setUploadBusy] = useState(false);
   const uploading = useRef(false);
   const handleUploadBusy = useCallback(
     (busy: boolean) => {
       uploading.current = busy;
-      setUploadBusy(busy);
       onUploadBusyChange(busy);
     },
     [onUploadBusyChange],
@@ -102,7 +77,7 @@ export function LocalAssetEditor({
     return () => registerBarrier(null);
   }, [registerBarrier]);
   useEffect(() => {
-    settings.reveal();
+    controls.revealPanel?.();
     const frame = requestAnimationFrame(() =>
       editor.current?.querySelector<HTMLInputElement>('input[aria-label="素材名称"]')?.focus(),
     );
@@ -114,17 +89,6 @@ export function LocalAssetEditor({
       <header className="assetViewHeader">
         <h2>{draft.name || '未命名素材'}</h2>
         {draft.kind && <span>{labels[draft.kind]}</span>}
-        <div className="standard-asset-object-actions">
-          <Button
-            ref={settings.trigger}
-            type="text"
-            aria-label={settings.open ? '收起生成设置' : '展开生成设置'}
-            title={settings.open ? '收起生成设置' : '展开生成设置'}
-            aria-expanded={settings.open}
-            icon={settings.open ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-            onClick={settings.open ? settings.close : settings.reveal}
-          />
-        </div>
       </header>
       <div className="assetViewBody">
         <AssetDetails
@@ -173,8 +137,7 @@ export function LocalAssetEditor({
               }
             />
           )}
-          <div ref={settings.pane} className="standard-object-settings productionAssetSettings" hidden={!settings.open} aria-label="素材生成设置">
-            <Button type="text" size="small" aria-label="关闭生成设置" title="收起生成设置" icon={<X size={16} />} onClick={settings.close} />
+          <div className="standard-object-settings productionAssetSettings" aria-label="素材生成设置">
             <PrivateAssetReferences
               assetId={draft.id}
               projectId=""
@@ -227,19 +190,6 @@ export function LocalAssetEditor({
               busy={false}
               onSend={() => {}}
             />
-            {!readOnly && (
-              <Button
-                type="text"
-                size="small"
-                danger
-                className="standard-local-asset-discard"
-                aria-label="放弃本机素材草稿"
-                disabled={draft.status === 'saving' || uploadBusy}
-                onClick={onRemove}
-              >
-                放弃本机素材草稿
-              </Button>
-            )}
           </div>
         </div>
       </div>
@@ -266,7 +216,6 @@ export function ProjectAssetEditor({
   onArtwork: (asset: LibraryAssetRead) => void;
   onRemove: () => void;
 }) {
-  const settings = useSettingsPanel();
   const resourceKey = `asset:${asset.id}`;
   const session = useMemo(
     () =>
@@ -717,15 +666,6 @@ export function ProjectAssetEditor({
               }}
             />
             {renderActions('main')}
-            <Button
-              ref={settings.trigger}
-              type="text"
-              aria-label={settings.open ? '收起生成设置' : '展开生成设置'}
-              title={settings.open ? '收起生成设置' : '展开生成设置'}
-              aria-expanded={settings.open}
-              icon={settings.open ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-              onClick={settings.open ? settings.close : settings.reveal}
-            />
           </div>
         </header>
         <div className="assetViewBody">
@@ -798,8 +738,7 @@ export function ProjectAssetEditor({
                 }
               />
             )}
-            <div ref={settings.pane} className="standard-object-settings productionAssetSettings" hidden={!settings.open} aria-label="素材生成设置">
-              <Button type="text" size="small" aria-label="关闭生成设置" title="收起生成设置" icon={<X size={16} />} onClick={settings.close} />
+            <div className="standard-object-settings productionAssetSettings" aria-label="素材生成设置">
               <StandardAssetGeneration
                 asset={state.asset}
                 scope={scope}

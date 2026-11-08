@@ -206,8 +206,5 @@
 
 .productionAssetView .productionAssetSettings {
   overflow: visible;
-}
-
-.productionAssetView .productionAssetSettings > .ant-btn:first-child {
-  align-self: flex-end;
+  border-left: 0;
 }

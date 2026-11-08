@@ -447,50 +447,6 @@ function ScopedProjectAssets({
     }
   }, [localState.created, receiveArtwork, refresh]);
   const createDraft = (id: string) => localSession.create(id);
-  async function removeDraft(id: string) {
-    if (readOnly || removing.current) return;
-    const draft = draftsRef.current.find((item) => item.id === id);
-    if (!draft || ['saving', 'unknown'].includes(draft.status)) return;
-    removing.current = id;
-    try {
-      if (
-        !(await confirmAction(`删除本机素材草稿“${draft.name || '未命名素材'}”？草稿内容将被清除，无法恢复。`, {
-          title: '删除素材草稿',
-          confirmText: '删除草稿',
-          className: 'standard-creation-dialog',
-        }))
-      )
-        return;
-      setRemovingId(id);
-      setNotice(null);
-      const current = draftsRef.current.find((item) => item.id === id);
-      if (!current || ['saving', 'unknown'].includes(current.status)) {
-        setNotice({
-          type: 'warning',
-          assetId: id,
-          message: '素材创建正在处理或结果待核对，未删除草稿。请先核对原创建请求。',
-        });
-        return;
-      }
-      if (selection.current === id && editorBarrier.current?.hasUnsettled() && !(await editorBarrier.current.flush())) {
-        setNotice({
-          type: 'warning',
-          assetId: id,
-          message: '素材操作尚未完成，未删除草稿。请等待上传完成后重试。',
-        });
-        return;
-      }
-      keepDrafts(draftsRef.current.filter((item) => item.id !== id));
-      if (selection.current === id) {
-        selection.current = null;
-        setSelectedId(null);
-        creation.selectSubject?.(null);
-      }
-    } finally {
-      removing.current = null;
-      if (alive.current) setRemovingId(null);
-    }
-  }
   async function removeSaved(asset: LibraryAssetRead) {
     if (readOnly || removing.current) return;
     removing.current = asset.id;
@@ -613,7 +569,6 @@ function ScopedProjectAssets({
           });
       }}
       onRetry={() => void createDraft(localSelected.id)}
-      onRemove={() => void removeDraft(localSelected.id)}
     />
   ) : detail && detail.id === selectedId ? (
     <ProjectAssetEditor
@@ -825,13 +780,11 @@ function ScopedProjectAssets({
             selected={selectedId === item.id}
             disabled={!!removingId}
             readOnly={readOnly || !!recoveryError}
-            removing={removingId === item.id}
             entryRef={(node) => {
               if (node) entries.current.set(item.id, node);
               else entries.current.delete(item.id);
             }}
             onOpen={() => void selectAsset(item.id)}
-            onRemove={() => void removeDraft(item.id)}
           />
         ))}
         {!loading && !error && !known.length && !visibleDrafts.length && (

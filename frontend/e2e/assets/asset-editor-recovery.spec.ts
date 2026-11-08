@@ -59,11 +59,7 @@ async function openEditor(page: Page) {
     await page.getByRole('menuitem', { name: '编辑素材', exact: true }).click();
   } else await page.getByRole('button', { name: '林晚', exact: true }).click();
   const inEpisode = page.locator('.creation-editor-target');
-  if (await inEpisode.count()) {
-    const expand = inEpisode.getByRole('button', { name: '展开生成设置', exact: true });
-    if (await expand.isVisible()) await expand.click();
-    return inEpisode;
-  }
+  if (await inEpisode.count()) return inEpisode;
   return page.locator('.asset-editor-drawer');
 }
 

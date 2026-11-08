@@ -18,13 +18,12 @@ export function ProjectAssetCard({
   selected: boolean;
   disabled: boolean;
   readOnly: boolean;
-  removing: boolean;
+  removing?: boolean;
   entryRef: RefCallback<HTMLButtonElement>;
   onOpen: () => void;
-  onRemove: () => void;
+  onRemove?: () => void;
 }) {
   const image = 'image' in asset ? asset.image : null;
-  const pendingCreation = 'status' in asset && ['saving', 'unknown'].includes(asset.status);
   const moreTrigger = useRef<HTMLButtonElement | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   return (
@@ -62,7 +61,7 @@ export function ProjectAssetCard({
           <strong title={asset.name}>{asset.name || '未命名素材'}</strong>
         </span>
       </button>
-      {!readOnly && (
+      {!readOnly && onRemove && (
         <Dropdown
           trigger={['click']}
           open={actionsOpen}
@@ -73,7 +72,6 @@ export function ProjectAssetCard({
                 key: 'remove',
                 label: '删除素材',
                 danger: true,
-                disabled: pendingCreation,
               },
             ],
             onClick: ({ domEvent }) => {
@@ -90,7 +88,7 @@ export function ProjectAssetCard({
             type="text"
             aria-label={`${asset.name || '未命名素材'}卡片更多操作`}
             aria-expanded={actionsOpen}
-            title={pendingCreation ? '请先核对原创建请求' : '更多操作'}
+            title="更多操作"
             disabled={disabled}
             loading={removing}
             icon={<Icon name="more" size={16} />}

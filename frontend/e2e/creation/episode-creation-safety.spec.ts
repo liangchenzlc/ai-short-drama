@@ -91,8 +91,6 @@ async function openFirstAsset(page: Page) {
   await page.getByRole('button', { name: '林晚', exact: true }).click();
   const detail = page.locator('.creation-asset-detail');
   await expect(detail).toBeVisible();
-  const expand = detail.getByRole('button', { name: '展开生成设置', exact: true });
-  if (await expand.isVisible()) await expand.click();
   await expect(detail.getByRole('textbox', { name: '素材名称', exact: true })).toBeEnabled();
   return detail;
 }
@@ -274,23 +272,7 @@ test('sound version conflicts preserve the inline draft while navigation remains
   expect(data.unexpected).toEqual([]);
 });
 
-test('collapsing desktop material settings by keyboard restores focus to its entry', async ({ page }) => {
-  const data = await safetyFixture(page);
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto(root + '/assets');
-  const detail = page.locator('.creation-asset-detail');
-  const settings = detail.locator('.standard-object-settings');
-  await expect(settings).toBeVisible();
-  const close = settings.getByRole('button', { name: '关闭生成设置', exact: true });
-  await close.focus(); await close.press('Enter');
-  const entry = detail.getByRole('button', { name: '展开生成设置', exact: true });
-  await expect(settings).toBeHidden(); await expect(entry).toBeFocused();
-  await entry.press('Enter'); await expect(settings).toBeVisible();
-  await expect(detail.getByRole('region', { name: '素材图片预览', exact: true })).toBeVisible();
-  expect(data.errors).toEqual([]);
-});
-
-test('closing saved material settings restores focus while the refreshed card and deep link retain the asset', async ({ page }) => {
+test('saved material edits keep the deep link while the refreshed card follows the new name', async ({ page }) => {
   const data = await safetyFixture(page);
   await page.setViewportSize({ width: 1280, height: 844 });
   const detail = await openFirstAsset(page);
@@ -298,11 +280,7 @@ test('closing saved material settings restores focus while the refreshed card an
   await name.fill('保存后的林晚');
   await expect.poll(() => data.state.assets[0].name).toBe('保存后的林晚');
   await expect(page.getByRole('button', { name: '保存后的林晚', exact: true })).toBeVisible();
-  await detail.getByRole('button', { name: '关闭生成设置', exact: true }).click();
-  const entry = detail.getByRole('button', { name: '展开生成设置', exact: true });
-  await expect(entry).toBeFocused();
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '501');
-  await entry.click();
   await expect(name).toHaveValue('保存后的林晚');
   await expect(page).toHaveURL(url => url.searchParams.get('asset') === '501');
   await expect(page.locator('.creation-save-state')).toHaveAttribute('aria-label', '保存状态：已保存');

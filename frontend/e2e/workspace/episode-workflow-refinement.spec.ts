@@ -55,10 +55,6 @@ test('asset cards select the shared preview and settings panel without a details
   await expect(page.locator('.creation-editor-target .creation-asset-detail')).toBeVisible();
   await expect(page.locator('.creation-work-stage .creation-asset-detail')).toHaveCount(0);
   await expect(detail.getByRole('button', { name: '生成图片', exact: true })).toBeVisible();
-  await detail.getByRole('button', { name: '收起生成设置', exact: true }).click();
-  await expect(detail.getByRole('textbox', { name: '描述', exact: true })).toBeHidden();
-  await expect(detail.locator('.image-subject-open')).toBeVisible();
-  await detail.getByRole('button', { name: '展开生成设置', exact: true }).click();
   await expect(detail.getByRole('textbox', { name: '描述', exact: true })).toHaveValue(data.asset.description);
   expect(data.errors).toEqual([]);
 });
@@ -74,21 +70,6 @@ test('asset extraction history remains available from the library heading', asyn
   expect(data.errors).toEqual([]);
 });
 
-test('desktop material settings preserve input through explicit collapse and restore focus', async ({ page }) => {
-  const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
-  await page.setViewportSize({ width: 1280, height: 720 }); await page.goto(root + '/assets');
-  const detail = page.locator('.creation-editor-target .creation-asset-detail');
-  const settings = detail.locator('.standard-object-settings');
-  await expect(settings).toBeVisible();
-  await expect(detail.getByRole('textbox', { name: '描述', exact: true })).toHaveValue(data.asset.description);
-  await settings.getByRole('button', { name: '关闭生成设置', exact: true }).click();
-  const open = detail.getByRole('button', { name: '展开生成设置', exact: true });
-  await expect(open).toBeFocused(); await open.press('Enter');
-  await expect(settings).toBeVisible();
-  await expect(detail.getByRole('textbox', { name: '描述', exact: true })).toHaveValue(data.asset.description);
-  expect(data.errors).toEqual([]);
-});
-
 test('material cards, right editor and storyboard remain usable at the review viewports', async ({ page }) => {
   const data = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.goto(`${root}/assets`);
@@ -101,10 +82,6 @@ test('material cards, right editor and storyboard remain usable at the review vi
     const detail = page.locator('.creation-editor-target .creation-asset-detail');
     await expect(detail).toBeVisible();
     await captureRefinement(page, 'material-editor', viewport.width);
-    const close = detail.getByRole('button', { name: '收起生成设置', exact: true });
-    if (await close.isVisible()) await close.click();
-    const expand = detail.getByRole('button', { name: '展开生成设置', exact: true });
-    if (await expand.isVisible()) await expand.click();
   }
   await page.goto(`${root}/storyboard`);
   for (const viewport of refinementViewports) {

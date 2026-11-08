@@ -8,8 +8,6 @@ async function baseFixture(page: Page) {
 async function openEditor(page: Page) {
   await page.getByRole('button', { name: '林晚', exact: true }).click();
   const editor = page.locator('.creation-asset-detail');
-  const expand = editor.getByRole('button', { name: '展开生成设置', exact: true });
-  if (await expand.isVisible()) await expand.click();
   await expect(editor.getByRole('textbox', { name: '描述', exact: true })).toBeVisible();
   return editor;
 }
