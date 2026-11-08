@@ -4,35 +4,12 @@ import type { ImageGroup, ImageMedia } from '@host/types/media/image-groups';
 
 export type WorkbenchStatus = 'idle' | 'queued' | 'running' | 'succeeded' | 'failed';
 
-export interface StoryView {
-  genre: string;
-  core: string;
-  outline: string;
-}
-
-export interface EpisodeView {
-  id: string;
-  title: string;
-  summary: string;
-  script: string;
-}
-
-export interface CharacterProfile {
-  role: '' | '主角' | '配角' | '群演';
-  gender: string;
-  age: string;
-  identity: string;
-  appearance: string;
-  personality: string;
-}
-
 export interface AssetView {
   id: string;
   kind: AssetKind;
   name: string;
   description: string;
-  tags: string[];
-  profile: CharacterProfile | null;
+  profile: Record<string, string>;
   imageGroups: ImageGroup[];
   activeGroupId: string | null;
   adoptedImage: ImageMedia | null;
@@ -45,12 +22,15 @@ export type VideoReference =
 
 export interface ShotView {
   id: string;
-  episodeId: string;
   position: number;
   title: string;
   script: string;
   shotSize: ShotSize | null;
   durationMs: number;
+  cameraAngle: string;
+  cameraMovement: string;
+  dialogue: string;
+  sound: string;
   assetIds: string[];
   imageGroups: ImageGroup[];
   activeGroupId: string | null;
@@ -65,7 +45,6 @@ export interface BatchItemView {
   id: string;
   targetId: string;
   scene: 'asset_image' | 'shot_image' | 'shot_video';
-  episodeId: string | null;
   status: WorkbenchStatus;
   error: string;
 }

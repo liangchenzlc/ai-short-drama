@@ -6,9 +6,10 @@ import { AssetView } from '@host/features/creation/assets/editor/assetView';
 import { ResourceCollection } from '@host/features/creation/shared/resource-view/resourceCollection';
 import { countShotVideoReferences, StoryboardView } from '@host/features/creation/storyboard/workbench/storyboardView';
 import { CreationEditorSlot, CreationWorkspace } from '@host/features/creation/workspace/layout/CreationWorkspace';
-import { EpisodeSelector } from '@host/features/creation/workspace/layout/episodeSelector';
 import { TopStepNav } from '@host/features/creation/workspace/navigation/TopStepNav';
-import { WritingView } from '@host/features/creation/writing/editor/writingView';
+import { ScriptDesk } from '@host/features/creation/writing/editor/ScriptDesk';
+import { StorySettingsFields } from '@host/features/creation/writing/story-settings/StorySettingsEditor';
+import '@host/features/creation/writing/editor/script-desk.css';
 import { confirmAction } from '@host/shared/ui/confirm';
 import { Dialog } from '@host/shared/ui/Dialog';
 import type { AssetKind } from '@host/types/creation/assets/management';
@@ -16,7 +17,7 @@ import type { ResourceView } from '@host/types/creation/shared/resource-view/Res
 import type { CreationStage } from '@host/types/creation/workspace/model';
 import type { BatchItemView } from '@host/types/creation/workspace/workbenchView';
 import type { BatchScene } from '@host/types/generations/batches/requests';
-import { Button, Select } from 'antd';
+import { Button } from 'antd';
 import { Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { useWorkbenchPreviewState } from './workbenchPreviewState';
@@ -34,7 +35,7 @@ export function WorkbenchPreviewApp() {
   const [history, setHistory] = useState<string | null>(null);
   const [pendingOnly, setPendingOnly] = useState(false);
   const assetSelection = useBatchSelectionState('assets');
-  const shotSelection = useBatchSelectionState(state.episodeId);
+  const shotSelection = useBatchSelectionState('shots');
   const assetSelected = assetSelection.ids;
   const shotSelected = shotSelection.ids;
   const [batchDialog, setBatchDialog] = useState<BatchScene | null>(null);
@@ -42,19 +43,17 @@ export function WorkbenchPreviewApp() {
   const [shotBatchId, setShotBatchId] = useState<string | null>(null);
   const [assetQuery, setAssetQuery] = useState('');
   const [shotQuery, setShotQuery] = useState('');
-  const [tag, setTag] = useState<string>();
   const [kind, setKind] = useState<AssetKind | 'all'>('all');
 
   const asset = state.assets.find((item) => item.id === state.assetId) ?? state.assets[0];
-  const filteredAssets = state.assets.filter((item) => (kind === 'all' || item.kind === kind) && (!tag || item.tags.includes(tag)) &&
+  const filteredAssets = state.assets.filter((item) => (kind === 'all' || item.kind === kind) &&
     (item.name + item.description).toLowerCase().includes(assetQuery.toLowerCase()));
-  const episodeShots = state.shots.filter((item) => item.episodeId === state.episodeId);
-  const filteredShots = episodeShots.filter((item) => item.title.includes(shotQuery) && (!pendingOnly || !item.adoptedImage));
-  const shot = episodeShots.find((item) => item.id === state.shotId) ?? episodeShots[0];
+  const filteredShots = state.shots.filter((item) => item.title.includes(shotQuery) && (!pendingOnly || !item.adoptedImage));
+  const shot = state.shots.find((item) => item.id === state.shotId) ?? state.shots[0];
   const availableReferences = state.assets.filter((item) => item.id !== asset?.id && item.adoptedImage)
     .map((item) => ({ ...item.adoptedImage!, name: item.name }));
   const assetBatches = state.batches.filter((item) => item.scene === 'asset_image');
-  const shotBatches = state.batches.filter((item) => item.scene !== 'asset_image' && item.episodeId === state.episodeId);
+  const shotBatches = state.batches.filter((item) => item.scene !== 'asset_image');
   const assetBatch = assetBatches.find((item) => item.id === assetBatchId) ?? assetBatches[0];
   const shotBatch = shotBatches.find((item) => item.id === shotBatchId) ?? shotBatches[0];
   const batchSelection = batchDialog === 'asset_image' ? assetSelected : shotSelected;
@@ -78,9 +77,6 @@ export function WorkbenchPreviewApp() {
       <header className="creation-top">
         <div className="creation-project-location">
           <span className="creation-project-name">未寄出的信</span>
-          {stage !== 'assembly' && <EpisodeSelector episodes={state.episodes} selectedId={state.episodeId}
-            onSelect={state.setEpisodeId} onAdd={state.addEpisode}
-            onRename={(id, title) => state.changeEpisode(id, { title })} onMove={state.moveEpisode} onDelete={state.deleteEpisode} />}
           <span role="status" aria-label="演示数据">演示数据 · 刷新重置</span>
         </div>
         <div className="creation-project-actions">
@@ -92,19 +88,20 @@ export function WorkbenchPreviewApp() {
         <CreationWorkspace stage={stage} assistantOpen={assistantOpen} workRequest={0} subject={null} onSubject={() => {}}
           assistantPanel={<CreativeAssistantPanel layout="standard" projectId="1" projectTitle="未寄出的信" open={assistantOpen}
             readOnly onClose={() => setAssistantOpen(false)} onOpenModelSettings={() => {}} prepareContext={async () => null} />}>
-          {stage === 'source' && <WritingView story={state.story} episodes={state.episodes} selectedId={state.episodeId}
-            outlineDraft={state.outlineDraft} onStoryChange={(patch) => state.setStory((current) => ({ ...current, ...patch }))}
-            onEpisodeChange={state.changeEpisode} onAdd={state.addEpisode} onGenerateOutlines={state.generateOutlines}
-            onEditOutline={(index, patch) => state.setOutlineDraft((current) =>
-              current?.map((item, position) => position === index ? { ...item, ...patch } : item) ?? null)}
-            onApplyOutlines={state.applyOutlines} onDiscardOutlines={() => state.setOutlineDraft(null)} />}
+          {stage === 'source' && <ScriptDesk projectId="1"
+            writing={{ script: state.script, loaded: true, activeWritingTasks: [] }}
+            session={{ edit: (_field, content) => state.setScript(content) }} readOnly={false}
+            onRewrite={() => {}} selection={null} submitting={false} rewriteDisabled onStop={() => {}} stopping={null}
+            feedback={null} registerSettings={() => {}}
+            settingsEditor={<div className="sd-settings-scroll"><StorySettingsFields value={state.story} readOnly={false}
+              onChange={(field, text) => state.setStory((current) => ({ ...current, [field]: text }))} /></div>} />}
           {stage === 'assets' && <>
             <WorkbenchPreviewAssetRail assets={state.assets} visible={filteredAssets} selectedId={asset?.id ?? ''}
               query={assetQuery} kind={kind} view={assetRailView} onQuery={setAssetQuery} onKind={setKind}
               onView={setAssetRailView} onOpen={(id) => { state.setAssetId(id); setAssetMode('single'); }}
-              onCreate={() => { setAssetQuery(''); setKind('all'); setTag(undefined); state.addAsset(); setAssetMode('single'); }}
+              onCreate={() => { setAssetQuery(''); setKind('all'); state.addAsset(); setAssetMode('single'); }}
               onDelete={(id) => void (async () => {
-                if (!(await confirmAction('删除后，所有分集将无法再使用此资产及其引用，无法撤销。', { title: '删除素材' }))) return;
+                if (!(await confirmAction('删除后，该资产及其引用将被移除，无法撤销。', { title: '删除素材' }))) return;
                 state.removeAsset(id);
                 state.setAssetId(state.assets.find((item) => item.id !== id)?.id ?? '');
                 assetSelection.setIds((current) => current.filter((item) => item !== id));
@@ -115,9 +112,6 @@ export function WorkbenchPreviewApp() {
               toolbar={<BatchToolbar filteredIds={filteredAssets.map((item) => item.id)} selectedIds={assetSelected}
                 items={assetBatch?.items ?? []} history={assetBatches} scenes={['asset_image']} onSelect={assetSelection.setIds}
                 onLaunch={setBatchDialog} onRetry={() => assetBatch && state.retryBatch(assetBatch.id)} onViewBatch={setAssetBatchId} />}
-              filters={<Select aria-label="标签筛选" placeholder="全部标签" value={tag} allowClear showSearch
-                onChange={setTag} options={[...new Set(state.assets.flatMap((item) => item.tags))]
-                  .map((value) => ({ value, label: value }))} />}
               items={filteredAssets.map((item) => ({ id: item.id, label: item.name, selectionLabel: '选择资产：' + item.name,
                 description: item.description, image: item.adoptedImage?.url ?? null, status: batchStatus(assetBatch?.items ?? [], item.id) || (item.adoptedImage ? '已生成' : '未生成') }))}>
               {asset ? <AssetView asset={asset} previewMediaId={state.previewByAsset[asset.id] ?? asset.adoptedImage?.media_id ?? null}
@@ -130,7 +124,7 @@ export function WorkbenchPreviewApp() {
             </ResourceCollection></CreationEditorSlot>
           </>}
           {stage === 'storyboard' && <>
-            <WorkbenchPreviewShotRail shots={episodeShots} visible={filteredShots} selectedId={shot?.id} query={shotQuery}
+            <WorkbenchPreviewShotRail shots={state.shots} visible={filteredShots} selectedId={shot?.id} query={shotQuery}
               pendingOnly={pendingOnly} view={shotRailView} onQuery={setShotQuery} onPending={setPendingOnly}
               onView={setShotRailView} onOpen={(id) => { state.setShotId(id); setShotMode('single'); }}
               onCreate={() => { setShotQuery(''); setPendingOnly(false); state.addShot(); setShotMode('single'); }}
@@ -164,7 +158,7 @@ export function WorkbenchPreviewApp() {
                 onGenerateImage={() => state.generateShotImage(shot.id)}
                 onGenerateVideo={() => state.generateShotVideo(shot.id)} onAdoptVideo={(id) => state.adoptShotVideo(shot.id, id)}
                 onRetryItem={(id) => state.retryImageItem('shot', shot.id, id)} /> :
-                <div className="workbenchEmptyPanel">本集暂无镜头</div>}
+                <div className="workbenchEmptyPanel">暂无镜头</div>}
             </ResourceCollection></CreationEditorSlot>
           </>}
           {stage === 'assembly' && <div className="workbenchEmptyPanel">本次不预览成片</div>}

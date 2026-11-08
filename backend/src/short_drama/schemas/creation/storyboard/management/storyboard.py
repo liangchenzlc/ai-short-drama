@@ -4,7 +4,11 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, field_validator, model_validator
 
 from short_drama.schemas.base import Identifier, InputModel, ReadModel
-from short_drama.schemas.creation.storyboard.management.script import ShotSizeEnum, ShotTitle
+from short_drama.schemas.creation.storyboard.management.script import (
+    ShotDetails,
+    ShotSizeEnum,
+    ShotTitle,
+)
 
 
 class ShotImageSettings(InputModel):
@@ -55,6 +59,7 @@ class StoryboardCreate(InputModel):
     title: ShotTitle = ""
     shot_size: ShotSizeEnum | None = None
     script: ShotScriptText = ""
+    details: ShotDetails = Field(default_factory=dict)
     duration_ms: int = Field(default=3000, strict=True, ge=1000, le=10000)
     asset_ids: list[Identifier] = Field(default_factory=list, max_length=100)
     image_settings: ShotImageSettings = Field(default_factory=ShotImageSettings)
@@ -78,6 +83,7 @@ class StoryboardUpdate(InputModel):
     script: ShotScriptText = Field(
         default=None, description="分镜镜头/分场正文；不是 ProjectScript 整篇剧本。"
     )
+    details: ShotDetails = Field(default=None, description="机位、运镜、对白设想和声音设想。")
     duration_ms: int = Field(
         default=None, strict=True, ge=1000, le=10000, description="镜头建议时长，单位毫秒。"
     )
@@ -208,6 +214,7 @@ class StoryboardShotRead(ReadModel):
     title: ShotTitle = ""
     shot_size: ShotSizeEnum | None = None
     script: str
+    details: ShotDetails = Field(default_factory=dict)
     duration_ms: int
     source_excerpt: str
     row_version: Identifier

@@ -41,6 +41,9 @@ class ShotScript(Base):
     script: Mapped[str] = mapped_column(
         MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="分镜脚本正文"
     )
+    details: Mapped[dict] = mapped_column(
+        JSON(), nullable=False, server_default=text("(JSON_OBJECT())"), comment="镜头创作资料"
+    )
     duration_ms: Mapped[int] = mapped_column(
         INTEGER(unsigned=True),
         nullable=False,

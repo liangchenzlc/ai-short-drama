@@ -67,6 +67,8 @@ def storyboard_creation_hash(project_id: int, payload: dict) -> str:
         intent["title"] = payload["title"]
     if payload.get("shot_size") is not None:
         intent["shot_size"] = payload["shot_size"]
+    if payload.get("details"):
+        intent["details"] = payload["details"]
     encoded = json.dumps(intent, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -151,6 +153,9 @@ class ProjectStoryboardService(BaseService):
             "shot_id": shot.id,
             "reference_media_ids": getattr(shot, "reference_media_ids", None) or [],
             "script": shot.script,
+            "title": shot.title,
+            "shot_size": shot.shot_size,
+            "details": shot.details,
             "duration_ms": shot.duration_ms,
             "assets": assets,
         }
@@ -243,6 +248,7 @@ class ProjectStoryboardService(BaseService):
             title=getattr(shot, "title", "") or "",
             shot_size=getattr(shot, "shot_size", None),
             script=shot.script,
+            details=shot.details,
             duration_ms=shot.duration_ms,
             source_excerpt=shot.source_excerpt,
             row_version=shot.row_version,
@@ -337,6 +343,7 @@ class ProjectStoryboardService(BaseService):
                     "project_id": creation.id,
                     "position": max((row.position for row in active), default=0) + 1,
                     "script": data["script"],
+                    "details": data["details"],
                     "title": data["title"],
                     "shot_size": data["shot_size"],
                     "duration_ms": data["duration_ms"],
@@ -371,7 +378,7 @@ class ProjectStoryboardService(BaseService):
             require_shot_version(shot, data.pop("row_version"))
             now = utcnow()
             changed = False
-            for field in ("title", "shot_size"):
+            for field in ("title", "shot_size", "details"):
                 if field in data and getattr(shot, field) != data[field]:
                     setattr(shot, field, data[field])
                     changed = True

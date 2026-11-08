@@ -84,11 +84,6 @@ export function StorySettingsEditor({
   }, [actor, projectId, resourceKey]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const [error, setError] = useState('');
-  const composing = useRef<Field | null>(null);
-  const [composition, setComposition] = useState<{
-    field: Field;
-    text: string;
-  } | null>(null);
   useEffect(() => {
     void session.load();
     registerBarrier(session);
@@ -100,12 +95,6 @@ export function StorySettingsEditor({
   function edit(field: Field, text: string) {
     const value = session.getSnapshot().value;
     if (value && !readOnly && !state.recoveryBlocked) session.edit({ ...document(value), [field]: text });
-  }
-  function finish(field: Field, text: string) {
-    if (composing.current !== field) return;
-    composing.current = null;
-    setComposition(null);
-    edit(field, text);
   }
   async function reload(keepLocal: boolean) {
     try {
@@ -169,38 +158,41 @@ export function StorySettingsEditor({
           <Skeleton active paragraph={{ rows: 5 }} />
         </div>
       ) : (
-        <div className="sd-story-settings">
-          {fields.map((field) => (
-            <label className="sd-story-field" key={field.key}>
-              <span>{field.label}</span>
-              <Input.TextArea
-                aria-label={field.label}
-                value={composition?.field === field.key ? composition.text : (state.value?.[field.key] ?? '')}
-                autoSize={{ minRows: field.rows }}
-                maxLength={field.limit}
-                readOnly={readOnly || state.recoveryBlocked}
-                onCompositionStart={(event) => {
-                  composing.current = field.key;
-                  setComposition({
-                    field: field.key,
-                    text: event.currentTarget.value,
-                  });
-                }}
-                onCompositionEnd={(event) => finish(field.key, event.currentTarget.value)}
-                onBlur={(event) => finish(field.key, event.currentTarget.value)}
-                onChange={(event) => {
-                  if (composing.current === field.key)
-                    setComposition({
-                      field: field.key,
-                      text: event.target.value,
-                    });
-                  else edit(field.key, event.target.value);
-                }}
-              />
-            </label>
-          ))}
-        </div>
+        <StorySettingsFields value={state.value} readOnly={readOnly || state.recoveryBlocked} onChange={edit} />
       )}
     </div>
   );
+}
+
+export function StorySettingsFields({ value, readOnly, onChange }: {
+  value: StorySettingsDocument | null;
+  readOnly: boolean;
+  onChange: (field: Field, text: string) => void;
+}) {
+  const composing = useRef<Field | null>(null);
+  const [composition, setComposition] = useState<{ field: Field; text: string } | null>(null);
+  function finish(field: Field, text: string) {
+    if (composing.current !== field) return;
+    composing.current = null;
+    setComposition(null);
+    onChange(field, text);
+  }
+  return <div className="sd-story-settings">
+    {fields.map((field) => <label className="sd-story-field" key={field.key}>
+      <span>{field.label}</span>
+      <Input.TextArea aria-label={field.label}
+        value={composition?.field === field.key ? composition.text : (value?.[field.key] ?? '')}
+        autoSize={{ minRows: field.rows }} maxLength={field.limit} readOnly={readOnly}
+        onCompositionStart={(event) => {
+          composing.current = field.key;
+          setComposition({ field: field.key, text: event.currentTarget.value });
+        }}
+        onCompositionEnd={(event) => finish(field.key, event.currentTarget.value)}
+        onBlur={(event) => finish(field.key, event.currentTarget.value)}
+        onChange={(event) => {
+          if (composing.current === field.key) setComposition({ field: field.key, text: event.target.value });
+          else onChange(field.key, event.target.value);
+        }} />
+    </label>)}
+  </div>;
 }

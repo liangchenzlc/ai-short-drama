@@ -11,10 +11,12 @@ import type { StoredDraft } from '@host/types/creation/shared/recovery/creation-
 import type { Resource, ShotDraftValue } from '@host/types/creation/storyboard/sessions/editing-session';
 import type { ShotRead } from '@host/types/creation/storyboard/shots';
 export function shotDraftValue(shot: ShotRead): ShotDraftValue {
-  const { title, script, duration_ms, asset_ids, image_settings, video_prompt, video_settings } = shot;
+  const { title, shot_size, script, details, duration_ms, asset_ids, image_settings, video_prompt, video_settings } = shot;
   return {
     title,
+    shot_size: shot_size ?? null,
     script,
+    details: details ?? {},
     duration_ms,
     asset_ids,
     image_settings,

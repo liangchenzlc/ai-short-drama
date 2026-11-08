@@ -17,10 +17,9 @@
 }
 
 .storyboardViewHeader h2,
-.storyboardDetails h3,
-.storyboardVideo h3 {
+.storyboardDetails h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 
@@ -30,7 +29,7 @@
 
 .storyboardViewBody {
   display: grid;
-  grid-template-columns: minmax(240px, 0.9fr) minmax(320px, 1.1fr);
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, min(48%, 650px));
   flex: 1;
   min-height: 0;
 }
@@ -55,11 +54,26 @@
   border-right: 1px solid var(--hair);
 }
 
+.web-episode .standard-storyboard-list .storyboard-list,
+.web-episode .storyboardView .storyboardDetails {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.web-episode .standard-storyboard-list .storyboard-list::-webkit-scrollbar,
+.web-episode .storyboardView .storyboardDetails::-webkit-scrollbar {
+  display: none;
+}
+
 .storyboardDetails label {
   display: grid;
   gap: 7px;
   color: var(--sub);
-  font-size: 12px;
+  font-size: 14px;
+}
+
+.storyboardDetails :is(.ant-input, .ant-input-number, .ant-select) {
+  font-size: 14px;
 }
 
 .storyboardDetails label .ant-select,
@@ -73,48 +87,39 @@
   gap: 10px;
 }
 
-.shotAssociated {
-  display: grid;
-  gap: 8px;
-  color: var(--sub);
-  font-size: 12px;
-}
-
-.shotAssociated > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.shotAssociated > div span {
-  padding: 4px 8px;
-  border-radius: 5px;
-  background: var(--surface-raised);
-  color: var(--ink);
-}
-
 .shotImageHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
 }
 
+.shotImageActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.storyboardVideoTools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.shotImageActions .ant-select {
+  min-width: 110px;
+}
+
+.storyboardDetails > :is(.shotImageHeading, .shotImageGallery, .shotImageReferences, .shotImageComposer) {
+  width: min(100%, 530px);
+}
+
 .shotImageGallery .imageGalleryCanvas {
-  height: 120px;
-}
-
-.shotImageToggle.ant-btn {
-  justify-content: flex-start;
-}
-
-.shotImageToggle .isOpen {
-  transform: rotate(180deg);
-}
-
-.shotImageToggle svg {
-  transition: transform 160ms ease-out;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
 }
 
 .shotImageComposer > .generation-inputs,
@@ -126,7 +131,30 @@
 .storyboardVideo .generation-composer {
   display: flex;
   flex-direction: column;
+}
+
+.standard-creation-layout.is-storyboard .shotImageComposer .generation-inputs,
+.standard-creation-layout.is-storyboard .shotImageComposer .generation-composer {
+  min-height: 150px;
+}
+
+.shotImageComposer :is(.asset-prompt-input, .asset-prompt-editor) {
+  min-height: 90px;
+}
+
+.shotImageComposer .asset-prompt-editor {
+  font-size: 14px;
+}
+
+.standard-creation-layout.is-storyboard .storyboardVideo .generation-inputs,
+.standard-creation-layout.is-storyboard .storyboardVideo .generation-composer {
+  min-height: 260px;
+}
+
+.standard-creation-layout.is-storyboard .storyboardVideo .generation-composer textarea.ant-input {
+  flex: 1;
   min-height: 200px;
+  font-size: 14px;
 }
 
 .shotVideoPreview {
@@ -134,7 +162,8 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  height: clamp(190px, 31vh, 300px);
+  height: auto;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: 8px;
   background: #0c0c0d;
@@ -153,6 +182,12 @@
   color: var(--sub);
 }
 
+.storyboardVideo > :is(.shotVideoPreview, .shotVideoReferences, .shotCandidates, .generation-inputs) {
+  align-self: center;
+  width: min(100%, 530px);
+}
+
+.shotImageReferences,
 .shotVideoReferences,
 .shotReference,
 .shotCandidates {
@@ -161,15 +196,20 @@
   align-items: center;
   gap: 7px;
   color: var(--sub);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .shotReference,
 .shotCandidates > div {
-  padding: 4px 6px;
+  padding: 3px 5px;
   border-radius: 5px;
   background: var(--surface-raised);
   color: var(--ink);
+}
+
+.shotVideoReferences,
+.shotReference {
+  gap: 4px;
 }
 
 .shotReference img,
@@ -212,9 +252,6 @@
   background: var(--surface-hover);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .shotImageToggle svg { transition: none; }
-}
 .shotCandidates > div {
   display: flex;
   align-items: center;
@@ -234,4 +271,95 @@
   min-width: 160px;
   max-height: 240px;
   overflow-y: auto;
+}
+
+.standard-creation-dialog .shotAssetPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  padding: 12px 16px;
+}
+
+.storyboardDetails .shotAssetPicker .ant-checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 8px;
+  border-radius: 6px;
+  color: var(--ink);
+}
+
+.storyboardDetails .shotAssetPicker .ant-checkbox-wrapper:hover {
+  background: var(--surface-hover);
+}
+
+.storyboardDetails .standard-reference-picker-grid .ant-checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+}
+
+.web-episode .storyboardView {
+  display: flex;
+}
+
+.web-episode .storyboardView .storyboard-shot-information {
+  display: grid;
+  gap: 12px;
+}
+
+.web-episode .storyboardView .standard-shot-media {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  width: 100%;
+  height: auto;
+  gap: 12px;
+  overflow: visible;
+}
+
+.web-episode .storyboardView .standard-shot-media > .standard-object-preview {
+  flex: none;
+  width: 100%;
+  min-height: 180px;
+  overflow: visible;
+}
+
+.web-episode .creation-main-panel.is-compact-preview .storyboardView .standard-shot-media:not(.is-settings-collapsed) > .standard-object-preview {
+  flex: none;
+  min-height: 0;
+}
+
+.web-episode .storyboardView .standard-shot-media > .standard-object-settings {
+  flex: none;
+  width: 100%;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+
+.web-episode .storyboardView .shot-settings-heading {
+  display: none;
+}
+
+.web-episode .storyboardView .shot-settings-scroll {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  overflow: visible;
+}
+
+.web-episode .storyboardView .standard-shot-media > .standard-object-preview > video.creation-video-preview {
+  flex: none;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.storyboardView .creation-preview-state {
+  width: 100%;
+  min-height: 180px;
+  aspect-ratio: 16 / 9;
 }

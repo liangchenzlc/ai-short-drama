@@ -25,6 +25,7 @@ export function ImageGroupGallery({ group, adoptedImage, previewMediaId, onPrevi
   const selectedIndex = items.findIndex((item) => item.media_id === selected?.media_id);
   const isPrimary = (id: string | null) => id !== null && id === adoptedImage?.media_id;
   const separatePrimary = !!adoptedImage && !items.some((item) => item.media_id === adoptedImage.media_id);
+  const hasControls = items.length > 1 || separatePrimary || (!!selected?.media_id && !isPrimary(selected.media_id));
 
   return (
     <div className="imageGroupGallery">
@@ -36,7 +37,7 @@ export function ImageGroupGallery({ group, adoptedImage, previewMediaId, onPrevi
             onClick={() => setZoom(true)} />
         </> : <div className="imageGalleryEmpty"><ImageIcon size={25} /><span>暂无图片</span></div>}
       </div>
-      <div className="imageGalleryControls">
+      {hasControls && <div className="imageGalleryControls">
         <div className="imageGalleryThumbs">
           {(items.length > 1 || separatePrimary) && items.map((item, index) => <button type="button" key={item.id}
             className={item.media_id === selected?.media_id ? 'isSelected' : ''}
@@ -59,10 +60,10 @@ export function ImageGroupGallery({ group, adoptedImage, previewMediaId, onPrevi
           {selected?.media_id && !isPrimary(selected.media_id) &&
             <Button size="small" onClick={() => onAdopt(selected.media_id!)}>设为主图</Button>}
         </div>
-      </div>
+      </div>}
       {zoom && selected?.url && <ImagePreview presentation="standard-creation" src={selected.url}
         alt="图片预览" onClose={() => setZoom(false)} />}
-      {compare && <Dialog title="全部图片" onClose={() => setCompare(false)}>
+      {compare && <Dialog title="全部图片" className="imageGalleryCompareDialog" onClose={() => setCompare(false)}>
         <div className="imageGalleryCompare">{items.map((item, index) =>
           <button type="button" key={item.id} disabled={!item.media_id || !item.url}
             onClick={() => { if (item.media_id) onPreview(item.media_id); setCompare(false); }}>

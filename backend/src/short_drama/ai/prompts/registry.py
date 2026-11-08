@@ -102,5 +102,5 @@ def shot_image_system_prompt(layout: str) -> str:
     )
 
 
-def shot_video_system_prompt() -> str:
-    return load_prompt("shot_video/system.md")
+def shot_video_system_prompt(*, reference=True) -> str:
+    return load_prompt("shot_video/system.md" if reference else "shot_video/text_system.md")

@@ -47,7 +47,7 @@ test('all category creates a temporary empty type; named categories preserve the
   const blank = blankAssetDraft('all');
   assert.equal(assetDraftBody({ ...blank, name: '林晚' }), null);
   assert.equal(assetDraftBody({ ...blank, kind: 'character' }), null);
-  assert.deepEqual(assetDraftBody({ ...blank, name: ' 林晚 ', kind: 'character' }), { kind: 'character', name: '林晚', label: '', description: '', prompt: '', tags: [], scene_time: '' });
+  assert.deepEqual(assetDraftBody({ ...blank, name: ' 林晚 ', kind: 'character', profile: { appearance: '短发' } }), { kind: 'character', name: '林晚', label: '', description: '', profile: { appearance: '短发' }, prompt: '', tags: [], scene_time: '' });
 });
 
 test('unknown creation retains exact original key and input instead of making another asset', () => {

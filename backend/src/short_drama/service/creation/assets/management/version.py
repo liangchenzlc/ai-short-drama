@@ -25,6 +25,8 @@ def canonical_current(
 ) -> dict:
     """保持可信结构化定义及多视角，仅刷新当前入口拥有的平面、主图和参考槽。"""
     flat = {key: copy.deepcopy(getattr(asset, key)) for key in _FLAT_FIELDS}
+    if asset.profile:
+        flat["profile"] = copy.deepcopy(asset.profile)
     flat["media_id"] = str(asset.media_id) if asset.media_id is not None else None
     if previous is None:
         snapshot = {

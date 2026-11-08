@@ -19,6 +19,12 @@ def trimmed(value: str) -> str:
 Name = Annotated[str, Field(max_length=255), AfterValidator(nonblank), AfterValidator(trimmed)]
 Label = Annotated[str, Field(max_length=120)]
 SceneTime = Annotated[str, Field(max_length=60)]
+AssetProfile = dict[str, Annotated[str, Field(max_length=4000)]]
+PROFILE_FIELDS = {
+    "character": {"role", "gender", "age", "identity", "appearance", "personality"},
+    "scene": {"scene_type", "location", "lighting", "environment", "atmosphere"},
+    "prop": {"prop_type", "material", "color", "size", "condition", "appearance", "purpose"},
+}
 
 
 class AssetImageRead(ReadModel):
@@ -37,6 +43,7 @@ class AssetCreate(InputModel):
     description: MediumText = Field(
         default="", description="素材的稳定设定说明，不是图片生成提示词。"
     )
+    profile: AssetProfile = Field(default_factory=dict, description="素材类型专属资料。")
     prompt: MediumText = Field(default="", description="用于后续素材图片生成的视觉提示词。")
     tags: list[Annotated[str, Field(max_length=40)]] = Field(
         default_factory=list, max_length=20, description="最多 20 个用于筛选的短标签。"
@@ -67,6 +74,8 @@ class AssetCreate(InputModel):
     def validate_scene_time(self):
         if self.kind != "scene" and self.scene_time:
             raise ValueError("scene_time is only allowed for scene assets")
+        if set(self.profile) - PROFILE_FIELDS[self.kind]:
+            raise ValueError("profile fields must match the asset kind")
         return self
 
 
@@ -76,6 +85,7 @@ class AssetUpdate(InputModel):
     name: Name = None
     label: Label = None
     description: MediumText = None
+    profile: AssetProfile = None
     prompt: MediumText = None
     tags: list[Annotated[str, Field(max_length=40)]] = Field(default=None, max_length=20)
     scene_time: SceneTime = None
@@ -110,6 +120,7 @@ class AssetPatch(InputModel):
     name: Name = Field(default=None, description="要更新的素材名称；省略表示保持原值。")
     label: Label = Field(default=None, description="要更新的短标签/称谓。")
     description: MediumText = Field(default=None, description="要更新的稳定素材设定说明。")
+    profile: AssetProfile = Field(default=None, description="完整的类型专属资料。")
     prompt: MediumText = Field(default=None, description="要更新的后续图片生成视觉提示词。")
     tags: list[Annotated[str, Field(max_length=40)]] = Field(
         default=None, max_length=20, description="替换为新的完整标签列表；不是追加语义。"
@@ -153,6 +164,7 @@ class AssetRead(ReadModel):
     name: Name
     label: Label
     description: MediumText
+    profile: dict[str, str] = Field(default_factory=dict)
     prompt: MediumText
     tags: list[str] = Field(default_factory=list)
     scene_time: SceneTime = ""
@@ -173,6 +185,7 @@ class AssetRecordRead(ReadModel):
     name: Name
     label: Label
     description: MediumText
+    profile: dict[str, str] = Field(default_factory=dict)
     prompt: MediumText
     model_id: Identifier | None = None
     media_id: Identifier | None = None

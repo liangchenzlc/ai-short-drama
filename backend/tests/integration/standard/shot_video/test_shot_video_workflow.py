@@ -53,7 +53,7 @@ class VideoProvider:
     "layout",
     ["four", "five"],
 )
-def test_video_http_generation_history_automatic_confirmation_and_saved_work(flow, layout):
+def test_video_http_generation_history_explicit_adoption_and_saved_work(flow, layout):
     model = AIModelConfigService(flow.session).create(
         {
             "service_type": "video",
@@ -152,16 +152,15 @@ def test_video_http_generation_history_automatic_confirmation_and_saved_work(flo
             assert candidates.status_code == 200, candidates.text
             candidate = candidates.json()["items"][0]
             before = (await client.get(root)).json()["shot"]
-            assert before["video"]["media_id"] == candidate["media_id"]
-            assert not before["video"]["is_stale"] and not before["image"]["is_stale"]
+            assert before["video"] is None
+            assert not before["image"]["is_stale"]
             detail = (await client.get(f"/api/v1/ai/generations/{task_id}")).json()
             assert detail["status"] == "succeeded" and detail["error"] is None
-            # 旧客户端采用同一个当前作品仍保持幂等，不再次推进源版本。
             adopted = await client.post(
                 f"/api/v1/media-library/items/{candidate['asset_id']}/apply",
                 json={
                     "target": {"type": "shot_video", "id": shot["id"]},
-                    "expected_media_id": candidate["media_id"],
+                    "expected_media_id": None,
                     "expected_row_version": before["row_version"],
                     "expected_context_hash": before["video_context_hash"],
                 },
@@ -169,10 +168,13 @@ def test_video_http_generation_history_automatic_confirmation_and_saved_work(flo
             assert adopted.status_code == 200, adopted.text
             reloaded = (await client.get(root)).json()["shot"]
             assert reloaded["video"]["media_id"] == candidate["media_id"]
-            assert reloaded["row_version"] == before["row_version"]
+            assert int(reloaded["row_version"]) == int(before["row_version"]) + 1
             changed = await client.patch(
                 root,
-                json={"row_version": before["row_version"], "video_prompt": "拿伞时镜头缓慢推近。"},
+                json={
+                    "row_version": reloaded["row_version"],
+                    "video_prompt": "拿伞时镜头缓慢推近。",
+                },
             )
             assert changed.status_code == 200, changed.text
             after = changed.json()["shot"]

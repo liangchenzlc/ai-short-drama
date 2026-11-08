@@ -13,12 +13,16 @@ import {
 import { blankAssetDraft, localAssetDraftKey } from '@host/features/creation/assets/sessions/local-asset-draft-model';
 import { LocalAssetSession } from '@host/features/creation/assets/sessions/local-asset-session';
 import { creationScope, saveRecovery } from '@host/features/creation/shared/recovery/creation-recovery';
+import { ResourceCollection } from '@host/features/creation/shared/resource-view/resourceCollection';
 import { ResourceViewToggle, useResourceView } from '@host/features/creation/shared/resource-view/ResourceViewToggle';
 import {
+  flushStandardProjectSessions,
   getStandardSaveSnapshot,
   releaseStandardSession,
   retainStandardSession,
 } from '@host/features/creation/shared/sessions/registry';
+import { BatchLauncher, useBatchSelection } from '@host/features/generations/batches/BatchGeneration';
+import { useCollectionBatchProgress } from '@host/features/generations/batches/useCollectionBatchProgress';
 import { CreationEditorSlot, useCreationControls } from '@host/features/creation/workspace/layout/CreationWorkspace';
 import { useAuth } from '@host/features/identity/session/AuthSession';
 import { StudioFeedback } from '@host/shared/ui/StudioFeedback';
@@ -27,8 +31,9 @@ import type { ProjectAssetScope } from '@host/types/creation/assets/editor/Proje
 import type { AssetKind, LibraryAssetRead } from '@host/types/creation/assets/management';
 import type { LocalAssetDraft } from '@host/types/creation/assets/sessions/local-asset-draft-model';
 import type { CreationDraftValue } from '@host/types/creation/drafts/requests';
+import type { ResourceView } from '@host/types/creation/shared/resource-view/ResourceViewToggle';
 import type { NavigationBarrier } from '@host/types/creation/writing/sessions/writing-navigation';
-import { Button, Input, Pagination, Skeleton, Spin } from 'antd';
+import { Button, Checkbox, Input, Pagination, Skeleton, Spin, Tooltip } from 'antd';
 import { Image as ImageIcon, Plus, Search, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import '../list/index.css';
@@ -88,6 +93,13 @@ function ScopedProjectAssets({
   const [view, setView] = useResourceView('assets');
   const [kind, setKind] = useState<AssetKind | 'all'>('all');
   const [query, setQuery] = useState('');
+  const [collectionMode, setCollectionMode] = useState<ResourceView>('single');
+  const batchSelection = useBatchSelection(`assets:${scope.projectId}`);
+  const [visibleCollectionIds, setVisibleCollectionIds] = useState<string[]>([]);
+  const { statuses: batchProgress, candidates: batchCandidates, onCandidateState } = useCollectionBatchProgress(scope.projectId, actor, 'asset_image', visibleCollectionIds);
+  const [collectionAssets, setCollectionAssets] = useState<LibraryAssetRead[]>([]);
+  const [collectionLoading, setCollectionLoading] = useState(true);
+  const [collectionError, setCollectionError] = useState('');
   const [offset, setOffset] = useState(0);
   const { items, total, loading, error, refresh: refreshItems } = useAssetLibrary(scope, kind, query, offset);
   const [categoryCounts, setCategoryCounts] = useState<Record<AssetKind | 'all', number> | null>(null);
@@ -97,6 +109,37 @@ function ScopedProjectAssets({
     refreshItems();
     setCountRevision((value) => value + 1);
   }, [refreshItems]);
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadCollection() {
+      setCollectionLoading(true);
+      setCollectionError('');
+      try {
+        const items: LibraryAssetRead[] = [];
+        let offset = 0;
+        let total = 0;
+        do {
+          const page = await projectAssetsApi.list(scope, {
+            kind: kind === 'all' ? undefined : kind,
+            q: query.trim() || undefined,
+            offset,
+            limit: 100,
+          }, controller.signal);
+          items.push(...page.items);
+          offset += page.items.length;
+          total = page.total;
+          if (!page.items.length) break;
+        } while (offset < total);
+        if (!controller.signal.aborted) setCollectionAssets(items);
+      } catch (cause) {
+        if (!controller.signal.aborted) setCollectionError(errorMessage(cause));
+      } finally {
+        if (!controller.signal.aborted) setCollectionLoading(false);
+      }
+    }
+    void loadCollection();
+    return () => controller.abort();
+  }, [scope.kind, scope.projectId, kind, query, countRevision]);
   useEffect(() => {
     const controller = new AbortController();
     const kinds = ['all', 'character', 'scene', 'prop'] as const;
@@ -248,6 +291,8 @@ function ScopedProjectAssets({
   }
   const localSelected = drafts.find((draft) => draft.id === selectedId);
   const known = items.filter((item) => !removedIds.current.has(item.id)).map((item) => overrides[item.id] ?? item);
+  const collectionIds = collectionAssets.filter((item) => !removedIds.current.has(item.id)).map((item) => item.id);
+  const selectedCollectionIds = batchSelection.ids.filter((id) => collectionIds.includes(id));
   const visibleDrafts = drafts.filter(
     (item) =>
       (kind === 'all' || item.kind === kind) &&
@@ -279,6 +324,7 @@ function ScopedProjectAssets({
   );
 
   async function selectAsset(id: string, seed?: LibraryAssetRead, reveal = true) {
+    setCollectionMode('single');
     if (switching.current || removing.current || id === selection.current) return;
     switching.current = true;
     try {
@@ -366,6 +412,7 @@ function ScopedProjectAssets({
 
   async function addDraft() {
     if (readOnly || recoveryError || switching.current || removing.current) return;
+    setCollectionMode('single');
     if (editorBarrier.current?.hasUnsettled()) void editorBarrier.current.flush();
     const draft = blankAssetDraft(kind);
     keepDrafts([...draftsRef.current, draft]);
@@ -514,6 +561,7 @@ function ScopedProjectAssets({
       await projectAssetsApi.unlink(scope, asset.id, saved.row_version);
       if (!alive.current) return;
       removedIds.current.add(asset.id);
+      batchSelection.toggle(asset.id, false);
       if (selection.current === asset.id) {
         requests.current.detail?.abort();
         selection.current = null;
@@ -813,7 +861,58 @@ function ScopedProjectAssets({
       >
         创建
       </Button>
-      <CreationEditorSlot stage="assets">{editor}</CreationEditorSlot>
+      <CreationEditorSlot stage="assets">
+        <ResourceCollection
+          title="资产工作区"
+          mode={collectionMode}
+          selectedIds={selectedCollectionIds}
+          selectable={batchSelection.enabled}
+          onVisibleChange={setVisibleCollectionIds}
+          onCandidateState={onCandidateState}
+          onMode={setCollectionMode}
+          onToggle={batchSelection.toggle}
+          onOpen={(id) => {
+            setCollectionMode('single');
+            void selectAsset(id, collectionAssets.find((item) => item.id === id));
+          }}
+          items={collectionAssets.filter((item) => !removedIds.current.has(item.id)).map((source) => {
+            const item = overrides[source.id] ?? source;
+            const candidate = batchCandidates[item.id];
+            const showCandidate = !!candidate && candidate.mediaId !== item.media_id;
+            return {
+              id: item.id,
+              label: item.name,
+              selectionLabel: `选择资产：${item.name}`,
+              description: item.description,
+              image: showCandidate ? candidate.url : item.image?.url ?? null,
+              imageCandidate: showCandidate,
+              status: `主图：${item.media_id ? '已设置' : '未设置'}${batchProgress.asset_image[item.id] ? ` · ${batchProgress.asset_image[item.id]}` : ''}`,
+            };
+          })}
+          toolbar={<>
+            <BatchLauncher
+              compactScene="asset_image"
+              presentation="standard-creation"
+              scope={{ library: 'project', project_id: scope.projectId, asset_kind: kind === 'all' ? undefined : kind, search: query.trim() || undefined }}
+              selection={{ ...batchSelection, ids: selectedCollectionIds }}
+              loadedIds={collectionIds}
+              disabled={readOnly || collectionLoading || !!collectionError}
+              beforePreflight={() => flushStandardProjectSessions(scope.projectId)}
+            />
+            {batchSelection.enabled && <Tooltip title="全选当前筛选结果，用于批量生成">
+              <Checkbox aria-label="全选筛选结果"
+                checked={collectionIds.length > 0 && selectedCollectionIds.length === collectionIds.length}
+                indeterminate={selectedCollectionIds.length > 0 && selectedCollectionIds.length < collectionIds.length}
+                disabled={collectionLoading || !!collectionError || !collectionIds.length}
+                onChange={(event) => batchSelection.setIds(event.target.checked
+                  ? [...new Set([...batchSelection.ids, ...collectionIds])]
+                  : batchSelection.ids.filter((id) => !collectionIds.includes(id)))}
+              >全选</Checkbox>
+            </Tooltip>}
+            {collectionError && <span role="alert">{collectionError}</span>}
+          </>}
+        >{editor}</ResourceCollection>
+      </CreationEditorSlot>
     </section>
   );
 }

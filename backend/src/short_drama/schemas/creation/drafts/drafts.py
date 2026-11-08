@@ -36,6 +36,21 @@ class DraftVideoSettings(InputModel):
     )
 
 
+class DraftVideoAssetReference(InputModel):
+    type: Literal["asset"]
+    asset_id: Identifier
+
+
+class DraftVideoShotImageReference(InputModel):
+    type: Literal["shot_image"]
+    media_id: Identifier
+
+
+DraftVideoReference = Annotated[
+    DraftVideoAssetReference | DraftVideoShotImageReference, Field(discriminator="type")
+]
+
+
 class UserCreationDraftCreate(InputModel):
     object_id: Identifier
     purpose: DraftPurpose
@@ -44,6 +59,7 @@ class UserCreationDraftCreate(InputModel):
     image_settings: DraftImageSettings | None = None
     video_settings: DraftVideoSettings | None = None
     reference_media_ids: list[Identifier] = Field(default_factory=list, max_length=16)
+    video_references: list[DraftVideoReference] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def prompt_limit(self):
@@ -60,6 +76,7 @@ class UserCreationDraftUpdate(InputModel):
     image_settings: DraftImageSettings | None = None
     video_settings: DraftVideoSettings | None = None
     reference_media_ids: list[Identifier] = Field(default=None, max_length=16)
+    video_references: list[DraftVideoReference] = Field(default=None, max_length=100)
 
 
 class DraftReferenceImage(ReadModel):
@@ -80,6 +97,7 @@ class UserCreationDraftRead(ReadModel):
     image_settings: DraftImageSettings | None
     video_settings: DraftVideoSettings | None
     reference_media_ids: list[Identifier]
+    video_references: list[DraftVideoReference]
     reference_images: list[DraftReferenceImage] = Field(default_factory=list)
     draft_version: Identifier
     source_version: Identifier | None

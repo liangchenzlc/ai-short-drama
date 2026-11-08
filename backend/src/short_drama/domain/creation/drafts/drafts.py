@@ -87,6 +87,12 @@ class UserCreationDraft(Base):
         server_default=text("(JSON_ARRAY())"),
         comment="个人参考图永久媒体ID；不保存展示URL",
     )
+    video_references: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+        server_default=text("(JSON_ARRAY())"),
+        comment="视频参考的素材或分镜图片身份",
+    )
     source_version: Mapped[int | None] = mapped_column(
         BIGINT(unsigned=True),
         nullable=True,
@@ -153,6 +159,10 @@ class UserCreationDraft(Base):
             "JSON_TYPE(`reference_media_ids`) = 'ARRAY' "
             "AND JSON_LENGTH(`reference_media_ids`) <= 16",
             name="ck_user_creation_drafts_reference_media_ids",
+        ),
+        CheckConstraint(
+            "JSON_TYPE(`video_references`) = 'ARRAY' AND JSON_LENGTH(`video_references`) <= 100",
+            name="ck_user_creation_drafts_video_references",
         ),
         {
             "mysql_engine": "InnoDB",

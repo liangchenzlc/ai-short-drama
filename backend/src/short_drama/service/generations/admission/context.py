@@ -1,6 +1,7 @@
 """Build immutable model input from validated, saved business objects."""
 
 import hashlib
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,6 +47,7 @@ def asset_snapshot(asset):
         "label": asset.label,
         "tags": getattr(asset, "tags", []) or [],
         "scene_time": getattr(asset, "scene_time", "") or "",
+        **({"profile": dict(asset.profile)} if getattr(asset, "profile", None) else {}),
         "state": getattr(asset, "state", "unconfirmed"),
         "media_id": str(asset.media_id) if asset.media_id else None,
     }
@@ -184,8 +186,16 @@ class GenerationContextService:
         }
         if request.get("creation_draft_snapshot"):
             request["source_snapshot"]["creation_draft"] = request["creation_draft_snapshot"]
+        visual_content = {
+            key: value for key, value in content.items() if key != "reference_media_ids" and value
+        }
+        prompt = "\n".join(
+            filter(
+                None, [supplement, "素材资料：" + json.dumps(visual_content, ensure_ascii=False)]
+            )
+        )
         request["input"] = {
-            "prompt": supplement,
+            "prompt": prompt,
             "reference_media_ids": list(
                 dict.fromkeys(
                     map(
@@ -241,6 +251,9 @@ class GenerationContextService:
             "shot_id": shot.id,
             "reference_media_ids": getattr(shot, "reference_media_ids", None) or [],
             "script": shot.script,
+            "title": shot.title,
+            "shot_size": shot.shot_size,
+            "details": shot.details,
             "duration_ms": shot.duration_ms,
             "assets": assets,
         }
@@ -307,8 +320,29 @@ class GenerationContextService:
             request["source_snapshot"]["creation_draft"] = private_draft
         request["business_intent"] = {"instructions": supplement}
         request["template_version"] = PROMPT_VERSIONS["shot_image"]
+        visual_details = {
+            key: snapshot["shot"][key]
+            for key in ("title", "shot_size")
+            if snapshot["shot"].get(key)
+        }
+        visual_details.update(
+            {
+                key: value
+                for key, value in (snapshot["shot"].get("details") or {}).items()
+                if key in {"camera_angle", "camera_movement"} and value
+            }
+        )
+        prompt_parts = [supplement, f"镜头内容：{shot.script}" if shot.script else ""]
+        if visual_details:
+            prompt_parts.append("镜头资料：" + json.dumps(visual_details, ensure_ascii=False))
+        for asset in snapshot["assets"]:
+            profile = {key: value for key, value in asset.get("profile", {}).items() if value}
+            if profile:
+                prompt_parts.append(
+                    f"{asset['name']}资料：{json.dumps(profile, ensure_ascii=False)}"
+                )
         request["input"] = {
-            "prompt": supplement,
+            "prompt": "\n".join(filter(None, prompt_parts)),
             "reference_media_ids": references,
         }
         return request
@@ -316,6 +350,7 @@ class GenerationContextService:
     def prepare_shot_video(self, request):
         from short_drama.ai.business_prompts import video_prompt_parts
         from short_drama.domain import ShotImage
+        from short_drama.service.creation.sound.voices.context import native_context, native_prompt
         from short_drama.service.creation.storyboard.videos.video_context import (
             DEFAULT_VIDEO_SETTINGS,
             video_context_hash,
@@ -326,16 +361,27 @@ class GenerationContextService:
         image = self.session.scalar(
             select(ShotImage).where(ShotImage.shot_id == shot.id).with_for_update()
         )
-        if image is None:
+        private_draft = request.get("creation_draft_snapshot")
+        defaults = request.pop("default_video_references", None)
+        selection = private_draft["video_references"] if private_draft else defaults
+        requested_reference = source.get("reference_media_id")
+        reference_id = requested_reference if selection is None else None
+        if requested_reference is not None and image is None:
             raise WorkflowError("video_reference_required", "请先采用一张分镜参考图", 422)
         settings = shot.video_settings or DEFAULT_VIDEO_SETTINGS
         digest = video_context_hash(
-            image_hash, image.media_id, shot.video_prompt, settings, session=self.session, shot=shot
+            image_hash,
+            image.media_id if image else None,
+            shot.video_prompt,
+            settings,
+            session=self.session,
+            shot=shot,
         )
         if (
             shot.row_version != int(source["row_version"])
             or source["context_hash"] != digest
-            or int(source["reference_media_id"]) != image.media_id
+            or requested_reference is not None
+            and int(requested_reference) != image.media_id
         ):
             raise WorkflowError("shot_version_conflict", "分镜、提示词或参考图已变化，请刷新后生成")
         duration = settings.get("duration_ms") or shot.duration_ms
@@ -343,7 +389,6 @@ class GenerationContextService:
         supplied = {
             k: v for k, v in request["parameters"].items() if k in expected and v is not None
         }
-        private_draft = request.get("creation_draft_snapshot")
         if not private_draft and supplied and supplied != expected:
             raise WorkflowError("generation_settings_changed", "请先保存视频时长和清晰度", 422)
         prompt = shot.video_prompt
@@ -355,7 +400,38 @@ class GenerationContextService:
                 "resolution": personal.get("resolution") or settings["resolution"],
             }
             prompt = private_draft["input_text"]
+        references = [str(reference_id)] if reference_id is not None else []
+        reference_assets = []
+        if selection is not None:
+            for item in selection:
+                if item["type"] == "asset":
+                    asset = self.session.scalar(
+                        select(Asset)
+                        .where(Asset.id == int(item["asset_id"]))
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                    if asset is None or asset.media_id is None:
+                        raise WorkflowError("video_reference_missing", "视频参考素材尚无图片", 422)
+                    references.append(str(asset.media_id))
+                    reference_assets.append(
+                        {"asset_id": str(asset.id), "media_id": str(asset.media_id)}
+                    )
+                else:
+                    reference_id = item["media_id"]
+                    references.append(str(reference_id))
+            references = list(dict.fromkeys(references))
+            if len(references) > 9:
+                raise WorkflowError("reference_limit_exceeded", "视频参考图片不能超过9张", 422)
+        source["reference_media_id"] = str(reference_id) if reference_id is not None else None
         snapshot = {**snapshot, "video_duration_ms": duration}
+        native = native_context(self.session, shot, strict=True, settings=self.settings)
+        prompt_snapshot = {
+            **snapshot,
+            "native_speech": native,
+            "input_mode": "omni_reference" if references else "text_to_video",
+            "has_shot_reference": reference_id is not None,
+        }
         effective_aspect = request["parameters"].get("aspect")
         if private_draft:
             effective_aspect = (private_draft.get("video_settings") or {}).get(
@@ -372,19 +448,23 @@ class GenerationContextService:
                 else prompt
             )
             parts = video_prompt_parts(
-                {**snapshot, "output": {"aspect": effective_aspect}},
+                {**prompt_snapshot, "output": {"aspect": effective_aspect}},
                 actual_prompt,
             )
         else:
-            parts = video_prompt_parts(snapshot, prompt)
+            parts = video_prompt_parts(prompt_snapshot, prompt)
         source.update(project_id=str(creation.id), source_id=str(shot.id))
         request["source_snapshot"] = {
             **snapshot,
             "context_hash": digest,
             "shot_context_hash": image_hash,
-            "reference_media_id": str(image.media_id),
-            "reference_layout": image.layout,
-            "input_mode": "omni_reference",
+            "reference_media_id": str(reference_id) if reference_id is not None else None,
+            "reference_media_ids": references,
+            "video_reference_assets": reference_assets,
+            "reference_layout": (
+                image.layout if image and str(image.media_id) == str(reference_id) else None
+            ),
+            "input_mode": prompt_snapshot["input_mode"],
             "row_version": str(shot.row_version),
             "video_prompt": prompt,
             "video_settings": expected if private_draft else settings,
@@ -395,10 +475,10 @@ class GenerationContextService:
             request["source_snapshot"]["creation_draft"] = private_draft
         request["template_version"] = PROMPT_VERSIONS["shot_video"]
         request["parameters"] = {**expected, "aspect": effective_aspect}
-        request["input"] = {"prompt": parts["prompt"], "reference_media_ids": [str(image.media_id)]}
-        from short_drama.service.creation.sound.voices.context import native_context, native_prompt
-
-        native = native_context(self.session, shot, strict=True, settings=self.settings)
+        request["input"] = {
+            "prompt": parts["prompt"],
+            "reference_media_ids": references,
+        }
         if native is not None:
             request["source_snapshot"]["native_speech"] = native
             request["input"]["audio_reference_media_ids"] = [

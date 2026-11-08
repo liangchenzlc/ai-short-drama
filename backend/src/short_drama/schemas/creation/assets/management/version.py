@@ -20,6 +20,7 @@ class AssetVersionAsset(InputModel):
     name: Annotated[str, Field(max_length=255)]
     label: Annotated[str, Field(max_length=120)]
     description: MediumText
+    profile: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
     prompt: MediumText
     tags: list[Annotated[str, Field(max_length=40)]] = Field(max_length=20)
     scene_time: Literal[""]

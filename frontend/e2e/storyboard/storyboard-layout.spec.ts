@@ -1,6 +1,335 @@
 import { expect, test, type Page } from '@playwright/test';
 import { fixture, image, root } from '../support/studio-fixture';
 
+test('正式分镜工作区在三种视图中保留勾选和左侧列表', async ({ page }, info) => {
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  await page.goto(`${root}/storyboard?shot=101`);
+  const workspace = page.getByRole('region', { name: '分镜工作区', exact: true });
+  await expect(workspace.getByRole('textbox', { name: '分镜 1 脚本', exact: true })).toBeVisible();
+  await expect(workspace.getByRole('textbox', { name: '画面要求', exact: true })).toBeVisible();
+  await expect(workspace.getByRole('textbox', { name: '视频提示词', exact: true })).toBeVisible();
+  await expect(workspace.getByRole('heading', { name: '视频', exact: true })).toHaveCount(0);
+  const referenceButton = workspace.getByRole('button', { name: '用作视频参考', exact: true }).first();
+  expect((await referenceButton.boundingBox())!.width).toBeLessThan(150);
+  await page.screenshot({ path: info.outputPath('正式分镜-1440.png'), animations: 'disabled' });
+  await workspace.getByRole('region', { name: '参考图片', exact: true }).scrollIntoViewIfNeeded();
+  for (const width of [1280, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.screenshot({ path: info.outputPath(`正式分镜-参考区-${width}.png`), animations: 'disabled' });
+  }
+  await workspace.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await workspace.getByRole('checkbox', { name: '选择分镜：站台镜头 1', exact: true }).check();
+  await workspace.getByRole('button', { name: '列表展示', exact: true }).click();
+  await expect(workspace.getByRole('checkbox', { name: '选择分镜：站台镜头 1', exact: true })).toBeChecked();
+  await workspace.getByRole('button', { name: '单卡展示', exact: true }).click();
+  await expect(workspace).toContainText('已选 1 项');
+  await expect(workspace.getByRole('button', { name: '批量生成分镜图', exact: true })).toBeEnabled();
+  await expect(workspace.getByRole('button', { name: '批量生成视频', exact: true })).toBeEnabled();
+  await expect(page.locator('.standard-storyboard-list .storyboard-shot-card').first()).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
+test('分镜图关联与视频参考独立保存，新增场景带入视频参考', async ({ page }, info) => {
+  test.setTimeout(60000);
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  state.creationDrafts.set('101:storyboard_video', {
+    id: '95001', project_id: '10', object_id: '101', purpose: 'storyboard_video', model_config_id: '77',
+    input_text: '', image_settings: null, video_settings: { resolution: '720p', duration_ms: 3000 },
+    reference_media_ids: [], video_references: [{ type: 'asset', asset_id: '501' }],
+    row_version: '1', draft_version: '1', source_version: '1',
+  });
+  await page.goto(`${root}/storyboard?shot=101`);
+  await page.getByRole('region', { name: '参考图片', exact: true })
+    .getByRole('button', { name: '添加参考图片', exact: true }).click();
+  await page.getByRole('button', { name: '关联镜头素材', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: '关联镜头素材', exact: true });
+  const placement = await picker.getByRole('checkbox', { name: '分镜图参考：雨夜车站', exact: true }).evaluate((input) => {
+    const label = input.closest('label')!;
+    const box = label.querySelector('.ant-checkbox-inner')!.getBoundingClientRect();
+    const textElement = label.querySelector<HTMLElement>(':scope > span:last-child')!;
+    const text = textElement.getBoundingClientRect();
+    const dialog = input.closest('dialog')!.getBoundingClientRect();
+    return { leftInset: box.left - dialog.left, gap: text.left + parseFloat(getComputedStyle(textElement).paddingLeft) - box.right,
+      verticalOffset: Math.abs((text.top + text.bottom - box.top - box.bottom) / 2) };
+  });
+  expect(placement.leftInset).toBeGreaterThanOrEqual(12);
+  expect(placement.gap).toBeGreaterThanOrEqual(4);
+  expect(placement.verticalOffset).toBeLessThan(4);
+  for (const width of [1280, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.screenshot({ path: info.outputPath(`正式分镜-关联素材弹窗-${width}.png`), animations: 'disabled' });
+  }
+  await page.getByRole('checkbox', { name: '分镜图参考：雨夜车站', exact: true }).check();
+  await picker.getByRole('button', { name: '完成', exact: true }).click();
+  await expect.poll(() => state.shots[0].asset_ids).toEqual(['501', '502']);
+  await expect.poll(() => state.creationDrafts.get('101:storyboard_video')?.video_references).toEqual([
+    { type: 'asset', asset_id: '501' }, { type: 'asset', asset_id: '502' },
+  ]);
+  await page.reload();
+  await expect(page.getByRole('button', { name: '移除参考：雨夜车站', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '参考图片 9901 的来源', exact: true }).click();
+  await expect(page.getByRole('button', { name: '移除分镜图参考：雨夜车站', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '用作视频参考', exact: true }).first().click();
+  await expect.poll(() => state.creationDrafts.get('101:storyboard_video')?.video_references).toEqual([
+    { type: 'asset', asset_id: '501' }, { type: 'asset', asset_id: '502' }, { type: 'shot_image', media_id: '9101' },
+  ]);
+  await page.getByRole('button', { name: '参考图片 9901 的来源', exact: true }).click();
+  await page.getByRole('button', { name: '移除分镜图参考：林晚', exact: true }).click();
+  await expect.poll(() => state.shots[0].asset_ids).toEqual(['502']);
+  await expect(page.getByRole('button', { name: '移除参考：林晚', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '移除参考：林晚', exact: true }).click();
+  await page.getByRole('button', { name: '移除参考：雨夜车站', exact: true }).click();
+  await page.getByRole('button', { name: '移除参考：分镜图', exact: true }).click();
+  await expect.poll(() => state.creationDrafts.get('101:storyboard_video')?.video_references).toEqual([]);
+  const workspace = page.getByRole('region', { name: '分镜工作区', exact: true });
+  await workspace.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await workspace.getByRole('button', { name: '单卡展示', exact: true }).click();
+  await expect(page.getByRole('button', { name: '生成视频', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '移除参考：分镜图', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '移除参考：雨夜车站', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '选择分镜 02', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '分镜 2 脚本', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '选择分镜 01', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '分镜 1 脚本', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '生成视频', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '移除参考：分镜图', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '移除参考：雨夜车站', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '移除分镜图参考：雨夜车站', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: '移除参考：雨夜车站', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '移除分镜图参考：雨夜车站', exact: true })).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
+test('首次保存的默认视频参考不随分镜图关联移除而消失', async ({ page }) => {
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  await page.route(`**/api/v1${root}/drafts`, (route) => {
+    const body = route.request().postDataJSON();
+    if (route.request().method() !== 'POST' || body.purpose !== 'storyboard_video') return route.fallback();
+    const draft = { ...body, id: '95001', project_id: '10', object_id: '101', row_version: '1', draft_version: '1',
+      source_version: '1', video_references: [{ type: 'asset', asset_id: '501' }] };
+    state.creationDrafts.set('101:storyboard_video', draft);
+    return route.fulfill({ status: 201, json: draft });
+  });
+  await page.goto(`${root}/storyboard?shot=101`);
+  await expect.poll(() => state.creationDrafts.get('101:storyboard_video')?.video_references).toEqual([{ type: 'asset', asset_id: '501' }]);
+  await page.getByRole('button', { name: '移除分镜图参考：林晚', exact: true }).click();
+  await expect.poll(() => state.shots[0].asset_ids).toEqual([]);
+  await expect(page.getByRole('button', { name: '移除参考：林晚', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: '移除参考：林晚', exact: true })).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
+test('已有视频保留到用户明确采用候选，并提交当前版本', async ({ page }) => {
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  state.shots[0].video = { media_id: '9401', media_asset_id: '7001', url: null, resolution: '720p',
+    duration_ms: 3000, first_frame_media_id: null, is_stale: false };
+  const candidate = { asset_id: '7009', record_id: '8009', generation_id: '9009', media_id: '9409',
+    media_type: 'video', name: '新视频', row_version: '1', url: null, duration_ms: 3000,
+    source: { scene: 'shot_video', shot_id: '101' } };
+  let adoption: any = null;
+  await page.route('**/api/v1/media-library/items**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/7009/apply')) {
+      adoption = route.request().postDataJSON();
+      state.shots[0].video = { ...state.shots[0].video, media_id: candidate.media_id, media_asset_id: candidate.asset_id };
+      return route.fulfill({ json: { media_id: candidate.media_id } });
+    }
+    if (url.pathname.endsWith('/items') && url.searchParams.get('media_type') === 'video')
+      return route.fulfill({ json: { items: [candidate], total: 1, offset: 0, limit: 20 } });
+    return route.fallback();
+  });
+  await page.goto(`${root}/storyboard?shot=101`);
+  await page.getByRole('button', { name: '视频记录', exact: true }).click();
+  const history = page.getByRole('dialog', { name: '分镜视频生成记录', exact: true });
+  await expect(history.getByText('新视频 · 3 秒', { exact: true })).toBeVisible();
+  expect(state.shots[0].video.media_id).toBe('9401');
+  await history.getByRole('button', { name: '采用新视频', exact: true }).click();
+  await expect.poll(() => adoption).toMatchObject({ target: { type: 'shot_video', id: '101' },
+    expected_media_id: '9401', expected_row_version: '1', expected_context_hash: 'a'.repeat(64) });
+  await expect.poll(() => state.shots[0].video.media_id).toBe('9409');
+  expect(state.errors).toEqual([]);
+});
+
+test('新分镜图候选保留旧主图并支持单张主动采用', async ({ page }) => {
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  state.imageGroups.set('shot:101', {
+    id: '61101', kind: 'generation', status: 'completed', target_kind: 'shot', target_id: '101',
+    target_version: '1', is_current: true, expected_count: 2, primary_index: null, primary_version: '1',
+    notice: null, task_id: '97001', created_at: '2026-11-08T00:00:00Z',
+    items: [1, 2].map((index) => ({ id: `6310${index}`, media_id: `920${index}`, url: image,
+      output_index: index, width: 800, height: 600, item_version: '1', status: 'ready' as const, error: null,
+      prompt: null, history: [] })),
+  });
+  await page.goto(`${root}/storyboard?shot=101`);
+  const gallery = page.getByLabel('分镜图图片组', { exact: true });
+  await expect(gallery.getByRole('article', { name: '当前主图', exact: true })).toBeVisible();
+  const grid = await gallery.locator('.image-subject-grid').boundingBox();
+  const primary = await gallery.getByRole('article', { name: '当前主图', exact: true }).boundingBox();
+  expect(Math.abs(grid!.width / grid!.height - 16 / 9)).toBeLessThan(0.05);
+  expect(primary!.width / grid!.width).toBeGreaterThan(0.98);
+  await expect(gallery.getByRole('button', { name: '查看当前主图', exact: true })).toBeVisible();
+  expect(state.shots[0].image.media_id).toBe('9101');
+  await gallery.getByRole('button', { name: '查看图片 2', exact: true }).click();
+  await gallery.getByRole('button', { name: '设为主图', exact: true }).click();
+  await expect.poll(() => state.shots[0].image.media_id).toBe('9202');
+  expect(state.errors).toEqual([]);
+});
+
+test('无图文字视频和显式图片参考视频都使用各自保存的草稿', async ({ page }) => {
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  state.shots[0].image = null;
+  state.shots[0].asset_ids = [];
+  state.creationDrafts.set('101:storyboard_video', {
+    id: '95001', project_id: '10', object_id: '101', purpose: 'storyboard_video', model_config_id: '77',
+    input_text: '镜头缓慢推进', image_settings: null, video_settings: { resolution: '720p', duration_ms: 3000 },
+    reference_media_ids: [], video_references: [], row_version: '1', draft_version: '1', source_version: '1',
+  });
+  const submitted: any[] = [];
+  await page.route('**/api/v1/ai/generations/video', (route) => {
+    submitted.push(route.request().postDataJSON());
+    return route.fulfill({ json: { generation_id: String(97000 + submitted.length), service_type: 'video', status: 'queued' } });
+  });
+  await page.goto(`${root}/storyboard?shot=101`);
+  const generate = page.getByRole('button', { name: '生成视频', exact: true });
+  await expect(generate).toBeEnabled();
+  await generate.click();
+  await expect.poll(() => submitted.length).toBe(1);
+  expect(submitted[0].source).toMatchObject({ scene: 'shot_video', shot_id: '101', draft_id: '95001', draft_version: '1' });
+  expect(submitted[0].source.reference_media_id).toBeUndefined();
+  await page.getByRole('button', { name: '添加视频参考', exact: true }).click();
+  await page.getByRole('button', { name: '林晚', exact: true }).click();
+  await expect.poll(() => state.creationDrafts.get('101:storyboard_video')?.video_references).toEqual([{ type: 'asset', asset_id: '501' }]);
+  await expect(generate).toBeEnabled();
+  await generate.click();
+  await expect.poll(() => submitted.length).toBe(2);
+  expect(submitted[1].source.draft_version).toBe(state.creationDrafts.get('101:storyboard_video').draft_version);
+  expect(state.creationDrafts.get('101:storyboard_video').video_references).toEqual([{ type: 'asset', asset_id: '501' }]);
+  expect(state.shots[0].image).toBeNull();
+  expect(state.errors).toEqual([]);
+});
+
+test('镜头创作资料和原生对白分开保存并能刷新恢复', async ({ page }) => {
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  await page.goto(`${root}/storyboard?shot=101`);
+  await page.getByRole('textbox', { name: '机位角度', exact: true }).fill('低机位');
+  await page.getByRole('textbox', { name: '运镜', exact: true }).fill('缓慢推进');
+  await page.getByRole('textbox', { name: '对白设想', exact: true }).fill('创作设想中的对白');
+  await page.getByRole('textbox', { name: '声音', exact: true }).fill('雨声渐弱');
+  await expect.poll(() => state.shots[0].details).toMatchObject({ camera_angle: '低机位', camera_movement: '缓慢推进',
+    dialogue_note: '创作设想中的对白', sound: '雨声渐弱' });
+  await page.getByText('对白与音色', { exact: true }).click();
+  await expect(page.getByRole('region', { name: '分镜原生对白' })).toContainText('这封信，终于送到了。');
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: '对白设想', exact: true })).toHaveValue('创作设想中的对白');
+  await expect(page.getByRole('textbox', { name: '机位角度', exact: true })).toHaveValue('低机位');
+  expect(state.errors).toEqual([]);
+});
+
+test('筛选结果超过一百个镜头时，批量预检分批并保留选择', async ({ page }) => {
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  for (let position = 81; position <= 101; position++)
+    state.shots.push({ ...structuredClone(state.shots[0]), id: String(100 + position), position, title: `站台镜头 ${position}` });
+  await page.goto(`${root}/storyboard?shot=101`);
+  const workspace = page.getByRole('region', { name: '分镜工作区', exact: true });
+  await expect(workspace.getByRole('checkbox', { name: '全选筛选结果', exact: true })).toBeEnabled();
+  await workspace.getByRole('checkbox', { name: '全选筛选结果', exact: true }).check();
+  await expect(workspace).toContainText('已选 101 项');
+  await workspace.getByRole('button', { name: '批量生成分镜图', exact: true }).click();
+  const drawer = page.getByRole('dialog', { name: '批量生成预检' });
+  await expect(drawer).toContainText('将自动分批');
+  await drawer.getByRole('combobox').first().click();
+  await page.getByRole('option', { name: '本地验收模型' }).click();
+  await drawer.getByRole('button', { name: '检查可执行项', exact: true }).click();
+  await expect.poll(() => state.requests.filter((request) => request.path === '/ai/generation-batches/preflight').length).toBe(2);
+  const requests = state.requests.filter((request) => request.path === '/ai/generation-batches/preflight');
+  expect(requests.map((request) => request.body.source_ids.length)).toEqual([100, 1]);
+  expect(requests.flatMap((request) => request.body.source_ids)).toHaveLength(101);
+  expect(state.errors).toEqual([]);
+});
+
+test('筛选后的选择数量与批量预检镜头一致，清空筛选可恢复选择', async ({ page }) => {
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  await page.goto(`${root}/storyboard?shot=101`);
+  const workspace = page.getByRole('region', { name: '分镜工作区', exact: true });
+  await workspace.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await workspace.getByRole('checkbox', { name: '选择分镜：站台镜头 1', exact: true }).check();
+  await workspace.getByRole('checkbox', { name: '选择分镜：站台镜头 2', exact: true }).check();
+  const search = page.getByRole('textbox', { name: '搜索镜头名称', exact: true });
+  await search.fill('站台镜头 2');
+  await expect(workspace).toContainText('已选 1 项');
+  await workspace.getByRole('button', { name: '批量生成视频', exact: true }).click();
+  const drawer = page.getByRole('dialog', { name: '批量生成预检' });
+  await expect(drawer).toContainText('已选择 1 项');
+  await drawer.getByRole('combobox').first().click();
+  await page.getByRole('option', { name: '本地验收模型' }).click();
+  await drawer.getByRole('button', { name: '检查可执行项', exact: true }).click();
+  await expect.poll(() => state.requests.find((request) => request.path === '/ai/generation-batches/preflight')?.body.source_ids).toEqual(['102']);
+  await drawer.getByRole('button', { name: /关闭/ }).first().click();
+  await search.clear();
+  await expect(workspace).toContainText('已选 2 项');
+  expect(state.errors).toEqual([]);
+});
+
+test('批量能力关闭时不显示选择控件', async ({ page }) => {
+  await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  await page.route('**/api/v1/ai/generation-batches/capabilities', (route) => route.fulfill({ json: { enabled: false } }));
+  await page.goto(`${root}/storyboard?shot=101`);
+  const workspace = page.getByRole('region', { name: '分镜工作区', exact: true });
+  await workspace.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await expect(workspace.getByRole('button', { name: '打开站台镜头 1', exact: true })).toBeVisible();
+  await expect(workspace.getByRole('checkbox', { name: '选择分镜：站台镜头 1', exact: true })).toHaveCount(0);
+  await expect(workspace.getByRole('checkbox', { name: '全选筛选结果', exact: true })).toHaveCount(0);
+  await expect(workspace.getByRole('button', { name: '批量生成视频', exact: true })).toHaveCount(0);
+});
+
+test('正式分镜列表与资料栏隐藏滚动条并保持滚动', async ({ page }) => {
+  await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`${root}/storyboard?shot=101`);
+  for (const selector of ['.standard-storyboard-list .storyboard-list', '.storyboardView .storyboardDetails']) {
+    const container = page.locator(selector);
+    await expect(container).toBeVisible({ timeout: 15_000 });
+    const state = await container.evaluate((element) => {
+      element.scrollTop = 100;
+      return { scrollbar: getComputedStyle(element).scrollbarWidth, top: element.scrollTop,
+        height: element.clientHeight, content: element.scrollHeight };
+    });
+    expect(state.scrollbar).toBe('none');
+    expect(state.content).toBeGreaterThan(state.height);
+    expect(state.top).toBeGreaterThan(0);
+  }
+});
+
+test('正式分镜工作区在桌面宽度与助手开关下保持可用', async ({ page }, info) => {
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  await page.goto(`${root}/storyboard?shot=101`);
+  const workspace = page.getByRole('region', { name: '分镜工作区', exact: true });
+  await expect(workspace).toBeVisible({ timeout: 15_000 });
+  for (const assistant of [false, true]) {
+    if (assistant) {
+      const toggle = page.getByRole('button', { name: 'AI 创作助手', exact: true });
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      const assistantPanel = page.getByRole('complementary', { name: 'AI 创作助手区域' });
+      await expect(assistantPanel).toBeVisible();
+      await expect(assistantPanel).not.toContainText('正在载入 AI 创作助手', { timeout: 15_000 });
+    }
+    for (const width of [1280, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(workspace.getByRole('textbox', { name: '镜头名称', exact: true })).toBeVisible();
+      await expect(workspace.getByRole('textbox', { name: '视频提示词', exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const preview = await page.locator('#storyboard-video-pane .creation-preview-state').boundingBox();
+      expect(preview!.width / preview!.height).toBeGreaterThan(1.4);
+      await page.screenshot({ path: info.outputPath(`正式分镜-${width}-助手${assistant ? '开' : '关'}.png`), animations: 'disabled' });
+    }
+  }
+  expect(state.errors).toEqual([]);
+});
+
 async function layoutFixture(page: Page) {
   const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   state.shots[0].script = '中景，林晚停在雨夜中的站台。'.repeat(16);
@@ -63,7 +392,7 @@ for (const width of [1440, 1280]) test(`model capability feedback keeps storyboa
   const settingsSize = await settings.boundingBox();
   release();
   await expect(page.locator('.studio-message').filter({ hasText: '图片模型能力读取失败' })).toBeVisible();
-  await expect(page.locator('.studio-message')).toHaveCount(1);
+  await expect(page.locator('.studio-message').filter({ hasText: '视频模型能力读取失败' })).toBeVisible();
   expect(await editor.boundingBox()).toEqual(original);
   expect(await settings.boundingBox()).toEqual(settingsSize);
   await expect(settings.locator('.ant-alert')).toHaveCount(0);
@@ -100,26 +429,14 @@ async function expectCardLayout(page: Page) {
 }
 
 async function expectDesktopHeaderFits(page: Page) {
-  const heading = panel(page).locator('.standard-object-heading');
+  const heading = panel(page).locator('.storyboardViewHeader');
   const bounds = (await heading.boundingBox())!;
-  const actions = heading.locator('nav .ant-btn');
-  await expect(actions).toHaveCount(5);
-  for (const action of await actions.all()) {
-    await expect(action).toBeInViewport({ ratio: 0.99 });
-    const box = (await action.boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(bounds.x);
-    expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width);
-  }
-  const tabs = (await heading.getByRole('tablist', { name: '镜头制作内容', exact: true }).boundingBox())!;
-  const navigation = (await heading.getByRole('navigation').boundingBox())!;
-  expect(tabs.x).toBeGreaterThanOrEqual(bounds.x);
-  expect(tabs.x + tabs.width).toBeLessThanOrEqual(bounds.x + bounds.width);
-  expect(tabs.y).toBeGreaterThanOrEqual(bounds.y);
-  expect(tabs.y + tabs.height).toBeLessThanOrEqual(bounds.y + bounds.height);
-  const overlapWidth = Math.max(0, Math.min(tabs.x + tabs.width, navigation.x + navigation.width) - Math.max(tabs.x, navigation.x));
-  const overlapHeight = Math.max(0, Math.min(tabs.y + tabs.height, navigation.y + navigation.height) - Math.max(tabs.y, navigation.y));
-  expect(overlapWidth * overlapHeight).toBeLessThanOrEqual(1);
-  await expect(panel(page).locator('.standard-object-tabs,.storyboard-editor-tabs')).toHaveCount(0);
+  const action = heading.getByRole('button', { name: '分镜 01 更多操作', exact: true });
+  await expect(action).toBeInViewport({ ratio: 0.99 });
+  const actionBox = (await action.boundingBox())!;
+  expect(actionBox.x).toBeGreaterThanOrEqual(bounds.x);
+  expect(actionBox.x + actionBox.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+  await expect(panel(page).getByRole('tablist', { name: '镜头制作内容', exact: true })).toHaveCount(0);
   const listHeading = page.locator('.standard-storyboard-list .storyboard-editor-heading');
   expect(Math.abs((await listHeading.boundingBox())!.height - 44)).toBeLessThanOrEqual(0.5);
 }
@@ -130,12 +447,13 @@ test('initial desktop selection opens the first shot preview and preserves an ex
   await page.goto(`${root}/storyboard`);
   await expect(page.locator('.storyboard-summary').first()).toHaveAttribute('aria-pressed', 'true');
   await expect(page).toHaveURL(url => url.searchParams.get('shot') === '101');
-  const settings = panel(page).locator('.standard-object-settings:visible');
-  await expect(settings).toBeVisible(); await expect(page.getByRole('button', { name: '收起生成设置', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(panel(page).locator('#storyboard-image-settings')).toBeVisible();
+  await expect(panel(page).locator('#storyboard-video-settings')).toBeVisible();
   await page.goto(`${root}/storyboard?shot=150`);
-  await expect(panel(page).locator('.standard-object-heading h3')).toContainText('50 ·');
+  await expect(panel(page).getByRole('heading', { name: '分镜 50', exact: true })).toBeVisible();
   await expect(page.locator('.storyboard-summary[aria-pressed="true"]')).toHaveCount(0);
-  await expect(settings).toBeVisible(); await expect(page.getByRole('button', { name: '收起生成设置', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(panel(page).locator('#storyboard-image-settings')).toBeVisible();
+  await expect(panel(page).locator('#storyboard-video-settings')).toBeVisible();
   await expect(page).toHaveURL(url => url.searchParams.get('shot') === '150');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
@@ -171,15 +489,14 @@ test('fixed-height cards retain full accessible scripts and separate image and v
   await page.getByRole('button', { name: /^保存状态：/ }).click();
   await expect(page.locator('.studio-feedback-details').getByText('创作内容已变化，请核对当前图片。', { exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
-  await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
-  await expect(cards.first().getByText('待制作', { exact: true })).toBeVisible();
+  await expect(panel(page).getByRole('tablist', { name: '镜头制作内容', exact: true })).toHaveCount(0);
   await expect(panel(page).getByText('还没有生成视频', { exact: true })).toBeVisible();
   await expect(page.locator('.native-sound-mode')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('storyboard-cards.png'), fullPage: true });
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
 
-test('selection and adjacent navigation preserve private input across the two media tabs', async ({ page }) => {
+test('左侧切换分镜后保留镜头及图片、视频输入', async ({ page }) => {
   const state = await layoutFixture(page);
   await page.goto(`${root}/storyboard`);
   await page.locator('.storyboard-summary').first().click();
@@ -187,11 +504,11 @@ test('selection and adjacent navigation preserve private input across the two me
   await expect(page.locator('.storyboard-expanded')).toHaveCount(0);
   const input = panel(page).getByRole('textbox', { name: '分镜 1 脚本', exact: true });
   await input.fill('固定机位，林晚收起旧信。');
-  await panel(page).getByRole('button', { name: '下一个分镜', exact: true }).click();
+  await page.getByRole('button', { name: '选择分镜 02', exact: true }).click();
   await expect(panel(page).getByRole('textbox', { name: '分镜 2 脚本', exact: true })).toBeVisible();
-  await panel(page).getByRole('button', { name: '上一个分镜', exact: true }).click();
+  await page.getByRole('button', { name: '选择分镜 01', exact: true }).click();
   await expect(input).toHaveValue('固定机位，林晚收起旧信。');
-  await expect(panel(page).getByRole('tab')).toHaveCount(2);
+  await expect(panel(page).getByRole('tablist', { name: '镜头制作内容', exact: true })).toHaveCount(0);
   await expect(panel(page).getByRole('button', { name: '生成图片', exact: true })).toBeVisible();
   await panel(page).getByRole('textbox', { name: '画面要求', exact: true }).fill('保留个人分镜图输入');
   const imageOutput = panel(page).getByRole('button', { name: '比例与分辨率', exact: true });
@@ -199,17 +516,14 @@ test('selection and adjacent navigation preserve private input across the two me
   const imageOptions = page.getByRole('dialog', { name: '生成选项', exact: true });
   await imageOptions.getByRole('button', { name: '生成 4 张图片', exact: true }).click();
   await page.keyboard.press('Escape');
-  await panel(page).getByRole('tab', { name: '分镜图', exact: true }).press('ArrowRight');
-  await expect(panel(page).getByRole('tab', { name: '分镜视频', exact: true })).toBeFocused();
   await expect(input).toHaveValue('固定机位，林晚收起旧信。');
   await expect(panel(page).getByRole('textbox', { name: '视频提示词', exact: true })).toBeVisible();
   await panel(page).getByRole('textbox', { name: '视频提示词', exact: true }).fill('保留个人视频输入');
-  await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).press('ArrowLeft');
-  await expect(panel(page).getByRole('tab', { name: '分镜图', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: '选择分镜 02', exact: true }).click();
+  await page.getByRole('button', { name: '选择分镜 01', exact: true }).click();
   await expect(panel(page).getByRole('textbox', { name: '画面要求', exact: true })).toHaveText('保留个人分镜图输入');
   await expect(imageOutput).toContainText('4张');
   await expect.poll(() => state.shots[0].script).toBe('固定机位，林晚收起旧信。');
-  await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
   await expect(panel(page).getByRole('textbox', { name: '视频提示词', exact: true })).toHaveValue('保留个人视频输入');
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
@@ -314,27 +628,19 @@ for (const width of [1440, 1920, 1366, 1280]) test(`cards and the selected-shot 
 });
 
 
-test('storyboard keeps the media switch inside the heading and preserves settings structure', async ({ page }) => {
+test('单卡同时展示分镜图、视频和各自的生成设置', async ({ page }) => {
   const state = await layoutFixture(page);
   state.shots[0].title = '雨夜站台';
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${root}/storyboard`);
   await page.locator('.storyboard-summary').first().click();
   const workspace = panel(page);
-  const heading = workspace.locator('.standard-object-heading');
-  await expect(heading.getByRole('heading', { name: '01 · 雨夜站台', exact: true })).toBeVisible();
+  const heading = workspace.locator('.storyboardViewHeader');
+  await expect(heading.getByRole('heading', { name: '分镜 01', exact: true })).toBeVisible();
   await expect(heading.locator('.creation-preview-status')).toHaveCount(0);
-  const tabs = workspace.getByRole('tablist', { name: '镜头制作内容', exact: true });
-  await expect(heading.getByRole('tablist')).toHaveCount(1);
-  const headingBox = (await heading.boundingBox())!;
-  const tabsBox = (await tabs.boundingBox())!;
-  expect(tabsBox.y).toBeGreaterThanOrEqual(headingBox.y);
-  expect(tabsBox.y + tabsBox.height).toBeLessThanOrEqual(headingBox.y + headingBox.height);
-  expect(tabsBox.width).toBeLessThan(headingBox.width / 2);
-  await expect(workspace.locator('.standard-object-tabs,.storyboard-editor-tabs')).toHaveCount(0);
-  const settings = workspace.locator('#storyboard-image-pane .standard-object-settings');
-  await expect(settings.getByRole('heading', { name: '生成设置', exact: true })).toBeVisible();
-  await expect(settings.getByRole('button', { name: '关闭分镜生成设置', exact: true })).toBeVisible();
+  await expect(workspace.getByRole('tablist', { name: '镜头制作内容', exact: true })).toHaveCount(0);
+  await expect(workspace.locator('#storyboard-image-settings')).toBeVisible();
+  await expect(workspace.locator('#storyboard-video-settings')).toBeVisible();
   const firstCard = page.locator('.storyboard-shot-card').first();
   await expect(firstCard.locator('.standard-shot-number')).toHaveText('01');
   await expect(firstCard.locator('.standard-shot-duration')).toHaveText('3 秒');
@@ -352,7 +658,7 @@ test('storyboard keeps the media switch inside the heading and preserves setting
   await expect(preview.getByRole('button', { name: '适应窗口', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(preview).toHaveCount(0);
-  await workspace.getByRole('button', { name: '图片生成记录', exact: true }).click();
+  await workspace.getByRole('button', { name: '图片记录', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '分镜图片生成记录', exact: true })).toBeVisible();
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
@@ -368,10 +674,9 @@ test('unnamed shots submit image and video tasks without requiring a title', asy
   });
   await page.goto(`${root}/storyboard`);
   for (const kind of ['image', 'video'] as const) {
-    if (kind === 'video') await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
     const pane = panel(page).locator(`#storyboard-${kind}-pane`);
     const send = pane.getByRole('button', { name: kind === 'image' ? '生成图片' : '生成视频', exact: true });
-    await expect(pane.getByRole('textbox', { name: '镜头名称', exact: true })).toHaveValue('');
+    await expect(panel(page).getByRole('textbox', { name: '镜头名称', exact: true })).toHaveValue('');
     await expect(pane.getByText('请先填写镜头名称。', { exact: true })).toHaveCount(0);
     await expect(send).toBeEnabled(); await send.click();
     await expect.poll(() => submissions.filter(item => item.kind === kind).length).toBe(1);
@@ -381,7 +686,7 @@ test('unnamed shots submit image and video tasks without requiring a title', asy
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
 
-for (const delaySharedSave of [false, true]) test(`completed shot videos refresh without adoption ${delaySharedSave ? 'after a delayed shared save' : 'and retain private input'}`, async ({ page }) => {
+for (const delaySharedSave of [false, true]) test(`远端视频变化后刷新预览并保留输入${delaySharedSave ? '，包括等待中的镜头保存' : ''}`, async ({ page }) => {
   const state = await layoutFixture(page);
   await serveTestVideo(page);
   const oldVideo = savedVideo('91001', 'old');
@@ -420,7 +725,6 @@ for (const delaySharedSave of [false, true]) test(`completed shot videos refresh
     return route.fulfill({ json: { items, total: items.length, offset: 0, limit: 20 } });
   });
   await page.goto(`${root}/storyboard`);
-  await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
   const pane = panel(page).locator('#storyboard-video-pane');
   const preview = pane.locator('.standard-object-preview video');
   await expect(preview).toHaveAttribute('src', oldVideo.url);
@@ -430,7 +734,7 @@ for (const delaySharedSave of [false, true]) test(`completed shot videos refresh
   await pane.getByRole('button', { name: '生成视频', exact: true }).click();
   await expect.poll(() => submitted).toBe(true);
   await expect(preview).toHaveAttribute('src', oldVideo.url);
-  const script = pane.getByRole('textbox', { name: '分镜 1 脚本', exact: true });
+  const script = panel(page).getByRole('textbox', { name: '分镜 1 脚本', exact: true });
   if (delaySharedSave) {
     holdSharedSave = true;
     await script.fill('正在保存但不能被新视频完成响应覆盖的镜头脚本');
@@ -451,11 +755,12 @@ for (const delaySharedSave of [false, true]) test(`completed shot videos refresh
   await expect(pane.locator('.standard-candidate-actions')).toHaveCount(0);
   await expect(pane.getByRole('button', { name: /采用|查看当前作品/ })).toHaveCount(0);
   await expect(panel(page).locator('.standard-object-heading').getByText(/已采用|已生图|未采用|待采用/)).toHaveCount(0);
-  await panel(page).getByRole('button', { name: '视频生成记录', exact: true }).click();
+  await panel(page).getByRole('button', { name: '视频记录', exact: true }).click();
   const history = page.getByRole('dialog', { name: '分镜视频生成记录', exact: true });
   await expect(history).toBeVisible();
   await expect(history.locator('video')).toHaveCount(2);
-  await expect(history.getByRole('button', { name: /采用|查看当前作品/ })).toHaveCount(0);
+  await expect(history.getByRole('button', { name: '采用new', exact: true })).toBeDisabled();
+  await expect(history.getByRole('button', { name: '采用old', exact: true })).toBeEnabled();
   expect(applyRequests).toEqual([]);
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
@@ -466,7 +771,6 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1440, height: 60
   state.shots[0].video = savedVideo('91001', 'layout');
   await page.setViewportSize(viewport);
   await page.goto(`${root}/storyboard`);
-  await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
   const pane = panel(page).locator('#storyboard-video-pane');
   const video = pane.locator('.standard-object-preview video');
   await expect.poll(() => video.evaluate(node => (node as HTMLVideoElement).videoWidth)).toBe(640);
@@ -475,7 +779,7 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1440, height: 60
   const previewBox = (await pane.locator('.standard-object-preview').boundingBox())!;
   const videoBox = (await video.boundingBox())!;
   for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(videoBox[key] - previewBox[key]), `${key} fills the complete preview`).toBeLessThanOrEqual(1);
-  await expect(panel(page).locator('.standard-object-heading').getByRole('tablist', { name: '镜头制作内容', exact: true })).toBeVisible();
+  await expect(panel(page).getByRole('tablist', { name: '镜头制作内容', exact: true })).toHaveCount(0);
   await expect(panel(page).locator('.standard-object-tabs,.storyboard-editor-tabs')).toHaveCount(0);
   await expectDesktopHeaderFits(page);
   await expect(pane.locator('.standard-candidate-actions')).toHaveCount(0);
@@ -490,16 +794,28 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1440, height: 60
   expect(state.unexpected).toEqual([]); expect(state.errors).toEqual([]);
 });
 
-test('adopted material references are selected into the private draft without changing the shot', async ({ page }) => {
+test('adopted material references are selected into the private draft without changing the shot', async ({ page }, info) => {
   const state = await layoutFixture(page);
   state.shots[0].asset_ids = [];
   await page.route(`**/api/v1${root}/assets?**`, route => route.fulfill({ json: { items: [state.asset], total: 1, offset: 0, limit: 100 } }));
   await page.goto(`${root}/storyboard`);
   await page.locator('.storyboard-summary').first().click();
-  const references = panel(page).locator('#storyboard-image-pane').getByRole('region', { name: '个人参考图片', exact: true });
+  const references = panel(page).locator('#storyboard-image-pane').getByRole('region', { name: '参考图片', exact: true });
   await references.getByRole('button', { name: '添加参考图片', exact: true }).click();
+  await page.getByRole('button', { name: '添加个人参考图片', exact: true }).click();
   const picker = page.getByRole('dialog', { name: '选择素材主图作为参考', exact: true });
   await expect(picker).toBeVisible();
+  const alignment = await picker.getByRole('checkbox', { name: '林晚', exact: true }).evaluate((input) => {
+    const label = input.closest('label')!;
+    const box = label.querySelector('.ant-checkbox-inner')!.getBoundingClientRect();
+    const textElement = label.querySelector<HTMLElement>(':scope > span:last-child')!;
+    const text = textElement.getBoundingClientRect();
+    return { gap: text.left + parseFloat(getComputedStyle(textElement).paddingLeft) - box.right,
+      verticalOffset: Math.abs((text.top + text.bottom - box.top - box.bottom) / 2) };
+  });
+  expect(alignment.gap).toBeGreaterThanOrEqual(4);
+  expect(alignment.verticalOffset).toBeLessThan(4);
+  await page.screenshot({ path: info.outputPath('正式分镜-个人参考弹窗.png'), animations: 'disabled' });
   await picker.getByRole('checkbox', { name: '林晚', exact: true }).check();
   await picker.getByRole('button', { name: '确认选择', exact: true }).click();
   await expect(picker).toHaveCount(0);
@@ -526,7 +842,7 @@ test('shot image mentions follow persisted media order and remove private refere
   });
   await page.goto(`${root}/storyboard?shot=101`);
   const prompt = panel(page).getByRole('textbox', { name: '画面要求', exact: true });
-  const references = panel(page).getByRole('region', { name: '个人参考图片', exact: true });
+  const references = panel(page).getByRole('region', { name: '参考图片', exact: true });
   const add = references.getByRole('button', { name: '添加参考图片', exact: true });
   await expect(add).toHaveClass(/standard-reference-add-tile/); await expect(add).toHaveText('');
   expect((await add.boundingBox())!.width).toBe(64); expect((await add.boundingBox())!.height).toBe(58);
@@ -571,8 +887,7 @@ test('desktop shot mentions and video duration popovers preserve the settings pa
   const state = await referenceFixture(page);
   await page.setViewportSize({ width: 1280, height: 640 });
   await page.goto(`${root}/storyboard?shot=101`);
-  const toggle = page.getByRole('button', { name: '展开生成设置', exact: true });
-  const settings = panel(page).locator('.standard-object-settings:visible');
+  const settings = panel(page).locator('#storyboard-image-settings');
   const prompt = settings.getByRole('textbox', { name: '画面要求', exact: true });
   await prompt.fill('桌面 @');
   const menu = page.getByRole('listbox', { name: '引用参考图片', exact: true });
@@ -582,14 +897,14 @@ test('desktop shot mentions and video duration popovers preserve the settings pa
   await prompt.pressSequentially('@'); await expect(menu).toBeVisible();
   await prompt.press('Escape'); await expect(menu).toBeHidden(); await expect(settings).toBeVisible(); await expect(prompt).toBeFocused();
   await prompt.press('Escape'); await expect(settings).toBeVisible(); await expect(prompt).toBeFocused();
-  await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
-  const videoOutput = settings.getByRole('button', { name: '视频比例与分辨率', exact: true });
+  const videoSettings = panel(page).locator('#storyboard-video-settings');
+  const videoOutput = videoSettings.getByRole('button', { name: '视频比例与分辨率', exact: true });
   await videoOutput.click();
   const options = page.getByRole('dialog', { name: '视频生成选项', exact: true });
   await expect(options).toBeInViewport({ ratio: 1 });
   await options.getByRole('button', { name: '视频时长 5秒', exact: true }).click();
   await page.keyboard.press('Escape');
-  await expect(options).toBeHidden(); await expect(settings).toBeVisible(); await expect(videoOutput).toBeFocused();
+  await expect(options).toBeHidden(); await expect(videoSettings).toBeVisible(); await expect(videoOutput).toBeFocused();
   await expect.poll(() => state.creationDrafts.get('101:storyboard_video')?.video_settings?.duration_ms).toBe(5000);
   await page.keyboard.press('Escape'); await expect(settings).toBeVisible();
   expect(state.shots[0].duration_ms).toBe(3000);
@@ -641,7 +956,6 @@ test('prototype output popovers save image and video settings independently', as
   await imagePopup.locator('.standard-image-resolutions').getByRole('button').filter({ hasText: /^4K$/ }).click();
   await expect.poll(() => state.creationDrafts.get('101:storyboard_image')?.image_settings).toMatchObject({ aspect: '9:16', resolution: '4K', count: 1 });
   await imageOutput.click();
-  await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
   const videoPane = panel(page).locator('#storyboard-video-pane');
   const videoOutput = videoPane.getByRole('button', { name: '视频比例与分辨率', exact: true });
   await expect(videoOutput).toBeEnabled(); await videoOutput.click();
@@ -659,7 +973,6 @@ test('prototype output popovers save image and video settings independently', as
   await expect.poll(() => state.creationDrafts.get('101:storyboard_video')?.video_settings).toMatchObject({ aspect: '4:3', resolution: '1080p', duration_ms: 5000 });
   await expect(videoOutput).toContainText('5秒');
   await expect(videoPane.getByRole('combobox', { name: '视频时长', exact: true })).toHaveCount(0);
-  await panel(page).getByRole('tab', { name: '分镜图', exact: true }).click();
   await expect(imageOutput).toContainText('9:16'); await expect(imageOutput).toContainText('4K');
   expect(state.shots[0].image_settings).toEqual(originalImageSettings);
   expect(state.shots[0].video_settings).toEqual(originalVideoSettings);
@@ -673,7 +986,6 @@ test('video output disables unsupported choices and saves the model default', as
     video_input: { reference_images: true, duration_seconds: [3, 5], resolutions: ['720p'] },
   } }));
   await page.goto(`${root}/storyboard?shot=101`);
-  await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
   const videoPane = panel(page).locator('#storyboard-video-pane');
   const output = videoPane.getByRole('button', { name: '视频比例与分辨率', exact: true });
   await expect(output).toBeEnabled(); await output.click();

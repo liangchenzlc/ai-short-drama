@@ -23,6 +23,9 @@ def normalize_shot_context(
     duration_ms: int,
     assets: Iterable[Mapping[str, Any] | object],
     reference_media_ids: Iterable[str] = (),
+    details: Mapping[str, str] | None = None,
+    title: str = "",
+    shot_size: str | None = None,
 ) -> dict[str, Any]:
     """Return the versioned, URL-free representation described by shot-context-v1."""
 
@@ -40,6 +43,7 @@ def normalize_shot_context(
                 "prompt": _value(asset, "prompt", "") or "",
                 "tags": sorted(_value(asset, "tags", []) or []),
                 "scene_time": _value(asset, "scene_time", "") or "",
+                **({"profile": dict(_value(asset, "profile"))} if _value(asset, "profile") else {}),
                 "state": _value(asset, "state", "unconfirmed") or "unconfirmed",
                 "media_id": str(parse_identifier(media_id)) if media_id is not None else None,
             }
@@ -48,7 +52,13 @@ def normalize_shot_context(
     return {
         "version": SHOT_CONTEXT_VERSION,
         "shot_id": str(parse_identifier(shot_id)),
-        "shot": {"script": script, "duration_ms": duration_ms},
+        "shot": {
+            "script": script,
+            "duration_ms": duration_ms,
+            **({"title": title} if title else {}),
+            **({"shot_size": shot_size} if shot_size else {}),
+            **({"details": dict(details)} if details else {}),
+        },
         "assets": normalized_assets,
         **(
             {"reference_media_ids": list(map(str, reference_media_ids))}

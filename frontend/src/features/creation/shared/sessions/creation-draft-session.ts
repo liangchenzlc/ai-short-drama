@@ -16,6 +16,7 @@ export function draftValue(value: CreationDraftValue): CreationDraftValue {
     image_settings: value.image_settings ?? null,
     video_settings: value.video_settings ?? null,
     reference_media_ids: [...new Set(value.reference_media_ids ?? [])],
+    ...(value.video_references === undefined ? {} : { video_references: value.video_references.map((item) => ({ ...item })) }),
   };
 }
 

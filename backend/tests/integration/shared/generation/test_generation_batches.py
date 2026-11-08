@@ -15,16 +15,7 @@ from tests.integration.standard.assets.test_asset_image_generation import flow a
 pytestmark = pytest.mark.integration
 
 
-class ExplicitImageBatchService(GenerationBatchService):
-    """隔离调度契约，不把未提供个人画面要求的预检当成图片生成验收。"""
-
-    def _request(self, request, row):
-        payload = super()._request(request, row)
-        payload["input"]["prompt"] = "controlled batch image input"
-        return payload
-
-
-def test_batch_without_explicit_image_input_is_blocked(flow):
+def test_batch_without_supplement_uses_saved_asset_content(flow):
     flow.settings.generation_batches_enabled = True
     asset = create_asset(flow, "character")
     preview = GenerationBatchService(flow.session, flow.settings).preflight(
@@ -35,15 +26,15 @@ def test_batch_without_explicit_image_input_is_blocked(flow):
             "source_ids": [str(asset.id)],
         }
     )
-    assert preview["task_count"] == 0
-    assert preview["items"][0]["state"] == "blocked"
+    assert preview["task_count"] == 1
+    assert preview["items"][0]["state"] == "ready"
     assert not flow.provider.calls
 
 
 def setup(flow, count=3):
     flow.settings.generation_batches_enabled = True
     assets = [create_asset(flow, "character") for _ in range(count)]
-    service = ExplicitImageBatchService(flow.session, flow.settings)
+    service = GenerationBatchService(flow.session, flow.settings)
     request = {
         "scene": "asset_image",
         "config_id": str(flow.config.id),
@@ -62,7 +53,7 @@ def setup(flow, count=3):
     return service, assets, body, batch
 
 
-def test_batch_holds_tasks_limits_dispatch_saves_primary_and_replays(flow):
+def test_batch_holds_tasks_limits_dispatch_keeps_candidates_and_replays(flow):
     service, assets, body, batch = setup(flow)
     detail = service.detail(batch["id"])
     assert detail["counts"] == {"waiting": 3}
@@ -78,19 +69,19 @@ def test_batch_holds_tasks_limits_dispatch_saves_primary_and_replays(flow):
     assert drain(flow, task_ids[2]) == "succeeded"
     assert service.detail(batch["id"])["status"] == "succeeded"
     assert len(flow.provider.calls) == 3
-    # 普通创作按现行图片组契约直接保存首张主图，不再进入旧候选表。
-    assert all(flow.library.get(a.id).media_id is not None for a in assets)
+    # 批次与单次生图共用候选组，未明确选择前不改变主图。
+    assert all(flow.library.get(a.id).media_id is None for a in assets)
     assert all(flow.images.list(a.id)["total"] == 0 for a in assets)
     preview = service.preflight(
         {k: v for k, v in body.items() if k not in {"preflight_hash", "accepted_ids"}}
     )
-    assert {i["state"] for i in preview["items"]} == {"adopted"}
+    assert {i["state"] for i in preview["items"]} == {"review"}
 
 
 def test_batch_preflight_conflict_and_idempotency(flow):
     flow.settings.generation_batches_enabled = True
     asset = create_asset(flow, "character")
-    svc = ExplicitImageBatchService(flow.session, flow.settings)
+    svc = GenerationBatchService(flow.session, flow.settings)
     request = {
         "scene": "asset_image",
         "config_id": str(flow.config.id),

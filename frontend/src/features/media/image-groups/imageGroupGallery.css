@@ -100,13 +100,28 @@
   flex-shrink: 0;
 }
 
+.ui-dialog.imageGalleryCompareDialog {
+  width: min(800px, calc(100vw - 48px));
+}
+
+.ui-dialog.imageGalleryCompareDialog:has(.imageGalleryCompare > button:nth-child(2):last-child) {
+  width: min(440px, calc(100vw - 48px));
+}
+
+.ui-dialog.imageGalleryCompareDialog:has(.imageGalleryCompare > button:nth-child(3):last-child) {
+  width: min(620px, calc(100vw - 48px));
+}
+
 .imageGalleryCompare {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 180px));
+  justify-content: center;
   gap: 12px;
-  width: min(800px, calc(100vw - 100px));
+  width: 100%;
   max-height: 65vh;
   overflow: auto;
+  box-sizing: border-box;
+  padding: 20px 22px 24px;
 }
 
 .imageGalleryCompare button {

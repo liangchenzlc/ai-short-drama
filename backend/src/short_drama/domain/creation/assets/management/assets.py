@@ -51,6 +51,9 @@ class Asset(Base):
     description: Mapped[str] = mapped_column(
         MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="素材描述"
     )
+    profile: Mapped[dict] = mapped_column(
+        JSON(), nullable=False, server_default=text("(JSON_OBJECT())"), comment="素材类型专属资料"
+    )
     prompt: Mapped[str] = mapped_column(
         MEDIUMTEXT(), nullable=False, server_default=text("('')"), comment="素材生成提示词"
     )

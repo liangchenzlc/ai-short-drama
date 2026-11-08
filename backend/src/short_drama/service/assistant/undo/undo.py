@@ -390,6 +390,8 @@ def restore_standard_locked(service, project, rows, changes, selected, receipt_i
                 if before
                 else {}
             )
+            if before is not None:
+                fields["profile"] = deepcopy(before.get("profile", {}))
             assets = AssetService(session)
             assets._validate_update(row, fields)
             fields.update(
@@ -413,6 +415,7 @@ def restore_standard_locked(service, project, rows, changes, selected, receipt_i
                     "position",
                 ):
                     setattr(row, field, deepcopy(before[field]))
+                row.details = deepcopy(before.get("details", {}))
             row.updated_at, row.updated_by = now, owner
             advance_shot_version(row)
             storyboard.dao.replace_assets(

@@ -233,13 +233,13 @@ def test_mcp_media_uses_token_permission_when_internal_assistant_is_disabled(flo
 @pytest.mark.parametrize(
     "source,closure,adopted",
     [
-        ("assistant", "media", True),
+        ("assistant", "media", False),
         ("assistant", "workbench", False),
-        ("mcp", "workbench", True),
+        ("mcp", "workbench", False),
         ("mcp", "revoked", False),
     ],
 )
-def test_business_media_already_sent_archives_but_only_adopts_with_current_permission(
+def test_business_media_already_sent_archives_candidates_without_changing_primary(
     flow, source, closure, adopted
 ):
     from short_drama.agent.tools.registry import TOOL_SPECS
@@ -315,7 +315,7 @@ def test_business_media_already_sent_archives_but_only_adopts_with_current_permi
         assert asset.row_version == (2 if adopted else 1)
         assert record.response_data["business_adoption"]["adopted"] is adopted
         if not adopted:
-            assert group.primary_index is None and group.notice
+            assert group.primary_index is None
     assert ready["settled"] and ready["items"][0]["result_refs"]
     assert len(provider.calls) == 1 and provider.polls == 1
 

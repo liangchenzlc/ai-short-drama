@@ -123,11 +123,10 @@ class AssistantShotVideoRequest(InputModel):
     reference_media_ids: Annotated[
         list[Identifier],
         Field(
-            min_length=1,
-            max_length=1,
-            description="该镜头当前采用的首帧图片媒体 ID；来自图组/主图读取。",
+            max_length=9,
+            description="本次明确授权的图片媒体 ID；空列表表示文生视频。",
         ),
-    ]
+    ] = Field(default_factory=list)
     native_dialogue_version: NonnegativeVersion | None = Field(
         default=None, description="使用原生对白生成有声视频时的对白文档版本；无此模式时省略。"
     )
@@ -138,6 +137,8 @@ class AssistantShotVideoRequest(InputModel):
 
     @model_validator(mode="after")
     def native_sources(self):
+        if len(set(self.reference_media_ids)) != len(self.reference_media_ids):
+            raise ValueError("Reference images must be unique")
         if self.native_dialogue_version is None and self.native_voice_versions:
             raise ValueError("Native voices require an explicit dialogue version")
         identifiers = [voice.character_id for voice in self.native_voice_versions]

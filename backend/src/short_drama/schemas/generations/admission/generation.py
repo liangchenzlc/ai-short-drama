@@ -210,7 +210,7 @@ class ShotVideoSource(CreationDraftSource):
     shot_id: Identifier
     row_version: Identifier
     context_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-    reference_media_id: Identifier
+    reference_media_id: Identifier | None = None
 
 
 class VideoParameters(InputModel):
@@ -231,7 +231,7 @@ class VideoGenerationCreate(InputModel):
         if self.source is None and self.input is None:
             raise ValueError("Generic video requires input")
         if self.source is not None and self.input is not None:
-            raise ValueError("Shot video uses saved prompt and reference image")
+            raise ValueError("Shot video uses its saved generation draft")
         return self
 
 

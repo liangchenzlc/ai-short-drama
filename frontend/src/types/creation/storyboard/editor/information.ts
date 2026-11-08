@@ -5,7 +5,7 @@ export interface ShotInformationProps {
   reloading: boolean;
   hasPrevious: boolean;
   status: string | undefined;
-  onChange: (patch: Partial<Pick<ShotRead, 'title' | 'script'>>) => void;
+  onChange: (patch: Partial<Pick<ShotRead, 'title' | 'shot_size' | 'script' | 'details' | 'duration_ms'>>) => void;
   onDownloadRecovery: () => void;
   onRetry: () => Promise<boolean>;
   onReload: (keepLocal?: boolean) => Promise<void>;

@@ -9,6 +9,7 @@ export const assetFields = (asset: AssetDraft): AssetDraft => ({
   name: asset.name,
   label: asset.label,
   description: asset.description,
+  profile: { ...asset.profile },
   prompt: asset.prompt,
   tags: [...asset.tags],
   scene_time: asset.scene_time,

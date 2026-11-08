@@ -12827,6 +12827,20 @@
       ]
     },
     {
+      "path": "frontend/e2e/generation/batchCollectionStatus.spec.ts",
+      "features": [
+        "shared.generation",
+        "standard.assets",
+        "standard.storyboard"
+      ],
+      "runner": "playwright",
+      "level": "browser",
+      "requires": [],
+      "support": [
+        "frontend/e2e/support/studio-fixture.ts"
+      ]
+    },
+    {
       "path": "frontend/e2e/generation/generation-batches.spec.ts",
       "features": [
         "shared.generation"
@@ -12949,6 +12963,19 @@
         "frontend/e2e/sound/fixtures/sound-fixture.tsx"
       ],
       "previous_path": "frontend/e2e/sound-production.spec.ts"
+    },
+    {
+      "path": "frontend/e2e/storyboard/referenceImages.spec.ts",
+      "features": [
+        "standard.storyboard"
+      ],
+      "runner": "playwright",
+      "level": "browser",
+      "requires": [],
+      "support": [
+        "frontend/e2e/storyboard/fixtures/referenceImages.html",
+        "frontend/e2e/storyboard/fixtures/referenceImages.tsx"
+      ]
     },
     {
       "path": "frontend/e2e/storyboard/storyboard-layout.spec.ts",
@@ -16009,6 +16036,22 @@
       "kind": "fixture",
       "status": "active",
       "previous_path": "frontend/e2e/batch-fixture.tsx"
+    },
+    {
+      "path": "frontend/e2e/storyboard/fixtures/referenceImages.html",
+      "features": [
+        "standard.storyboard"
+      ],
+      "kind": "fixture",
+      "status": "active"
+    },
+    {
+      "path": "frontend/e2e/storyboard/fixtures/referenceImages.tsx",
+      "features": [
+        "standard.storyboard"
+      ],
+      "kind": "fixture",
+      "status": "active"
     },
     {
       "path": "frontend/e2e/sound/fixtures/native-voice-fixture.html",

@@ -1,7 +1,9 @@
 import { storyboardApi } from '@host/api/creation/storyboard/shots';
 import { generations } from '@host/api/generations/tasks/requests';
 import { errorMessage } from '@host/api/http';
+import { ResourceCollection } from '@host/features/creation/shared/resource-view/resourceCollection';
 import { ResourceViewToggle, useResourceView } from '@host/features/creation/shared/resource-view/ResourceViewToggle';
+import { flushStandardProjectSessions } from '@host/features/creation/shared/sessions/registry';
 import { NativeDialoguePanel } from '@host/features/creation/sound/voices/NativeVoicePanel';
 import { createShotMutations } from '@host/features/creation/storyboard/editor/shot-mutations';
 import { ShotInformation } from '@host/features/creation/storyboard/editor/ShotInformation';
@@ -20,6 +22,7 @@ import { StoryboardShotActions } from '@host/features/creation/storyboard/workbe
 import { CreationEditorSlot, useCreationControls } from '@host/features/creation/workspace/layout/CreationWorkspace';
 import '@host/features/creation/workspace/layout/refinement.css';
 import { BatchLauncher, useBatchSelection } from '@host/features/generations/batches/BatchGeneration';
+import { useCollectionBatchProgress } from '@host/features/generations/batches/useCollectionBatchProgress';
 import { TaskDetail } from '@host/features/generations/tasks/TaskDetail';
 import { useAuth } from '@host/features/identity/session/AuthSession';
 import { attemptStorage, clearAttempt, requestAttempt } from '@host/features/shared/async/request-receipt';
@@ -29,12 +32,15 @@ import { StudioFeedback as Alert, feedbackType } from '@host/shared/ui/StudioFee
 import type { ShotDeleteNotice } from '@host/types/creation/storyboard/editor/mutations';
 import type { PreparedShot } from '@host/types/creation/storyboard/images/shot-image-workflow';
 import type { ShotRead } from '@host/types/creation/storyboard/shots';
+import type { DraftVideoReference } from '@host/types/creation/drafts/requests';
+import type { ResourceView } from '@host/types/creation/shared/resource-view/ResourceViewToggle';
 import type { StoryboardWorkspaceProps } from '@host/types/creation/storyboard/workbench';
 import type { NavigationBarrier } from '@host/types/creation/writing/sessions/writing-navigation';
 import type { GenerationSummary } from '@host/types/generations/api';
-import { Button, Input } from 'antd';
+import { Button, Checkbox, Input, Tooltip } from 'antd';
 import { History } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import './storyboardView.css';
 
 /** 保存、切镜头、采用与离页共享版本围栏和锁；子视图只接收事件，不另建编辑状态。 */
 export function StoryboardWorkspace({
@@ -75,8 +81,14 @@ export function StoryboardWorkspace({
   const { user } = useAuth();
   const account = user?.id ?? 'anonymous';
   const [view, setView] = useResourceView('storyboard');
+  const [collectionMode, setCollectionMode] = useState<ResourceView>('single');
+  const [collectionShots, setCollectionShots] = useState<ShotRead[]>([]);
+  const [collectionLoading, setCollectionLoading] = useState(true);
+  const [collectionError, setCollectionError] = useState('');
   const { revealPanel, subject, selectSubject } = useCreationControls();
   const batchSelection = useBatchSelection(`${projectId}`);
+  const [visibleCollectionIds, setVisibleCollectionIds] = useState<string[]>([]);
+  const { statuses: batchProgress, candidates: batchCandidates, onCandidateState } = useCollectionBatchProgress(projectId, account, 'shot_image', visibleCollectionIds);
   const [candidate, setCandidate] = useState<GenerationSummary | null>(null);
   const [taskDetailId, setTaskDetailId] = useState<string | null>(null);
   const shotMutation = useRef<symbol | null>(null);
@@ -89,16 +101,8 @@ export function StoryboardWorkspace({
   const actionsTrigger = useRef<HTMLButtonElement | null>(null);
   const [mediaHistoryOpen, setMediaHistoryOpen] = useState<'image' | 'video' | null>(null);
   const [mediaTab, setMediaTab] = useState<string>(sourceMedia ?? 'image');
-  const [editorTab, setEditorTab] = useState<string>(sourceMedia ?? 'image');
-  const sourceMediaRequest = useRef(sourceMedia);
   const [search, setSearch] = useState('');
   const [pendingOnly, setPendingOnly] = useState(false);
-  const [mediaSettingsOpen, setMediaSettingsOpen] = useState(true);
-  const mediaSettingsTrigger = useRef<HTMLButtonElement>(null);
-  const closeMediaSettings = () => {
-    setMediaSettingsOpen(false);
-    mediaSettingsTrigger.current?.focus();
-  };
   const privateBarriers = useRef(new Map<string, NavigationBarrier>());
   const registerImageDraft = useCallback((barrier: NavigationBarrier | null) => {
     if (barrier) privateBarriers.current.set('image', barrier);
@@ -109,6 +113,10 @@ export function StoryboardWorkspace({
     else privateBarriers.current.delete('video');
   }, []);
   const [batchMode, setBatchMode] = useState(false);
+  const [videoReferenceRequest, setVideoReferenceRequest] = useState<{
+    shotId: string; reference: DraftVideoReference; sequence: number;
+  } | null>(null);
+  const handledVideoReference = useRef(0);
   const taskMoreLock = useRef(false);
   const dialogueBarrier = useRef<NavigationBarrier | null>(null);
   const registerDialogueBarrier = useCallback((barrier: NavigationBarrier | null) => {
@@ -175,6 +183,31 @@ export function StoryboardWorkspace({
   const { imageModelId, imageCapabilities, capabilitiesLoading, onResolvedImageModel, refreshCapabilities } =
     useShotImageCapabilities(value.models.storyboardImage, preparationEpoch);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadCollection() {
+      setCollectionLoading(true);
+      setCollectionError('');
+      try {
+        const items: ShotRead[] = [];
+        let total = 0;
+        do {
+          const result = await storyboardApi(projectId).shots(controller.signal, false, items.length, 100);
+          items.push(...result.items);
+          total = result.total;
+          if (!result.items.length) break;
+        } while (items.length < total);
+        if (!controller.signal.aborted) setCollectionShots(items);
+      } catch (cause) {
+        if (!controller.signal.aborted) setCollectionError(errorMessage(cause));
+      } finally {
+        if (!controller.signal.aborted) setCollectionLoading(false);
+      }
+    }
+    void loadCollection();
+    return () => controller.abort();
+  }, [projectId, storyboardRevision, refreshToken, page?.storyboard_version]);
+
   useLayoutEffect(() => {
     mounted.current = true;
     currentContext.current = contextKey;
@@ -194,9 +227,10 @@ export function StoryboardWorkspace({
     setLockedShots(new Set());
     setTaskDetailId(null);
     shotMutation.current = null;
-    setEditorTab(sourceMedia ?? 'image');
     setMediaTab(sourceMedia ?? 'image');
     setBatchMode(false);
+    setVideoReferenceRequest(null);
+    handledVideoReference.current = 0;
     return () => {
       mounted.current = false;
       contextEpoch.current++;
@@ -226,7 +260,7 @@ export function StoryboardWorkspace({
     patch: Partial<
       Pick<
         ShotRead,
-        'title' | 'script' | 'duration_ms' | 'asset_ids' | 'image_settings' | 'video_prompt' | 'video_settings'
+        'title' | 'shot_size' | 'script' | 'details' | 'duration_ms' | 'asset_ids' | 'image_settings' | 'video_prompt' | 'video_settings'
       >
     >,
   ) {
@@ -504,60 +538,9 @@ export function StoryboardWorkspace({
     });
   }
 
-  async function selectAdjacent(direction: -1 | 1) {
-    if (!selectedShot || selectionDisabled) return;
-    const epoch = contextEpoch.current;
-    const selection = selectionEpoch.current;
-    while (
-      pageRef.current &&
-      pageRef.current.items.length < pageRef.current.total &&
-      !pageRef.current.items.some((shot) => shot.position === selectedShot.position + direction)
-    ) {
-      const count = pageRef.current.items.length;
-      await loadMoreShots();
-      if (!isCurrentContext(epoch) || selectionEpoch.current !== selection || pageRef.current.items.length === count)
-        return;
-    }
-    if (!isCurrentContext(epoch) || selectionEpoch.current !== selection) return;
-    const current = pageRef.current;
-    const next = current?.items.find((shot) => shot.position === selectedShot.position + direction);
-    if (next) selectShot(next.id);
-  }
-
-  function selectEditorTab(tab: string, focus = false) {
-    const change = () => {
-      setEditorTab(tab);
-      if (tab !== 'info') setMediaTab(tab);
-      if (focus) document.getElementById('storyboard-' + tab + '-tab')?.focus();
-    };
-    if (tab !== 'info' && tab !== mediaTab) leaveDialogue(change);
-    else change();
-  }
-
   useEffect(() => {
-    if (sourceMediaRequest.current === sourceMedia) return;
-    sourceMediaRequest.current = sourceMedia;
-    if (sourceMedia) selectEditorTab(sourceMedia);
+    if (sourceMedia) setMediaTab(sourceMedia);
   }, [sourceMedia]);
-
-  function navigateEditorTabs(event: KeyboardEvent<HTMLButtonElement>) {
-    const tabs = ['image', 'video'];
-    const index = tabs.indexOf(editorTab);
-    const next =
-      event.key === 'Home'
-        ? 'image'
-        : event.key === 'End'
-          ? 'video'
-          : event.key === 'ArrowRight'
-            ? tabs[(index + 1) % tabs.length]
-            : event.key === 'ArrowLeft'
-              ? tabs[(index + tabs.length - 1) % tabs.length]
-              : null;
-    if (next) {
-      event.preventDefault();
-      selectEditorTab(next, true);
-    }
-  }
   const { mutateShot, deleteShot } = createShotMutations({
     api,
     collection: {
@@ -630,6 +613,13 @@ export function StoryboardWorkspace({
         (!search || (shot.title ?? '').includes(search)) &&
         (!pendingOnly || (mediaTab === 'video' ? !shot.video : !shot.image)),
     ) ?? [];
+  const collectionVisible = collectionShots.filter((shot) => !removedShotIds.current.has(shot.id))
+    .map((shot) => getShot(shot.id) ?? shot).filter((shot) =>
+    (!search || (shot.title ?? '').includes(search)) &&
+    (!pendingOnly || (mediaTab === 'video' ? !shot.video : !shot.image)),
+  );
+  const collectionIds = collectionVisible.map((shot) => shot.id);
+  const selectedCollectionIds = batchSelection.ids.filter((id) => collectionIds.includes(id));
   useEffect(() => {
     if (
       !initialSelectionPending.current ||
@@ -729,47 +719,89 @@ export function StoryboardWorkspace({
         />
       )}
       <CreationEditorSlot stage="storyboard">
-        <div className="standard-storyboard-panel">
-          <StoryboardEditorHeader
-            selectedShot={selectedShot}
-            locked={!!selectedShot && lockedShots.has(selectedShot.id)}
-            selectionDisabled={selectionDisabled}
-            editorTab={editorTab}
-            mediaTab={mediaTab}
-            total={page?.total ?? null}
-            moreLoading={moreLoading}
-            mediaSettingsOpen={mediaSettingsOpen}
-            mediaSettingsTrigger={mediaSettingsTrigger}
-            onEditorTab={selectEditorTab}
-            onEditorKeyDown={navigateEditorTabs}
-            onAdjacent={(direction) => void selectAdjacent(direction)}
-            onHistory={() => setMediaHistoryOpen(mediaTab === 'video' ? 'video' : 'image')}
-            onToggleSettings={() => {
-              if (!mediaSettingsOpen) revealPanel?.();
-              setMediaSettingsOpen((current) => !current);
-            }}
-          >
+        <ResourceCollection title="分镜工作区" mode={collectionMode} selectable={batchSelection.enabled} onVisibleChange={setVisibleCollectionIds} onCandidateState={onCandidateState} onMode={(next) => {
+          if (collectionMode === 'single' && next !== 'single') {
+            if (dialogueBarrier.current?.hasUnsettled()) void dialogueBarrier.current.flush();
+            void flushAll();
+          }
+          setCollectionMode(next);
+        }}
+          selectedIds={selectedCollectionIds} onToggle={batchSelection.toggle}
+          onOpen={(id) => {
+            const shot = collectionShots.find((item) => item.id === id);
+            if (shot && !getShot(id)) setShot(shot);
+            setCollectionMode('single');
+            void selectShot(id);
+          }}
+          items={collectionVisible.map((shot) => {
+            const candidate = batchCandidates[shot.id];
+            const showCandidate = !!candidate && candidate.mediaId !== shot.image?.media_id;
+            return {
+              id: shot.id, label: shot.title || `分镜 ${shot.position}`,
+              selectionLabel: `选择分镜：${shot.title || `分镜 ${shot.position}`}`,
+              description: shot.script, image: showCandidate ? candidate.url : shot.image?.url ?? null,
+              imageCandidate: showCandidate,
+              status: [
+                `图：${shot.image ? '已设置' : '未设置'}${batchProgress.shot_image[shot.id] ? ` · ${batchProgress.shot_image[shot.id]}` : ''}`,
+                `视频：${shot.video ? '已设置' : '未设置'}${batchProgress.shot_video[shot.id] ? ` · ${batchProgress.shot_video[shot.id]}` : ''}`,
+              ],
+            };
+          })}
+          toolbar={<>
+            {(['shot_image', 'shot_video'] as const).map((scene) => <BatchLauncher key={scene}
+              compactScene={scene} presentation="standard-creation"
+              scope={{ library: 'project', project_id: projectId }}
+              selection={{ ...batchSelection, ids: selectedCollectionIds }} loadedIds={collectionIds}
+              disabled={readOnly || collectionLoading || !!collectionError || busy || loading || !!loadError || lockedShots.size > 0}
+              beforePreflight={async () => (await flushAll()) && (await flushStandardProjectSessions(projectId))} />)}
+            {batchSelection.enabled && <Tooltip title="全选当前筛选结果，用于批量生成">
+              <Checkbox aria-label="全选筛选结果" disabled={readOnly || collectionLoading || !!collectionError || !collectionIds.length}
+                checked={collectionIds.length > 0 && collectionIds.every((id) => batchSelection.ids.includes(id))}
+                indeterminate={selectedCollectionIds.length > 0 && selectedCollectionIds.length < collectionIds.length}
+                onChange={(event) => batchSelection.setIds(event.target.checked
+                  ? [...new Set([...batchSelection.ids, ...collectionIds])]
+                  : batchSelection.ids.filter((id) => !collectionIds.includes(id)))}>全选</Checkbox>
+            </Tooltip>}
+            {collectionError && <span role="alert">{collectionError}</span>}
+          </>}>
+        <div className="standard-storyboard-panel storyboardView">
+          <StoryboardEditorHeader selectedShot={selectedShot}>
             {renderShotActions('main')}
           </StoryboardEditorHeader>
           {selectedShot ? (
-            <div className={`standard-storyboard-media${mediaSettingsOpen ? '' : ' is-settings-collapsed'}`}>
-              <div
-                id="storyboard-image-pane"
-                role="tabpanel"
-                aria-labelledby="storyboard-image-tab"
-                hidden={mediaTab !== 'image'}
-              >
+            <div className="storyboardViewBody">
+              <div id="storyboard-image-pane" className="storyboardDetails">
+                {shotInformation}
+                <div className="shotImageHeading"><h3>分镜图</h3>
+                  <div className="shotImageActions">
+                    {selectedShot.image?.media_id && <Button type="text" size="small"
+                      disabled={readOnly || busy || lockedShots.has(selectedShot.id)}
+                      onClick={() => setVideoReferenceRequest((current) => ({
+                        shotId: selectedShot.id, reference: { type: 'shot_image', media_id: selectedShot.image!.media_id },
+                        sequence: (current?.sequence ?? 0) + 1,
+                      }))}>用作视频参考</Button>}
+                    <Button type="text" size="small" onClick={() => setMediaHistoryOpen('image')}>图片记录</Button>
+                  </div>
+                </div>
                 <ShotImageCandidates
                   key={selectedShot.id}
                   projectId={projectId}
-                  information={shotInformation}
-                  settingsOpen={mediaSettingsOpen}
-                  active={mediaTab === 'image'}
-                  onCloseSettings={closeMediaSettings}
-                  onOpenSettings={() => {
-                    revealPanel?.();
-                    setMediaSettingsOpen(true);
+                  linkedAssets={{
+                    assets,
+                    onChange: (assetId, checked) => {
+                      const asset = assets.find((item) => item.id === assetId);
+                      updateLocal(selectedShot.id, { asset_ids: checked
+                        ? [...selectedShot.asset_ids, assetId]
+                        : selectedShot.asset_ids.filter((id) => id !== assetId) });
+                      if (checked && asset?.media_id && ['character', 'scene'].includes(asset.kind))
+                        setVideoReferenceRequest((current) => ({ shotId: selectedShot.id,
+                          reference: { type: 'asset', asset_id: assetId }, sequence: (current?.sequence ?? 0) + 1 }));
+                    },
                   }}
+                  settingsOpen
+                  active
+                  onCloseSettings={() => {}}
+                  onOpenSettings={() => {}}
                   historyOpen={mediaHistoryOpen === 'image'}
                   onHistoryOpenChange={(open) => setMediaHistoryOpen(open ? 'image' : null)}
                   availableReferences={availableReferences}
@@ -786,6 +818,11 @@ export function StoryboardWorkspace({
                   }
                   onResolvedModel={onResolvedImageModel}
                   shot={selectedShot}
+                  onUseForVideo={(mediaId) => setVideoReferenceRequest((current) => ({
+                    shotId: selectedShot.id,
+                    reference: { type: 'shot_image', media_id: mediaId },
+                    sequence: (current?.sequence ?? 0) + 1,
+                  }))}
                   disabled={
                     readOnly ||
                     busy ||
@@ -800,27 +837,24 @@ export function StoryboardWorkspace({
                   onChanged={() => setStoryboardRevision((revision) => revision + 1)}
                 />
               </div>
-              <div
-                id="storyboard-video-pane"
-                role="tabpanel"
-                aria-labelledby="storyboard-video-tab"
-                hidden={mediaTab !== 'video'}
-              >
+              <div id="storyboard-video-pane" className="storyboardVideo">
+                <div className="storyboardVideoTools">
+                  <Button type="text" size="small" onClick={() => setMediaHistoryOpen('video')}>视频记录</Button>
+                </div>
                 <ShotVideoCandidates
                   key={selectedShot.id}
                   projectId={projectId}
-                  settingsOpen={mediaSettingsOpen}
-                  active={mediaTab === 'video'}
-                  onCloseSettings={closeMediaSettings}
-                  onOpenSettings={() => {
-                    revealPanel?.();
-                    setMediaSettingsOpen(true);
-                  }}
+                  assets={assets}
+                  referenceRequest={videoReferenceRequest}
+                  handledReference={handledVideoReference}
+                  settingsOpen
+                  active
+                  onCloseSettings={() => {}}
+                  onOpenSettings={() => {}}
                   historyOpen={mediaHistoryOpen === 'video'}
                   onHistoryOpenChange={(open) => setMediaHistoryOpen(open ? 'video' : null)}
                   information={
                     <>
-                      {shotInformation}
                       <details className="storyboard-dialogue-settings">
                         <summary>对白与音色</summary>
                         <NativeDialoguePanel
@@ -860,6 +894,7 @@ export function StoryboardWorkspace({
             <div className="studio-empty">{detailLoading ? '正在载入镜头…' : '选择左侧镜头开始制作'}</div>
           )}
         </div>
+        </ResourceCollection>
       </CreationEditorSlot>
       <section className={`standard-storyboard-list resource-view-${view}`} aria-label="分镜创作区域">
         <header className="storyboard-editor-heading">

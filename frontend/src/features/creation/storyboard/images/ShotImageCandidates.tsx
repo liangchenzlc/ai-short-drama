@@ -55,6 +55,7 @@ export function ShotImageCandidates({
   capabilities,
   onRefreshCapabilities,
   onChanged,
+  onUseForVideo,
   prepareShot,
   projectId,
   modelSelection,
@@ -62,6 +63,7 @@ export function ShotImageCandidates({
   onResolvedModel,
   registerBarrier,
   information,
+  linkedAssets,
   settingsOpen = true,
   active,
   onCloseSettings,
@@ -78,6 +80,10 @@ export function ShotImageCandidates({
   onResolvedModel: (id: string | undefined) => void;
   registerBarrier: (barrier: NavigationBarrier | null) => void;
   information?: ReactNode;
+  linkedAssets: {
+    assets: AssetRead[];
+    onChange: (id: string, selected: boolean) => void;
+  };
   settingsOpen?: boolean;
   active: boolean;
   onCloseSettings: () => void;
@@ -95,6 +101,7 @@ export function ShotImageCandidates({
   capabilitiesLoading: boolean;
   onRefreshCapabilities: () => void;
   onChanged: () => void;
+  onUseForVideo: (mediaId: string) => void;
   prepareShot: (purpose?: 'generation' | 'adoption') => Promise<PreparedShot | null>;
   settings?: ReactNode;
 }) {
@@ -427,6 +434,12 @@ export function ShotImageCandidates({
     ],
     [assets, shot.asset_ids, uploaded],
   );
+  const linkedAssetOptions = useMemo(() => {
+    const selected = new Map(assets.map((asset) => [asset.id, asset]));
+    const options = linkedAssets.assets.map((asset) => selected.get(asset.id) ?? asset);
+    const optionIds = new Set(options.map((asset) => asset.id));
+    return [...options, ...assets.filter((asset) => !optionIds.has(asset.id))];
+  }, [assets, linkedAssets.assets]);
   const addReference = useCallback(
     async (mediaId: string) => {
       if (!draft.loaded) throw new Error('个人生成设置仍在载入');
@@ -461,12 +474,15 @@ export function ShotImageCandidates({
           loading={images.loading}
           error={images.error}
           label="分镜图"
+          currentImage={shot.image}
+          primaryStale={shot.image?.is_stale}
           disabled={disabled || busy}
           imageModelId={actualModelId}
           onRefresh={() => void images.refresh()}
           onBeforeChange={beforeImageChange}
           onChanged={onChanged}
           onAddReference={addReference}
+          onUseForVideo={onUseForVideo}
           onBusyChange={setToolBusy}
         />
       </div>
@@ -482,6 +498,11 @@ export function ShotImageCandidates({
           disabled={disabled || busy}
           onBusy={setReferenceBusy}
           readonlyReferences={readonlyReferences}
+          linkedAssets={{
+            assets: linkedAssetOptions,
+            selectedIds: shot.asset_ids,
+            onChange: linkedAssets.onChange,
+          }}
           referencesReady={
             !referencesLoading && !referencesError && uploaded !== null && !references.missingAssetIds.length
           }
@@ -491,14 +512,6 @@ export function ShotImageCandidates({
           availableError={availableError}
           onRefreshAvailable={onRefreshAvailable}
         />
-        {references.unreadyAssetIds.length > 0 && (
-          <Alert
-            quiet
-            persistent
-            type="warning"
-            message={`${references.unreadyAssetIds.length} 项关联素材尚无主图，本次仅使用文字设定。`}
-          />
-        )}
         <GenerationComposer
           feedbackRef={setModelFeedback}
           prompt={draft.value.input_text}

@@ -72,6 +72,94 @@ for (const size of [{ width: 1280, height: 720 }, { width: 1366, height: 768 }, 
   });
 }
 
+test('正式资产页保存角色资料并在刷新后恢复', async ({ page }, info) => {
+  const data = await fixture(page, true);
+  await page.goto(`${root}/source`);
+  await page.getByRole('navigation', { name: '创作流程' }).getByRole('button', { name: '资产生成' }).click();
+  await expect(page.locator('.standard-assets-list')).toBeVisible();
+  const appearance = page.getByRole('textbox', { name: '外貌', exact: true });
+  await appearance.fill('黑色短发，目光坚定');
+  await expect.poll(() => data.requests.filter(request => request.path === '/assets/501' && request.method === 'PATCH').at(-1)?.body.profile?.appearance).toBe('黑色短发，目光坚定');
+  for (const width of [1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.screenshot({ path: info.outputPath(`asset-${width}.png`), animations: 'disabled' });
+  }
+  await page.reload();
+  await expect(appearance).toHaveValue('黑色短发，目光坚定');
+  expect(data.errors).toEqual([]);
+});
+
+test('正式资产工作区在三种视图切换时保留批量选择', async ({ page }, info) => {
+  await fixture(page, true, String(info.project.use.baseURL));
+  await page.goto(`${root}/assets`);
+  const workspace = page.getByRole('region', { name: '资产工作区' });
+  await workspace.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await workspace.getByRole('checkbox', { name: '选择资产：林晚', exact: true }).check();
+  await workspace.getByRole('button', { name: '列表展示', exact: true }).click();
+  await expect(workspace.getByRole('checkbox', { name: '选择资产：林晚', exact: true })).toBeChecked();
+  await workspace.getByRole('button', { name: '单卡展示', exact: true }).click();
+  await expect(workspace.getByText('已选 1 项', { exact: true })).toBeVisible();
+  await expect(workspace.getByRole('button', { name: '批量生成图片', exact: true })).toBeEnabled();
+  await expect(page.locator('.standard-assets-list')).toBeVisible();
+  await expect(page.locator('.standard-assets-scroll')).toHaveCSS('overflow-y', 'auto');
+  await expect(page.locator('.standard-assets-scroll')).toHaveCSS('scrollbar-width', 'none');
+});
+
+test('资产筛选变化时只显示和提交当前范围的勾选', async ({ page }) => {
+  await fixture(page, true);
+  await page.goto(`${root}/assets`);
+  const workspace = page.getByRole('region', { name: '资产工作区' });
+  const rail = page.locator('.standard-assets-list');
+  await workspace.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await workspace.getByRole('checkbox', { name: '选择资产：林晚', exact: true }).check();
+  await rail.getByRole('button', { name: '场景', exact: true }).click();
+  await expect(workspace.getByText('已选 0 项', { exact: true })).toBeVisible();
+  await expect(workspace.getByRole('button', { name: '批量生成图片', exact: true })).toBeDisabled();
+  await rail.getByRole('button', { name: '全部', exact: true }).click();
+  await expect(workspace.getByText('已选 1 项', { exact: true })).toBeVisible();
+  await expect(workspace.getByRole('checkbox', { name: '选择资产：林晚', exact: true })).toBeChecked();
+});
+
+test('批量能力关闭时资产仍可切换视图，但不显示无效勾选', async ({ page }, info) => {
+  await fixture(page, true, String(info.project.use.baseURL));
+  await page.route('**/api/v1/ai/generation-batches/capabilities', (route) => route.fulfill({ json: { enabled: false } }));
+  await page.goto(`${root}/assets`);
+  const workspace = page.getByRole('region', { name: '资产工作区' });
+  await workspace.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await expect(workspace.getByRole('button', { name: '打开林晚', exact: true })).toBeVisible();
+  await expect(workspace.getByRole('checkbox')).toHaveCount(0);
+  await expect(workspace.getByText('已选 0 项', { exact: true })).toHaveCount(0);
+});
+
+test('新建场景可在资料区填写信息并随创建保存', async ({ page }) => {
+  const data = await fixture(page, true);
+  await page.goto(`${root}/assets`);
+  const rail = page.locator('.standard-assets-list');
+  await rail.getByRole('button', { name: '场景', exact: true }).click();
+  await rail.getByRole('button', { name: '创建资产', exact: true }).click();
+  const workspace = page.getByRole('region', { name: '资产工作区' });
+  await workspace.getByRole('textbox', { name: '地点', exact: true }).fill('雨夜车站');
+  await workspace.getByRole('textbox', { name: '时间', exact: true }).fill('夜晚');
+  await workspace.getByRole('textbox', { name: '素材名称', exact: true }).fill('旧站台');
+  await expect.poll(() => data.requests.find((request) => request.path === '/projects/10/assets' && request.method === 'POST')?.body).toMatchObject({
+    kind: 'scene', name: '旧站台', scene_time: '夜晚', profile: { location: '雨夜车站' },
+  });
+  await page.reload();
+  await expect(workspace.getByRole('textbox', { name: '地点', exact: true })).toHaveValue('雨夜车站');
+  await expect(workspace.getByRole('textbox', { name: '时间', exact: true })).toHaveValue('夜晚');
+  expect(data.errors).toEqual([]);
+});
+
+test('正式分镜页保存机位、运镜与声音设想', async ({ page }) => {
+  const data = await fixture(page, true);
+  await page.goto(`${root}/storyboard`);
+  await page.getByRole('textbox', { name: '运镜', exact: true }).fill('缓慢推进');
+  await expect.poll(() => data.requests.filter(request => request.path === '/projects/10/shots/101' && request.method === 'PATCH').at(-1)?.body.details?.camera_movement).toBe('缓慢推进');
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: '运镜', exact: true })).toHaveValue('缓慢推进');
+  await expect(page.locator('.standard-storyboard-list')).toBeVisible();
+});
+
 test('story settings retain local input on conflict until explicit reconciliation', async ({ page }) => {
   const data = await fixture(page, true);
   let server = { row_version: '0', logline: '', synopsis: '', genre: '', character_bios: '' };

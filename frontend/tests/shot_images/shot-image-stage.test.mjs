@@ -78,8 +78,8 @@ function mount(context, overrides = {}) {
   const retainedRegistry = { ...registry, retainStandardSession: (...args) => { const value = registry.retainStandardSession(...args); retained.add(value); return value; } };
   const { StoryboardWorkspace: StoryboardStage } = compile('features/creation/storyboard/workbench/StoryboardWorkspace', {
     react, 'react/jsx-runtime': { jsx, jsxs: jsx },
-    'lucide-react': { History: 'History', Sparkles: 'Sparkles' },
-    antd: { Alert: 'Alert', Button: 'Button', Dropdown: 'Dropdown', Checkbox: 'Checkbox', Input: { TextArea: 'TextArea' }, InputNumber: 'InputNumber', Segmented: 'Segmented', Select: 'Select', Spin: 'Spin' },
+    'lucide-react': { History: 'History', Sparkles: 'Sparkles', Plus: 'Plus', X: 'X' },
+    antd: { Alert: 'Alert', Button: 'Button', Dropdown: 'Dropdown', Checkbox: 'Checkbox', Input: { TextArea: 'TextArea' }, InputNumber: 'InputNumber', Popover: 'Popover', Tooltip: 'Tooltip', Segmented: 'Segmented', Select: 'Select', Spin: 'Spin' },
     '@host/api/http': { ApiError: class extends Error {}, errorMessage: cause => cause.message },
     '@host/api/creation/storyboard/shots': { storyboardApi: () => api },
     '@host/api/creation/assets/management': { projectAssetsApi: { list: overrides.listAssets ?? (async () => ({ items: [], total: 0 })) } },
@@ -90,6 +90,7 @@ function mount(context, overrides = {}) {
     '@host/features/creation/workspace/layout/CreationWorkspace': { CreationEditorSlot: 'CreationEditorSlot', useCreationControls: () => controls },
     '@host/features/creation/storyboard/list/StoryboardShotCard': { StoryboardShotCard: 'StoryboardShotCard' },
     '@host/features/creation/shared/resource-view/ResourceViewToggle': { ResourceViewToggle: 'ResourceViewToggle', useResourceView: () => react.useState('grid') },
+    '@host/features/creation/shared/resource-view/resourceCollection': { ResourceCollection: ({ children }) => children },
     '@host/features/creation/storyboard/list/index': {},
     '@host/features/creation/workspace/layout/refinement': {},
     '@host/features/creation/shared/model/workflow-contract': contract,
@@ -101,6 +102,7 @@ function mount(context, overrides = {}) {
     '@host/features/identity/session/AuthSession': { useAuth: () => ({ user: null }) },
     '@host/features/shared/async/request-receipt': { attemptStorage: () => null, requestAttempt: async () => 'same-attempt', clearAttempt() {} },
     '@host/features/generations/batches/BatchGeneration': { BatchLauncher: 'BatchLauncher', useBatchSelection: () => ({ enabled: false, ids: [], setIds() {}, toggle() {} }) },
+    '@host/features/generations/batches/useCollectionBatchProgress': { useCollectionBatchProgress: () => ({ statuses: { shot_image: {}, shot_video: {} }, candidates: {}, onCandidateState() {} }) },
     '@host/features/generations/presentation/presentation': { taskLabel: () => '' },
     '@host/features/generations/tasks/TaskDetail': { TaskDetail: 'TaskDetail' },
     '@host/features/creation/storyboard/history/StoryboardResultPreview': { StoryboardResultPreview: 'StoryboardResultPreview' },
@@ -168,7 +170,7 @@ test('restored off-page shot is editable without changing the list pagination of
   const controls = { subject: { type: 'shot', id: '150', label: '' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, {
     autoSelect: false, creationControls: controls,
-    shots: async (_signal, _archived, offset = 0) => { offsets.push(offset); return { ...page(rows.slice(offset, offset + 20)), total: 80, offset, limit: 20 }; },
+    shots: async (_signal, _archived, offset = 0, limit = 20) => { if (limit === 20) offsets.push(offset); return { ...page(rows.slice(offset, offset + limit)), total: 80, offset, limit }; },
     shot: async id => ({ shot: rows.find(row => row.id === id), storyboard_version: '1' }),
     update: async (id, body) => { saves.push({ id, body }); return { shot: { ...rows.find(row => row.id === id), ...body, row_version: '2' }, storyboard_version: '2' }; },
   });
@@ -191,7 +193,7 @@ test('off-page autosave accepts its receipt before the initial list is ready', a
   const controls = { subject: { type: 'shot', id: restored.id, label: '' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, {
     autoSelect: false, creationControls: controls,
-    shots: async () => ++listReads === 1 ? list.promise : { ...page(visible), storyboard_version: String(saves.length + 1), total: 80, limit: 20 },
+    shots: async (_signal, _archived, _offset = 0, limit = 20) => limit === 100 ? page([...visible, restored]) : ++listReads === 1 ? list.promise : { ...page(visible), storyboard_version: String(saves.length + 1), total: 80, limit: 20 },
     shot: async () => ({ shot: serverShot, storyboard_version: String(saves.length + 1) }),
     update: async (id, body) => {
       saves.push({ id, body });
@@ -239,16 +241,16 @@ test('late restored detail cannot overwrite a newer selected shot', async contex
   assert.equal(controls.subject.id, '151');
 });
 
-test('late adjacent pagination merges its list without replacing a newer selected shot', async context => {
+test('late pagination merges its list without replacing a newer selected shot', async context => {
   const nextPage = deferred();
   const rows = Array.from({ length: 80 }, (_, index) => ({ ...shot(String(101 + index)), position: index + 1 }));
   const controls = { subject: { type: 'shot', id: '120', label: '' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, { autoSelect: false, creationControls: controls,
-    shots: async (_signal, _archived, offset = 0) => offset === 0 ? { ...page(rows.slice(0, 20)), total: 80 } : nextPage.promise,
+    shots: async (_signal, _archived, offset = 0, limit = 20) => limit === 100 ? page(rows) : offset === 0 ? { ...page(rows.slice(0, 20)), total: 80 } : nextPage.promise,
     shot: async id => ({ shot: rows.find(row => row.id === id), storyboard_version: '1' }),
   });
   await flush(); setup.render(); await flush(); setup.render();
-  setup.nodes('Button').find(node => node['aria-label'] === '下一个分镜').onClick();
+  setup.nodes('LazyLoadMore').find(node => node.hasMore).onLoad();
   await flush(); setup.render();
   controls.subject = { type: 'shot', id: '150', label: '' };
   setup.render(); setup.render(); await flush(); setup.render();
@@ -331,7 +333,7 @@ for (const mode of ['replace', 'append']) test(`${mode} adoption updates its sco
 
 test('asset failure does not hide loaded shots and retry restores only the asset dependency', async context => {
   let failAssets = true; let shotReads = 0; const saves = [];
-  const setup = mount(context, { shots: async () => { shotReads++; return page([{ ...shot(), asset_ids: ['501'] }]); }, listAssets: async () => { if (failAssets) throw new Error('assets offline'); return { items: [], total: 0 }; }, update: async (id, body) => { saves.push(body); return { shot: { ...shot(id), ...body, row_version: '2' }, storyboard_version: '2' }; } });
+  const setup = mount(context, { shots: async (_signal, _archived, _offset, limit = 20) => { if (limit === 20) shotReads++; return page([{ ...shot(), asset_ids: ['501'] }]); }, listAssets: async () => { if (failAssets) throw new Error('assets offline'); return { items: [], total: 0 }; }, update: async (id, body) => { saves.push(body); return { shot: { ...shot(id), ...body, row_version: '2' }, storyboard_version: '2' }; } });
   await flush(); setup.render();
   assert.equal(setup.nodes('StoryboardShotCard').length, 1);
   assert.equal(setup.nodes('ShotImageCandidates')[0].disabled, false);
@@ -431,7 +433,6 @@ test('pending dialogue blocks dependent submission while selecting another shot 
   const controls = { subject: { type: 'shot', id: '11', label: '?? 01' }, selectSubject: next => { controls.subject = next; } };
   const setup = mount(context, { autoSelect: false, creationControls: controls });
   await flush(); setup.render();
-  setup.nodes('button').find(node => node.id === 'storyboard-video-tab').onClick(); setup.render();
   const dialogue = setup.nodes('NativeDialoguePanel');
   assert.equal(dialogue.length, 1);
   dialogue[0].registerBarrier({ hasUnsettled: () => true, flush: async () => false });

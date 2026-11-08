@@ -10,8 +10,12 @@ from short_drama.core.identity import require_actor
 from short_drama.dao.creation.drafts.drafts import UserCreationDraftDAO
 from short_drama.domain import (
     Asset,
+    ImageGroup,
+    ImageGroupItem,
     MediaFile,
     Project,
+    ShotAsset,
+    ShotImage,
     ShotScript,
     UserCreationDraft,
 )
@@ -108,6 +112,8 @@ class UserCreationDraftService(BaseService):
             and values.get("video_settings") is not None
             or not image
             and values.get("reference_media_ids")
+            or not video
+            and values.get("video_references")
         ):
             raise WorkflowError("invalid_creation_draft", "草稿参数与生成用途不一致", 422)
         from short_drama.db.scope.resource_scope import scope_of
@@ -120,6 +126,35 @@ class UserCreationDraftService(BaseService):
             ) not in {(user_id, None), (None, project_id)}:
                 raise NotFound("参考图不可用于当前私人草稿")
         values["reference_media_ids"] = ids
+        references = []
+        for item in values.get("video_references") or []:
+            key = "asset_id" if item["type"] == "asset" else "media_id"
+            identifier = int(item[key])
+            if key == "asset_id":
+                asset = self.session.get(Asset, identifier)
+                if asset is None or asset.project_id != project_id or asset.deleted_at is not None:
+                    raise NotFound("视频参考素材不属于当前项目")
+            else:
+                media = self._validate_media(identifier, "image")
+                if scope_of(self.session, media) not in {(user_id, None), (None, project_id)}:
+                    raise NotFound("视频参考图片不可用于当前项目")
+                shot_id = int(values["object_id"])
+                adopted = self.session.scalar(
+                    select(ShotImage.id).where(
+                        ShotImage.shot_id == shot_id, ShotImage.media_id == identifier
+                    )
+                )
+                grouped = self.session.scalar(
+                    select(ImageGroupItem.id)
+                    .join(ImageGroup, ImageGroup.id == ImageGroupItem.group_id)
+                    .where(ImageGroup.shot_id == shot_id, ImageGroupItem.media_id == identifier)
+                )
+                if adopted is None and grouped is None:
+                    raise NotFound("参考图片不属于当前分镜")
+            reference = {"type": item["type"], key: str(identifier)}
+            if reference not in references:
+                references.append(reference)
+        values["video_references"] = references
 
     def _read(self, row):
         values = {
@@ -159,8 +194,13 @@ class UserCreationDraftService(BaseService):
             ]
 
     def create_for_scope(self, project_id, payload):
-        raw = payload.model_dump() if isinstance(payload, UserCreationDraftCreate) else payload
-        values = UserCreationDraftCreate.model_validate(raw).model_dump()
+        raw = (
+            payload.model_dump(exclude_unset=True)
+            if isinstance(payload, UserCreationDraftCreate)
+            else payload
+        )
+        parsed = UserCreationDraftCreate.model_validate(raw)
+        values = parsed.model_dump()
         with self._transaction():
             purpose, object_id = values["purpose"], values["object_id"]
             actor, creation, obj = self._scope(project_id, object_id, purpose, lock=True)
@@ -169,6 +209,21 @@ class UserCreationDraftService(BaseService):
             )
             if existing:
                 raise WorkflowError("draft_version_conflict", "草稿已存在，请读取当前版本后保存")
+            if purpose == "storyboard_video" and "video_references" not in parsed.model_fields_set:
+                assets = self.session.scalars(
+                    select(Asset)
+                    .join(ShotAsset, ShotAsset.asset_id == Asset.id)
+                    .where(
+                        ShotAsset.shot_id == obj.id,
+                        Asset.kind.in_(("character", "scene")),
+                        Asset.media_id.is_not(None),
+                        Asset.deleted_at.is_(None),
+                    )
+                    .order_by(Asset.id)
+                )
+                values["video_references"] = [
+                    {"type": "asset", "asset_id": str(asset.id)} for asset in assets
+                ]
             self._validate_content(purpose, values, creation.id, actor.user_id)
             values.update(
                 user_id=actor.user_id,
@@ -204,7 +259,9 @@ class UserCreationDraftService(BaseService):
             merged = {key: getattr(row, key) for key in UserCreationDraftCreate.model_fields}
             merged.update(values)
             self._validate_content(purpose, merged, creation.id, actor.user_id)
-            merged = UserCreationDraftCreate.model_validate(merged).model_dump()
+            parsed = UserCreationDraftCreate.model_validate(merged)
+            merged = parsed.model_dump()
+            merged["video_references"] = parsed.model_dump(mode="json")["video_references"]
             merged["source_version"] = self._source_version(obj, purpose)
             changed = {key: value for key, value in merged.items() if getattr(row, key) != value}
             if row.row_version >= UINT64_MAX or changed and row.draft_version >= UINT64_MAX:
@@ -231,7 +288,7 @@ class UserCreationDraftService(BaseService):
             if row:
                 self.dao.delete(row)
 
-    def freeze_for_generation(self, request):
+    def freeze_for_generation(self, request, *, model_override=None):
         source = request.get("source") or {}
         if not source.get("draft_id"):
             return request
@@ -274,20 +331,26 @@ class UserCreationDraftService(BaseService):
             raise WorkflowError("draft_version_conflict", "私人生成参数已变化，请保存并核对")
         if request.get("project_id") and int(request["project_id"]) != creation.id:
             raise NotFound("私人草稿不属于请求项目")
-        if row.model_config_id is None:
+        selected_model = model_override or row.model_config_id
+        if selected_model is None:
             raise WorkflowError("creation_draft_model_required", "请在私人草稿中选择生成模型", 422)
-        if request.get("config_id") and int(request["config_id"]) != row.model_config_id:
+        if (
+            model_override is None
+            and request.get("config_id")
+            and int(request["config_id"]) != row.model_config_id
+        ):
             raise WorkflowError(
                 "creation_draft_model_mismatch", "请求模型与已保存私人草稿不一致", 422
             )
         values = {key: deepcopy(getattr(row, key)) for key in UserCreationDraftCreate.model_fields}
+        values["model_config_id"] = int(selected_model)
         self._validate_content(purpose, values, creation.id, actor.user_id)
-        request["config_id"] = str(row.model_config_id)
+        request["config_id"] = str(selected_model)
         request["creation_draft_snapshot"] = {
             **values,
             "id": str(row.id),
             "object_id": str(row.object_id),
-            "model_config_id": str(row.model_config_id),
+            "model_config_id": str(selected_model),
             "draft_version": str(row.draft_version),
             "source_version": str(row.source_version) if row.source_version is not None else None,
             "current_source_version": str(self._source_version(obj, purpose)),

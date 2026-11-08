@@ -33,7 +33,7 @@ export type GenerationSource = (
       shot_id: string;
       row_version: string;
       context_hash: string;
-      reference_media_id: string;
+      reference_media_id?: string | null;
     }
   | {
       scene: 'shot_image';

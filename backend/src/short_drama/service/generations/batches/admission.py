@@ -110,5 +110,6 @@ class AdmissionOperations(GenerationBatchServiceBase):
                         status="waiting",
                     )
                 )
+            batch.config_version = config.row_version
             self.session.flush()
             return self._read_batch(batch), True

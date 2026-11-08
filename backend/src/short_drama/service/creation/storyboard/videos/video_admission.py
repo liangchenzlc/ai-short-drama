@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
-from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
+from short_drama.core.exceptions import BusinessError, Conflict, NotFound
 from short_drama.domain import (
     Asset,
     Project,
@@ -54,7 +54,7 @@ def _current(
     shot_id: str,
     *,
     settings: Settings | None = None,
-) -> tuple[Project, ShotScript, ShotImage, str, dict[str, Any] | None]:
+) -> tuple[Project, ShotScript, ShotImage | None, str, dict[str, Any] | None]:
     project = lock_media_project(session, project_id, owner)
     shot = session.scalar(
         select(ShotScript)
@@ -74,12 +74,10 @@ def _current(
         session
     ).locked_shot_context(shot.id)
     image = session.scalar(select(ShotImage).where(ShotImage.shot_id == shot.id).with_for_update())
-    if image is None:
-        raise WorkflowError("video_reference_required", "请先采用并主动选入分镜当前参考图", 422)
     native = native_context(session, shot, settings=settings)
     context = video_context_hash(
         image_hash,
-        image.media_id,
+        image.media_id if image else None,
         shot.video_prompt,
         shot.video_settings,
         session=session,
@@ -120,7 +118,11 @@ def shot_video_target_matches(session, owner, target, *, settings=None):
     return (
         str(shot.row_version) == target["row_version"]
         and context == target["context_hash"]
-        and str(image.media_id) == target["reference_media_id"]
-        and image.layout == target["reference_layout"]
+        and (
+            target["reference_media_id"] is None
+            or image is not None
+            and str(image.media_id) == target["reference_media_id"]
+            and image.layout == target["reference_layout"]
+        )
         and current["video"] == target["before"]["video"]
     )

@@ -53,6 +53,12 @@ export interface ShotVideo {
 export interface ShotRead extends WorkflowShot {
   position: number;
   script: string;
+  details: {
+    camera_angle?: string;
+    camera_movement?: string;
+    dialogue_note?: string;
+    sound?: string;
+  };
   duration_ms: number;
   source_excerpt: string;
   asset_ids: string[];
@@ -150,6 +156,7 @@ export interface StoryboardApi {
       title?: string;
       shot_size?: ShotSize | null;
       script?: string;
+      details?: ShotRead['details'];
       duration_ms?: number;
       asset_ids?: string[];
       image_settings?: ShotRead['image_settings'];

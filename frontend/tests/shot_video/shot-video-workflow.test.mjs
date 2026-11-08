@@ -10,23 +10,21 @@ const shot = { id: '123', row_version: '3', video_context_hash: 'a'.repeat(64), 
   image: { media_id: '456', layout: 'single', is_stale: false }, video: null, video_settings: { resolution: '720p' } };
 const caps = { known: true, video_input: { reference_images: true, duration_seconds: [5, 10], resolutions: ['720p', '1080p'] } };
 
-test('video admission accepts single and grid references and requires omni reference support', () => {
-  assert.equal(videoBlockReason(shot, '9', caps, false), '');
-  for (const layout of ['single', 'four', 'five', 'nine']) assert.equal(videoBlockReason({ ...shot, image: { ...shot.image, layout } }, '9', caps, false), '');
-  assert.notEqual(videoBlockReason(shot, '9', { known: true, video_input: { first_frame: true } }, false), '');
-  for (const changed of [{ ...shot, image: null },
-    { ...shot, image: { ...shot.image, is_stale: true } }, { ...shot, duration_ms: 5500 },
-    { ...shot, duration_ms: 3000 }, { ...shot, video_settings: { resolution: '480p' } }]) {
-    if (changed.image?.is_stale) assert.equal(videoBlockReason(changed, '9', caps, false), '');
-    else assert.notEqual(videoBlockReason(changed, '9', caps, false), '');
-  }
-  assert.notEqual(videoBlockReason(shot, '9', { known: true }, false), '');
+test('video admission accepts text alone and checks explicit reference capability and limits', () => {
+  assert.equal(videoBlockReason({ ...shot, image: null }, '9', caps, false, 0), '');
+  assert.equal(videoBlockReason(shot, '9', caps, false, 1), '');
+  assert.equal(videoBlockReason(shot, '9', { known: true, video_input: { first_frame: true } }, false, 0), '');
+  assert.notEqual(videoBlockReason(shot, '9', { known: true, video_input: { first_frame: true } }, false, 1), '');
+  assert.notEqual(videoBlockReason(shot, '9', caps, false, 10), '');
+  for (const changed of [{ ...shot, duration_ms: 5500 }, { ...shot, duration_ms: 3000 },
+    { ...shot, video_settings: { resolution: '480p' } }])
+    assert.notEqual(videoBlockReason(changed, '9', caps, false, 0), '');
 });
 
-test('video request submits saved context and reference without copying client prompt', () => {
+test('video request submits saved context without implicitly selecting the current image', () => {
   const body = shotVideoRequest({ ...shot, video_prompt: 'client text' }, '9');
   assert.equal(body.input, undefined);
-  assert.equal(body.source.reference_media_id, '456');
+  assert.equal(body.source.reference_media_id, undefined);
   assert.equal(body.source.first_frame_media_id, undefined);
   assert.equal(body.source.context_hash, shot.video_context_hash);
   assert.deepEqual(body.parameters, { resolution: '720p', duration_ms: 5000 });

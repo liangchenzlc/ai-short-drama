@@ -13,3 +13,12 @@
   height: 100%;
   color: var(--sub);
 }
+
+.workbenchPreview :is(.standard-assets-scroll, .storyboard-list, .assetDetails, .storyboardDetails) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.workbenchPreview :is(.standard-assets-scroll, .storyboard-list, .assetDetails, .storyboardDetails)::-webkit-scrollbar {
+  display: none;
+}

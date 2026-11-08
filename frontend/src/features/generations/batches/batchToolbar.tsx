@@ -1,6 +1,7 @@
 import type { BatchItemView } from '@host/types/creation/workspace/workbenchView';
 import type { BatchScene } from '@host/types/generations/batches/requests';
-import { Button, Checkbox, Popover } from 'antd';
+import { Button, Checkbox, Popover, Tooltip } from 'antd';
+import { Clapperboard, History, Images } from 'lucide-react';
 import { useState } from 'react';
 import './batchToolbar.css';
 
@@ -27,11 +28,13 @@ export function BatchToolbar({ filteredIds, selectedIds, items, history, scenes,
 
   return (
     <div className="batchPreviewToolbar">
-      <Checkbox aria-label="全选筛选结果" checked={checked} indeterminate={some && !checked} disabled={!filteredIds.length}
-        onChange={(event) => onSelect(event.target.checked ? [...new Set([...selectedIds, ...filteredIds])] :
-          selectedIds.filter((id) => !filteredIds.includes(id)))}>全选筛选结果</Checkbox>
       <div className="batchPreviewActions">{scenes.map((scene) =>
-        <Button key={scene} size="small" disabled={!selectedIds.length} onClick={() => onLaunch(scene)}>{labels[scene]}</Button>)}</div>
+        <Tooltip key={scene} title={labels[scene]}><span><Button type="text" size="small" aria-label={labels[scene]}
+          disabled={!selectedIds.length} icon={scene === 'shot_video' ? <Clapperboard size={16} /> : <Images size={16} />}
+          onClick={() => onLaunch(scene)} /></span></Tooltip>)}</div>
+      <Tooltip title="全选当前筛选结果，用于批量生成"><Checkbox aria-label="全选筛选结果" checked={checked} indeterminate={some && !checked}
+        disabled={!filteredIds.length} onChange={(event) => onSelect(event.target.checked ? [...new Set([...selectedIds, ...filteredIds])] :
+          selectedIds.filter((id) => !filteredIds.includes(id)))}>全选</Checkbox></Tooltip>
       {!!items.length && <div className="batchPreviewProgress" role="status">
         {pending ? '进行中 ' + pending + ' · ' : ''}<span>完成 {finished} · 失败 {failed}</span>
         {items.length > 100 && <span>{Math.ceil(items.length / 100)} 个批次</span>}
@@ -51,7 +54,7 @@ export function BatchToolbar({ filteredIds, selectedIds, items, history, scenes,
             }))}
           </div>
         }>
-          <Button type="text" size="small">批量记录</Button>
+          <Button type="text" size="small" aria-label="批量记录" title="批量记录" icon={<History size={15} />} />
         </Popover>
       </div>}
     </div>

@@ -1,26 +1,23 @@
 import { remapAssetPromptReferences } from '@host/features/creation/assets/images/asset-prompt-references';
 import type { AssetPromptReference } from '@host/types/creation/assets/images/asset-prompt-references';
-import type { AssetView, BatchItemView, EpisodeView, ShotView, VideoReference } from '@host/types/creation/workspace/workbenchView';
+import type { AssetView, BatchItemView, ShotView, VideoReference } from '@host/types/creation/workspace/workbenchView';
 import type { ImageGroup, ImageMedia } from '@host/types/media/image-groups';
 import type { BatchScene } from '@host/types/generations/batches/requests';
 import { useEffect, useRef, useState } from 'react';
 import { createPreviewData, group, media } from './workbenchPreviewData';
 
-type OutlineDraft = Pick<EpisodeView, 'title' | 'summary'>;
-type PreviewBatch = { id: string; scene: BatchScene; episodeId: string | null; items: BatchItemView[] };
+type PreviewBatch = { id: string; scene: BatchScene; items: BatchItemView[] };
 
 export function useWorkbenchPreviewState() {
   const [initial] = useState(() => createPreviewData(new URLSearchParams(window.location.search).get('scenario') ?? 'single'));
   const [story, setStory] = useState(initial.story);
-  const [episodes, setEpisodes] = useState(initial.episodes);
+  const [script, setScript] = useState(initial.script);
   const [assets, setAssets] = useState(initial.assets);
   const assetsRef = useRef(assets);
   useEffect(() => { assetsRef.current = assets; }, [assets]);
   const [shots, setShots] = useState(initial.shots);
-  const [episodeId, setEpisodeId] = useState(initial.episodes[0].id);
   const [assetId, setAssetId] = useState(initial.assets[0].id);
   const [shotId, setShotId] = useState(initial.shots[0].id);
-  const [outlineDraft, setOutlineDraft] = useState<OutlineDraft[] | null>(null);
   const [previewByAsset, setPreviewByAsset] = useState<Record<string, string>>({});
   const [assetReferences, setAssetReferences] = useState<Record<string, AssetPromptReference[]>>((): Record<string, AssetPromptReference[]> => {
     const scene = initial.assets.find((asset) => asset.name === '咖啡馆');
@@ -32,16 +29,12 @@ export function useWorkbenchPreviewState() {
   const [videoStatuses, setVideoStatuses] = useState<Record<string, string>>({});
   const [videoCandidates, setVideoCandidates] = useState<Record<string, NonNullable<ShotView['video']>[]>>({});
   const [batches, setBatches] = useState<PreviewBatch[]>([]);
-  const nextEpisodeId = useRef(Math.max(...initial.episodes.map((episode) => Number(episode.id))) + 1);
   const nextAssetId = useRef(Math.max(...initial.assets.map((asset) => Number(asset.id))) + 1);
   const nextShotId = useRef(Math.max(...initial.shots.map((shot) => Number(shot.id))) + 1);
-  const newEpisode = (draft: OutlineDraft = { title: '', summary: '' }): EpisodeView =>
-    ({ id: String(nextEpisodeId.current++), ...draft, script: '' });
 
   function addAsset() {
     const id = String(nextAssetId.current++);
-    const asset: AssetView = { id, kind: 'character', name: '', description: '', tags: [],
-      profile: { role: '', gender: '', age: '', identity: '', appearance: '', personality: '' },
+    const asset: AssetView = { id, kind: 'character', name: '', description: '', profile: {},
       imageGroups: [], activeGroupId: null, adoptedImage: null, imagePrompt: '' };
     setAssets((current) => [...current, asset]);
     setAssetId(id);
@@ -65,27 +58,25 @@ export function useWorkbenchPreviewState() {
   }
   function addShot() {
     const id = String(nextShotId.current++);
-    const shot: ShotView = { id, episodeId, position: shots.filter((item) => item.episodeId === episodeId).length + 1,
-      title: '', script: '', shotSize: null, durationMs: 5000, assetIds: [], imageGroups: [],
+    const shot: ShotView = { id, position: shots.length + 1,
+      title: '', script: '', shotSize: null, durationMs: 5000, cameraAngle: '', cameraMovement: '', dialogue: '', sound: '', assetIds: [], imageGroups: [],
       activeGroupId: null, adoptedImage: null, imagePrompt: '', videoPrompt: '', videoReferences: [], video: null };
     setShots((current) => [...current, shot]);
     setShotId(id);
   }
   function removeShot(id: string) {
     setShots((current) => {
-      let position = 0;
-      return current.filter((shot) => shot.id !== id).map((shot) =>
-        shot.episodeId === episodeId ? { ...shot, position: ++position } : shot);
+      return current.filter((shot) => shot.id !== id).map((shot, index) => ({ ...shot, position: index + 1 }));
     });
   }
   function changeShotAssets(id: string, assetIds: string[]) {
     const shot = shots.find((item) => item.id === id);
     if (!shot) return;
-    const retained = shot.videoReferences.filter((reference) => reference.type !== 'asset' || assetIds.includes(reference.assetId));
     const added: VideoReference[] = assetIds.filter((assetId) => !shot.assetIds.includes(assetId) &&
+      !shot.videoReferences.some((reference) => reference.type === 'asset' && reference.assetId === assetId) &&
       assets.some((asset) => asset.id === assetId && asset.kind !== 'prop'))
       .map((assetId) => ({ type: 'asset', assetId }));
-    changeShot(id, { assetIds, videoReferences: [...retained, ...added],
+    changeShot(id, { assetIds, videoReferences: [...shot.videoReferences, ...added],
       imagePrompt: remapAssetPromptReferences(shot.imagePrompt, shotPromptReferences(assets, shot.assetIds), shotPromptReferences(assets, assetIds)) });
   }
   function changeAsset(id: string, patch: Partial<AssetView>) {
@@ -272,9 +263,8 @@ export function useWorkbenchPreviewState() {
   }
   function startBatch(scene: BatchScene, targets: string[]) {
     const batchId = String(nextMediaId.current++);
-    const scopeEpisode = scene === 'asset_image' ? null : episodeId;
-    const batch: PreviewBatch = { id: batchId, scene, episodeId: scopeEpisode, items: targets.map((targetId) => ({
-      id: String(nextMediaId.current++), targetId, scene, episodeId: scopeEpisode, status: 'queued', error: '',
+    const batch: PreviewBatch = { id: batchId, scene, items: targets.map((targetId) => ({
+      id: String(nextMediaId.current++), targetId, scene, status: 'queued', error: '',
     })) };
     setBatches((current) => [batch, ...current]);
     scheduleBatch(batch, targets, targets.length > 100);
@@ -290,45 +280,8 @@ export function useWorkbenchPreviewState() {
     scheduleBatch(batch, targets, false);
   }
 
-  function addEpisode() {
-    setEpisodes((current) => [...current, newEpisode()]);
-  }
-  function changeEpisode(id: string, patch: Partial<EpisodeView>) {
-    setEpisodes((current) => current.map((episode) => episode.id === id ? { ...episode, ...patch } : episode));
-  }
-  function moveEpisode(id: string, direction: -1 | 1) {
-    setEpisodes((current) => {
-      const index = current.findIndex((episode) => episode.id === id);
-      const next = [...current];
-      [next[index], next[index + direction]] = [next[index + direction], next[index]];
-      return next;
-    });
-  }
-  function deleteEpisode(id: string) {
-    const remaining = episodes.filter((episode) => episode.id !== id);
-    if (!remaining.length) return;
-    setEpisodes(remaining);
-    setShots((current) => current.filter((shot) => shot.episodeId !== id));
-    if (episodeId === id) setEpisodeId(remaining[0].id);
-  }
-  function generateOutlines(count: number) {
-    setOutlineDraft(Array.from({ length: count }, (_, index) => ({
-      title: '', summary: '第 ' + (index + 1) + ' 集：故事线索逐步展开。'
-    })));
-  }
-  function applyOutlines() {
-    if (!outlineDraft) return;
-    const fillsFirst = !episodes[0].summary.trim();
-    const drafts = fillsFirst ? outlineDraft.slice(1) : outlineDraft;
-    const first = fillsFirst ? { ...episodes[0], summary: outlineDraft[0].summary,
-      title: episodes[0].title || outlineDraft[0].title } : episodes[0];
-    setEpisodes([first, ...episodes.slice(1), ...drafts.map((draft) => newEpisode(draft))]);
-    setOutlineDraft(null);
-  }
-
-  return { story, setStory, episodes, setEpisodes, assets, setAssets, shots, setShots,
-    episodeId, setEpisodeId, assetId, setAssetId, shotId, setShotId,
-    outlineDraft, setOutlineDraft, addEpisode, changeEpisode, moveEpisode, deleteEpisode, generateOutlines, applyOutlines,
+  return { story, setStory, script, setScript, assets, shots,
+    assetId, setAssetId, shotId, setShotId,
     previewByAsset, setPreviewByAsset, assetReferences, changeAsset, changeAssetReferences,
     selectAssetGroup, adoptAssetImage, generateAssetImage, previewByShot, setPreviewByShot, imageStatuses, videoStatuses,
     videoCandidates, changeShot, changeShotAssets, changeVideoReference, selectShotGroup, adoptShotImage, generateShotImage, generateShotVideo, adoptShotVideo, batches, startBatch, retryBatch, retryImageItem, addAsset, removeAsset, addShot, removeShot };

@@ -14,9 +14,9 @@ export async function fixture(page: Page, ui = false, origin = 'http://127.0.0.1
   let storySettings = { row_version: '0', logline: '', synopsis: '', genre: '', character_bios: '' };
   const project = { id: '10', name: '雨夜来信', workspace_mode: 'standard', row_version: '1', canvas_count: 0, primary_canvas_id: null };
   const writing = { project_id: '10', content_version: '1', novel: { id: '30', content: '雨夜，林晚拿着一封旧信走入车站。', updated_at: time }, outline: null as WritingDocument | null, active_writing_tasks: [] as WritingTask[], editing_script: { id: '40', content: '林晚走进车站，抬头寻找站台。', state: 'confirmed', updated_at: time }, confirmed_script_id: '40' as string | null };
-  const asset = { id: '501', kind: 'character', name: '林晚', label: '主角', description: '黑发，穿着深色风衣。', prompt: '人物肖像，深色风衣', tags: [], scene_time: '', state: 'unconfirmed', row_version: '1', media_id: null, image: null, reference_count: 1, link_id: '601', position: 1 };
+  const asset = { id: '501', kind: 'character', name: '林晚', label: '主角', description: '黑发，穿着深色风衣。', profile: {}, prompt: '人物肖像，深色风衣', tags: [], scene_time: '', state: 'unconfirmed', row_version: '1', media_id: null, image: null, reference_count: 1, link_id: '601', position: 1 };
   const assets = [asset];
-  const shots: any[] = Array.from({ length: 80 }, (_, index) => ({ id: String(101 + index), position: index + 1, script: `林晚走过雨夜中的站台，镜头 ${index + 1}，列车的光线映在她的眼睛里。`, duration_ms: 3000, source_excerpt: '', asset_ids: ['501'], row_version: '1', context_hash: 'a'.repeat(64), image_settings: { aspect: null, resolution: '2K', layout: 'single' }, image: null, deleted_at: null }));
+  const shots: any[] = Array.from({ length: 80 }, (_, index) => ({ id: String(101 + index), position: index + 1, script: `林晚走过雨夜中的站台，镜头 ${index + 1}，列车的光线映在她的眼睛里。`, details: {}, duration_ms: 3000, source_excerpt: '', asset_ids: ['501'], row_version: '1', context_hash: 'a'.repeat(64), image_settings: { aspect: null, resolution: '2K', layout: 'single' }, image: null, deleted_at: null }));
   let storyboardVersion = '1';
   const referenceState: Record<string, any[]> = {};
   const creationDrafts = new Map<string, any>();

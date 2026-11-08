@@ -2,6 +2,7 @@
 
 import json
 from copy import deepcopy
+from types import SimpleNamespace
 
 from pydantic import ValidationError
 
@@ -137,6 +138,20 @@ def canvas_model_default_capability_config(config) -> dict | None:
 
 def runtime_protocol_adapter(profile: dict, channel_key: str, model_key: str, kind: str):
     return PROTOCOL_ADAPTERS.get(profile.get("protocol"))
+
+
+def resolved_runtime_capability_cache(config, channel_key: str = ""):
+    derived = SimpleNamespace(
+        base_url=config.base_url,
+        model_key=config.model_key,
+        service_type=config.service_type,
+        capability_cache=deepcopy(config.capability_cache),
+        runtime_profile=deepcopy(config.runtime_profile),
+        apikey=config.apikey,
+        runtime_credentials_cipher=config.runtime_credentials_cipher,
+    )
+    refresh_runtime_model(derived, channel_key)
+    return derived.capability_cache
 
 
 def refresh_runtime_model(config, channel_key: str = "") -> bool:

@@ -155,8 +155,11 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 3px 8px 8px;
-  scrollbar-width: thin;
-  scrollbar-color: #454545 transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.standard-assets-scroll::-webkit-scrollbar {
+  display: none;
 }
 .standard-assets-scroll .ant-pagination {
   display: flex;

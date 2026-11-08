@@ -54,6 +54,41 @@ class GenerationAdmission(GenerationServiceBase):
             raise GenerationRequestError("default_config_missing")
         return model
 
+    def _model_snapshot(self, config, *, preflight=False):
+        kind = config.service_type
+        snapshot = {
+            k: getattr(config, k)
+            for k in ("base_url", "model_key", "provider", "service_type", "name")
+        }
+        snapshot.update(
+            credential_identity=model_credential_identity(config),
+            capability_cache=copy.deepcopy(config.capability_cache),
+            row_version=str(config.row_version),
+            budget_seconds=getattr(
+                self.settings,
+                f"generation_{kind}_budget_seconds",
+                {"text": 3600, "image": 300, "video": 1800, "audio": 300}[kind],
+            ),
+            archive_budget_seconds=getattr(
+                self.settings, "generation_archive_budget_seconds", 86400
+            ),
+        )
+        if preflight and config.runtime_profile is not None:
+            from short_drama.service.ai_config.management.runtime import (
+                resolved_runtime_capability_cache,
+            )
+            from short_drama.service.canvas.models.model_catalog import CanvasModelCatalogService
+
+            catalog = CanvasModelCatalogService(self.session, settings=self.settings)
+            binding = catalog.catalog_dao.binding(config.id)
+            channel = (
+                binding.channel_key
+                if binding
+                else (config.capability_cache or {}).get("canvas_channel_key", "")
+            )
+            snapshot["capability_cache"] = resolved_runtime_capability_cache(config, channel)
+        return snapshot
+
     def _lock_payload_scope(self, payload):
         actor = self.session.info.get("actor")
         from short_drama.db.access.identity import set_scope
@@ -238,9 +273,12 @@ class GenerationAdmission(GenerationServiceBase):
             for identifier in references:
                 media = self._require(MediaFile, identifier, for_update=False)
                 allowed_scopes = {scope}
-                private_ids = (payload.get("creation_draft_snapshot") or {}).get(
-                    "reference_media_ids", []
-                )
+                draft = payload.get("creation_draft_snapshot") or {}
+                private_ids = list(draft.get("reference_media_ids", [])) + [
+                    item["media_id"]
+                    for item in draft.get("video_references", [])
+                    if item["type"] == "shot_image"
+                ]
                 if str(identifier) in private_ids:
                     allowed_scopes.add((actor.user_id, None))
                 if scope_of(self.session, media) not in allowed_scopes:
@@ -248,23 +286,7 @@ class GenerationAdmission(GenerationServiceBase):
                         "not_found", "Import reference media into this scope first", 404
                     )
         now = utcnow()
-        snapshot = {
-            k: getattr(config, k)
-            for k in ("base_url", "model_key", "provider", "service_type", "name")
-        }
-        snapshot.update(
-            credential_identity=model_credential_identity(config),
-            capability_cache=copy.deepcopy(config.capability_cache),
-            row_version=str(config.row_version),
-            budget_seconds=getattr(
-                self.settings,
-                f"generation_{kind}_budget_seconds",
-                {"text": 3600, "image": 300, "video": 1800, "audio": 300}[kind],
-            ),
-            archive_budget_seconds=getattr(
-                self.settings, "generation_archive_budget_seconds", 86400
-            ),
-        )
+        snapshot = self._model_snapshot(config)
         if (payload.get("source") or {}).get("scene") in {
             "canvas_node",
             "canvas_model_test",

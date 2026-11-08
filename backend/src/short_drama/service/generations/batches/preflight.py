@@ -93,7 +93,7 @@ class PreflightOperations(GenerationBatchServiceBase):
                     },
                 },
             }
-        creation, shot, _, _, context_hash = GenerationContextService(
+        creation, shot, assets, _, context_hash = GenerationContextService(
             self.session
         ).locked_shot_context(row.id)
         source = {
@@ -103,21 +103,27 @@ class PreflightOperations(GenerationBatchServiceBase):
         }
         if request.scene == "shot_video":
             image = self.session.scalar(select(ShotImage).where(ShotImage.shot_id == row.id))
-            if image is None:
-                raise WorkflowError("video_reference_required", "请先采用分镜图片", 422)
             settings = shot.video_settings or DEFAULT_VIDEO_SETTINGS
             source.update(
-                reference_media_id=str(image.media_id),
                 context_hash=video_context_hash(
                     context_hash,
-                    image.media_id,
+                    image.media_id if image else None,
                     shot.video_prompt,
                     settings,
                     session=self.session,
                     shot=shot,
                 ),
             )
-            return {"config_id": request.config_id, "parameters": {}, "source": source}
+            return {
+                "config_id": request.config_id,
+                "parameters": {},
+                "source": source,
+                "default_video_references": [
+                    {"type": "asset", "asset_id": str(asset.id)}
+                    for asset in assets
+                    if asset.kind in {"character", "scene"} and asset.media_id
+                ],
+            }
         settings = shot.image_settings or {
             "aspect": None,
             "resolution": "2K",
@@ -171,6 +177,10 @@ class PreflightOperations(GenerationBatchServiceBase):
                 .where(AssetImageCandidate.asset_id == row.id)
                 .limit(1)
             )
+            if candidate is None:
+                candidate = self.session.scalar(
+                    select(MediaAsset.id).join(AIGenerationRecord).where(*conditions).limit(1)
+                )
         else:
             model = ShotImage if request.scene == "shot_image" else ShotVideo
             adopted = self.session.scalar(select(model.id).where(model.shot_id == row.id).limit(1))
@@ -194,17 +204,7 @@ class PreflightOperations(GenerationBatchServiceBase):
             "video" if request.scene == "shot_video" else "image", request.config_id
         )
         kind = config.service_type
-        snapshot = {
-            k: getattr(config, k)
-            for k in (
-                "base_url",
-                "model_key",
-                "provider",
-                "service_type",
-                "name",
-                "capability_cache",
-            )
-        }
+        snapshot = None
         items, prepared = [], {}
         for row in self._sources(request):
             state, reason, task_id = self._availability(request, row)
@@ -219,9 +219,39 @@ class PreflightOperations(GenerationBatchServiceBase):
             # Validate all sources, including excluded ones, so the preflight digest
             # also changes when dependency context changes without a row-version bump.
             try:
-                payload = self.generations._prepare(kind, self._request(request, row))
-                validate_request(snapshot, payload)
-                item["context_hash"] = digest(payload)
+                payload = self._request(request, row)
+                actor = self.session.info.get("actor")
+                if actor:
+                    from short_drama.dao.creation.drafts.drafts import UserCreationDraftDAO
+                    from short_drama.service.creation.drafts.drafts import (
+                        SCENE_PURPOSE,
+                        UserCreationDraftService,
+                    )
+
+                    draft = UserCreationDraftDAO(self.session).scoped(
+                        actor.user_id, row.project_id, row.id, SCENE_PURPOSE[request.scene]
+                    )
+                    if draft:
+                        payload["source"].update(
+                            draft_id=str(draft.id), draft_version=str(draft.draft_version)
+                        )
+                        payload = UserCreationDraftService(self.session).freeze_for_generation(
+                            payload, model_override=request.config_id
+                        )
+                        if kind == "image":
+                            payload["parameters"]["count"] = request.count
+                            settings = (
+                                payload["creation_draft_snapshot"].get("image_settings") or {}
+                            )
+                            payload["creation_draft_snapshot"]["image_settings"] = {
+                                **settings,
+                                "count": request.count,
+                            }
+                payload = self.generations._prepare(kind, payload)
+                if snapshot is None:
+                    snapshot = self.generations._model_snapshot(config, preflight=True)
+                validated = validate_request(snapshot, payload)
+                item["context_hash"] = digest({"payload": payload, "model": validated})
                 item["parameters"] = payload["parameters"]
                 if state == "ready":
                     prepared[str(row.id)] = payload

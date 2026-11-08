@@ -60,7 +60,7 @@ test('storyboard review preserves edited timing and loads compact result pages',
   const draftSource = ts.createPrinter().printNode(ts.EmitHint.Unspecified, draftFunction, editingFile);
   const draftCompiled = ts.transpileModule(draftSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
   const { shotDraftValue } = await import(`data:text/javascript;base64,${Buffer.from(draftCompiled).toString('base64')}`);
-  const edited = { title: '短镜头', script: '雨落', duration_ms: 4500, asset_ids: ['9007199254740993'], image_settings: { aspect: '16:9' }, video_prompt: '推近', video_settings: { duration_ms: 5000 } };
+  const edited = { title: '短镜头', shot_size: 'close_up', script: '雨落', details: { camera_angle: '平视', camera_movement: '缓慢推进' }, duration_ms: 4500, asset_ids: ['9007199254740993'], image_settings: { aspect: '16:9' }, video_prompt: '推近', video_settings: { duration_ms: 5000 } };
   assert.deepEqual(shotDraftValue({ ...edited, id: '42', row_version: '9' }), edited);
   assert.match(preview, /resultShots/);
   assert.match(preview, /LazyLoadMore/);

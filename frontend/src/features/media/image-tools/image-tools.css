@@ -51,6 +51,13 @@
   max-height: 70vh;
   overflow-y: auto;
 }
+.standard-image-group.is-asset-creation > .image-subject-grid {
+  flex: none;
+  min-height: 0;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
 .image-subject {
   position: relative;
   display: flex;

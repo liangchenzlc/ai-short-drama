@@ -36,7 +36,7 @@ def test_title_and_shot_size_survive_versioned_create_update_and_read():
         )["shot"]
         assert service.get(episode, created["id"])["shot"] == updated
         assert updated["title"] == "归来" and updated["shot_size"] is None
-        assert updated["context_hash"] == created["context_hash"]
+        assert updated["context_hash"] != created["context_hash"]
         assert updated["duration_ms"] == 3000
 
 

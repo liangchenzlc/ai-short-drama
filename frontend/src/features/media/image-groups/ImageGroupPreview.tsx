@@ -11,6 +11,7 @@ import { Button, Dropdown, Spin } from 'antd';
 import { Check, Expand, Image as ImageIcon, MoreHorizontal, Pencil, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import '../image-tools/image-tools.css';
+import './imageGroupGallery.css';
 export function ImageGroupPreview({
   group,
   loading = false,
@@ -22,11 +23,13 @@ export function ImageGroupPreview({
   onBeforeChange,
   onChanged,
   onAddReference,
+  onUseForVideo,
   onBusyChange,
   emptyAction,
   emptyCount = 1,
   historical = false,
   primaryStale = false,
+  currentImage,
   presentation,
 }: ImageGroupPreviewProps) {
   const [tool, setTool] = useState<{
@@ -35,6 +38,8 @@ export function ImageGroupPreview({
   } | null>(null);
   const [preview, setPreview] = useState<{ src: string; alt: string } | null>(null);
   const [history, setHistory] = useState<ImageGroupItem | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const [busyItem, setBusyItem] = useState<string | null>(null);
   const [message, setMessage] = useState<{
     type: 'success' | 'error';
@@ -190,6 +195,10 @@ export function ImageGroupPreview({
             },
           ]
         : []),
+      ...(onUseForVideo
+        ? [{ key: 'video_reference', label: '用作视频参考', disabled: disabled || !item.media_id,
+            onClick: () => onUseForVideo(item.media_id!) }]
+        : []),
       { type: 'divider' as const },
       {
         key: 'history',
@@ -201,6 +210,19 @@ export function ImageGroupPreview({
   }
   const assetCreation = presentation === 'asset-creation';
   const count = group?.expected_count ?? (assetCreation ? 1 : [1, 2, 4].includes(emptyCount) ? emptyCount : 1);
+  const chosenItem = group?.items.find((item) => item.id === selectedItemId);
+  const selectedItem = chosenItem
+    ?? group?.items.find((item) => item.output_index === group.primary_index)
+    ?? group?.items.find((item) => item.status === 'ready')
+    ?? group?.items[0];
+  const separatePrimary = !!(assetCreation && group && currentImage &&
+    !group.items.some((item) => item.media_id === currentImage.media_id));
+  const isCurrentPrimary = (item: ImageGroupItem) => !!group?.is_current &&
+    group.primary_index === item.output_index && (!currentImage || item.media_id === currentImage.media_id);
+  const showCurrent = separatePrimary && (selectedItemId === 'current' || !chosenItem);
+  const displayedItems = assetCreation && group && (group.items.length > 1 || separatePrimary)
+    ? group.items.filter((item) => item.id === selectedItem?.id)
+    : group?.items;
   const groupStatus = group?.status === 'partial' ? '图片部分完成' : group?.status === 'failed' ? '图片未完成' : '';
   return (
     <div
@@ -245,14 +267,20 @@ export function ImageGroupPreview({
         />
       )}
       <div className={`image-subject-grid image-subject-grid-${count > 4 ? 'many' : count}`} data-image-count={count}>
-        {group
-          ? group.items.map((item) => (
+        {showCurrent && currentImage ? (
+          <article className="image-subject is-primary" aria-label="当前主图">
+            <div className="image-subject-label"><span className="image-primary-badge"><Check size={12} />主图</span></div>
+            <img src={currentImage.url} alt="当前主图" />
+            <button type="button" className="image-subject-open" aria-label="放大当前主图"
+              onClick={() => setPreview({ src: currentImage.url, alt: '当前主图' })} />
+          </article>
+        ) : group
+          ? displayedItems?.map((item) => (
               <ImageSubject
                 key={item.id}
                 item={item}
                 label={label}
-                primary={group.primary_index === item.output_index && group.is_current}
-                pendingPrimary={group.primary_index === null && item.output_index === 1}
+                primary={isCurrentPrimary(item)}
                 onRetry={assetCreation ? onRefresh : undefined}
               >
                 <div className="image-subject-toolbar" role="toolbar" aria-label={`第 ${item.output_index} 张图片工具`}>
@@ -269,7 +297,7 @@ export function ImageGroupPreview({
                         });
                     }}
                   />
-                  {(primaryStale || !(group.primary_index === item.output_index && group.is_current)) && (
+                  {(primaryStale || !isCurrentPrimary(item)) && (
                     <Button
                       type="text"
                       disabled={disabled || !!busyItem}
@@ -328,7 +356,6 @@ export function ImageGroupPreview({
                 {!assetCreation && (
                   <div className="image-subject-label">
                     <span>{index + 1}</span>
-                    {index === 0 && <span>默认主图</span>}
                   </div>
                 )}
                 {loading ? (
@@ -345,7 +372,7 @@ export function ImageGroupPreview({
                         <ImageIcon size={28} />
                         <strong>还没有图片</strong>
                         <p>
-                          {index === 0 ? '生成的第 1 张图片将自动成为主图。' : `第 ${index + 1} 张图片将在生成后显示。`}
+                          {`第 ${index + 1} 张图片将在生成后显示。`}
                         </p>
                         {index === 0 && emptyAction}
                       </>
@@ -355,6 +382,40 @@ export function ImageGroupPreview({
               </div>
             ))}
       </div>
+      {assetCreation && group && (group.items.length > 1 || separatePrimary ||
+        !!selectedItem?.media_id && (primaryStale || !isCurrentPrimary(selectedItem))) && (
+        <div className="imageGalleryControls">
+          <div className="imageGalleryThumbs">
+            {(group.items.length > 1 || separatePrimary) && group.items.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={!showCurrent && item.id === selectedItem?.id ? 'isSelected' : undefined}
+                aria-label={isCurrentPrimary(item)
+                  ? `图片 ${item.output_index}，主图`
+                  : `查看图片 ${item.output_index}`}
+                onClick={() => setSelectedItemId(item.id)}
+              >
+                {item.url ? <img src={item.url} alt="" /> : <span>{item.status === 'generating' ? '生成中' : '未完成'}</span>}
+                {isCurrentPrimary(item) && <i>主图</i>}
+              </button>
+            ))}
+            {separatePrimary && currentImage && (
+              <button type="button" aria-label="查看当前主图" className={showCurrent ? 'isSelected' : undefined}
+                onClick={() => setSelectedItemId('current')}>
+                <img src={currentImage.url} alt="" /><i>主图</i>
+              </button>
+            )}
+          </div>
+          <div className="imageGalleryActions">
+            {group.items.length > 1 && <Button type="text" size="small" onClick={() => setShowAll(true)}>查看全部</Button>}
+            {!showCurrent && selectedItem?.status === 'ready' && selectedItem.media_id &&
+              (primaryStale || !isCurrentPrimary(selectedItem)) && (
+                <Button size="small" disabled={disabled || !!busyItem} onClick={() => void primary(selectedItem)}>设为主图</Button>
+              )}
+          </div>
+        </div>
+      )}
       {group && !assetCreation && (
         <div className="image-group-caption">
           <span>
@@ -385,6 +446,18 @@ export function ImageGroupPreview({
           alt={preview.alt}
           onClose={() => setPreview(null)}
         />
+      )}
+      {showAll && group && (
+        <Dialog title="全部图片" className="imageGalleryCompareDialog standard-creation-dialog" onClose={() => setShowAll(false)}>
+          <div className="imageGalleryCompare">
+            {group.items.map((item) => (
+              <button type="button" key={item.id} onClick={() => { setSelectedItemId(item.id); setShowAll(false); }}>
+                {item.url ? <img src={item.url} alt={`图片 ${item.output_index}`} /> : <span>{item.status === 'generating' ? '生成中' : '未完成'}</span>}
+                <span>图片 {item.output_index}{isCurrentPrimary(item) ? ' · 主图' : ''}</span>
+              </button>
+            ))}
+          </div>
+        </Dialog>
       )}
       {tool && (
         <ImageToolsDialog
@@ -439,14 +512,12 @@ function ImageSubject({
   item,
   label,
   primary,
-  pendingPrimary,
   onRetry,
   children,
 }: {
   item: ImageGroupItem;
   label: string;
   primary: boolean;
-  pendingPrimary: boolean;
   onRetry?: () => void;
   children: React.ReactNode;
 }) {
@@ -466,7 +537,6 @@ function ImageSubject({
             主图
           </span>
         )}
-        {pendingPrimary && <span>默认主图</span>}
       </div>
       {item.status === 'ready' && item.url && !failed ? (
         <>

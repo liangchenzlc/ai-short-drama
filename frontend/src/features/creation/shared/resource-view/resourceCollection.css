@@ -101,12 +101,24 @@
 }
 
 .resourceItemImage {
+  position: relative;
   display: grid;
   place-items: center;
   flex-shrink: 0;
   overflow: hidden;
   background: #111;
   color: var(--sub);
+}
+
+.resourceItemCandidate {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #111c;
+  color: #fff;
+  font-size: 11px;
 }
 
 .isGrid .resourceItemImage {
@@ -117,6 +129,9 @@
 .isList .resourceItemImage {
   width: 72px;
   height: 64px;
+}
+
+.isList.isSelectable .resourceItemImage {
   margin-left: 38px;
 }
 
@@ -147,6 +162,10 @@
   font-size: 12px;
 }
 
+.resourceItemStatusLine {
+  display: block;
+}
+
 .isGrid .resourceItemDescription {
   display: none;
 }
@@ -155,13 +174,6 @@
   padding: 32px;
   color: var(--sub);
   text-align: center;
-}
-.resourceCollectionFilters > .ant-input-affix-wrapper {
-  width: 150px;
-}
-
-.resourceCollectionFilters > .ant-select {
-  width: 110px;
 }
 @keyframes resourceViewEnter {
   from { opacity: 0.65; }

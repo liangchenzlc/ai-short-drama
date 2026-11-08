@@ -20,22 +20,20 @@
   border-bottom: 1px solid var(--hair);
 }
 
-.assetViewHeader h2,
-.assetDetails h3,
-.assetMedia h3 {
+.assetViewHeader h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 
 .assetViewHeader span {
   color: var(--sub);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .assetViewBody {
   display: grid;
-  grid-template-columns: minmax(240px, 0.9fr) minmax(320px, 1.1fr);
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, min(48%, 650px));
   flex: 1;
   min-height: 0;
 }
@@ -59,7 +57,11 @@
   display: grid;
   gap: 7px;
   color: var(--sub);
-  font-size: 12px;
+  font-size: 14px;
+}
+
+.assetDetails :is(.ant-input, .ant-select) {
+  font-size: 14px;
 }
 
 .assetDetails label .ant-select {
@@ -72,6 +74,16 @@
   gap: 10px;
 }
 
+.assetExtraFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 10px;
+}
+
+.assetExtraFields .isWide {
+  grid-column: 1 / -1;
+}
+
 .assetMedia {
   display: flex;
   flex-direction: column;
@@ -79,12 +91,22 @@
 }
 
 .assetMediaHeading {
-  justify-content: space-between;
-  min-height: 24px;
+  justify-content: flex-end;
 }
 
 .assetMediaHeading .ant-select {
   min-width: 120px;
+}
+
+.assetMedia > :is(.assetMediaHeading, .imageGroupGallery, .assetReferences, .generation-inputs) {
+  align-self: center;
+  width: min(100%, 530px);
+}
+
+.assetMedia .imageGalleryCanvas {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
 }
 
 .assetReferences {
@@ -94,7 +116,7 @@
   gap: 7px;
   min-height: 32px;
   color: var(--sub);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .assetReference {
@@ -155,5 +177,37 @@
 .assetMedia .generation-composer {
   display: flex;
   flex-direction: column;
-  min-height: 210px;
+  min-height: 260px;
+}
+
+.assetMedia .asset-prompt-editor {
+  font-size: 14px;
+}
+
+.productionAssetView .standard-asset-object-actions {
+  margin-left: auto;
+}
+
+.productionAssetView .assetDetails {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.productionAssetView .assetDetails::-webkit-scrollbar {
+  display: none;
+}
+
+.productionAssetView .productionAssetPreview,
+.productionAssetView .productionAssetSettings {
+  align-self: center;
+  flex: none;
+  width: min(100%, 530px);
+}
+
+.productionAssetView .productionAssetSettings {
+  overflow: visible;
+}
+
+.productionAssetView .productionAssetSettings > .ant-btn:first-child {
+  align-self: flex-end;
 }

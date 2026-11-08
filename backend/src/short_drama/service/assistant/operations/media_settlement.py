@@ -234,13 +234,7 @@ def _settle_media(session, owner, task, intent, settings):
     usage = deepcopy(task.media_usage)
     usage["images"]["succeeded"] += len(ready)
     task.media_usage = usage
-    if ready and not adopted:
-        intent.status = "conflict"
-        intent.error = {
-            "code": "assistant_media_adoption_conflict",
-            "message": group.notice or "来源或主图已变化，成功产物已保留在图片组中",
-        }
-    elif native.status != "succeeded" or len(ready) != intent.requested_count:
+    if native.status != "succeeded" or len(ready) != intent.requested_count:
         intent.status = "failed"
         intent.error = {
             "code": "assistant_media_partial_failure",
@@ -260,6 +254,8 @@ def _result_refs(intents):
             "name": f"图片组 {item.result['image_group_id']}",
             "status": "adopted"
             if item.result["adopted"]
+            else "candidate"
+            if item.status == "succeeded"
             else "adoption_conflict"
             if item.status == "conflict"
             else "generation_failed",
@@ -335,6 +331,8 @@ def _result_refs(intents):
                 if item.result.get("target_available") is False
                 else "adopted"
                 if item.result["adopted"]
+                else "candidate"
+                if item.status == "succeeded"
                 else "adoption_conflict"
                 if item.status == "conflict"
                 else "generation_failed",

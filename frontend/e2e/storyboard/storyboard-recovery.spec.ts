@@ -40,7 +40,6 @@ test('seventeen combined image references block submission and removing one allo
   const state = await setup(page);
   state.creationDrafts.set('101:storyboard_image', { id: '95001', project_id: '10', episode_id: '20', object_id: '101', purpose: 'storyboard_image', model_config_id: '77', input_text: '', image_settings: { aspect: '16:9', resolution: '2K', count: 1 }, video_settings: null, reference_media_ids: Array.from({ length: 16 }, (_, index) => String(2000 + index)), reference_images: Array.from({ length: 16 }, (_, index) => ({ media_id: String(2000 + index), url: image })), row_version: '1', draft_version: '1', source_version: '1' });
   await page.goto(`${root}/storyboard`); await page.locator('.storyboard-summary').first().click();
-  await panel(page).getByRole('tab', { name: '分镜图', exact: true }).click();
   await expect(panel(page).locator('.standard-reference-count')).toHaveText('17 / 16');
   await expect(panel(page).getByRole('button', { name: '生成图片', exact: true })).toBeDisabled();
   expect(state.requests.filter(request => request.path === '/ai/generations/image' && request.method === 'POST')).toHaveLength(0);
@@ -190,6 +189,24 @@ test('card deletion saves pending input first and selects the next shot without 
   expect(calls.filter(call => call.id === '101' && call.method === 'PATCH')).toHaveLength(1);
   expect(state.shots[0].script).toBe('删除前保存的镜头输入');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('删除镜头会清理批量选择及工作区中的已删除项', async ({ page }) => {
+  const state = await setup(page);
+  await deletionFixture(page, state);
+  await page.goto(`${root}/storyboard?shot=101`);
+  const workspace = page.getByRole('region', { name: '分镜工作区', exact: true });
+  await workspace.getByRole('button', { name: '宫格展示', exact: true }).click();
+  await workspace.getByRole('checkbox', { name: '选择分镜：站台镜头 1', exact: true }).check();
+  await workspace.getByRole('checkbox', { name: '选择分镜：站台镜头 2', exact: true }).check();
+  await page.locator('#storyboard-shot-102').getByRole('button', { name: '分镜 02 卡片更多操作', exact: true }).click();
+  await page.getByRole('menuitem', { name: '删除分镜', exact: true }).click();
+  await page.getByRole('dialog', { name: '删除分镜', exact: true }).getByRole('button', { name: '删除分镜', exact: true }).click();
+  await expect(page.locator('#storyboard-shot-102')).toHaveCount(0);
+  await expect(workspace).toContainText('已选 1 项');
+  await expect(workspace.getByRole('checkbox', { name: '选择分镜：站台镜头 2', exact: true })).toHaveCount(0);
+  await expect(workspace.getByRole('checkbox', { name: '选择分镜：站台镜头 1', exact: true })).toBeChecked();
+  expect(state.errors).toEqual([]);
 });
 
 for (const status of [409, 503]) test(`card deletion ${status} retains card and input with persistent recovery`, async ({ page }) => {
@@ -408,7 +425,6 @@ test('shot video editing exposes dialogue review and a failed save retains its d
     return route.fulfill({ json: dialogue });
   });
   await page.goto(`${root}/storyboard?shot=101`);
-  await panel(page).getByRole('tab', { name: '分镜视频', exact: true }).click();
   await panel(page).locator('.storyboard-dialogue-settings > summary').click();
   await panel(page).getByRole('button', { name: '编辑并确认对白', exact: true }).click();
   const review = page.getByRole('dialog', { name: '分镜对白与声音表演', exact: true });

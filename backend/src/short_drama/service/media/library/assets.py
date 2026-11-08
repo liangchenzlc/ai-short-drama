@@ -1,4 +1,4 @@
-"""持久媒体、显式采用及标准分镜视频完成后的自动确定。"""
+"""持久媒体、候选和显式采用。"""
 
 from sqlalchemy import select
 
@@ -6,6 +6,7 @@ from short_drama.core.exceptions import BusinessError, Conflict, WorkflowError
 from short_drama.dao.media.library.assets import MediaAssetDAO
 from short_drama.domain import (
     AIGenerationRecord,
+    Asset,
     AsyncTask,
     MediaAsset,
     MediaFile,
@@ -18,6 +19,21 @@ from short_drama.service.creation.storyboard.images.image import ShotImageServic
 from short_drama.service.creation.storyboard.videos.video import ShotVideoService
 from short_drama.service.creation.writing.script.publication import public_voice_context
 from short_drama.service.media.files.storage import StorageService
+
+
+def video_references_changed(session, captured, project_id):
+    for reference in captured.get("video_reference_assets", []):
+        asset = session.scalar(
+            select(Asset).where(Asset.id == int(reference["asset_id"])).with_for_update()
+        )
+        if (
+            asset is None
+            or asset.deleted_at is not None
+            or asset.project_id != project_id
+            or str(asset.media_id) != reference["media_id"]
+        ):
+            return True
+    return False
 
 
 class MediaAssetService(BaseService):
@@ -146,7 +162,7 @@ class MediaAssetService(BaseService):
             with self.session.begin_nested():
                 result = self._confirm_generated_shot_video(task, record)
             receipt = {
-                "status": "applied",
+                "status": "candidate",
                 **result,
                 "source_row_version": request["source_snapshot"]["row_version"],
             }
@@ -197,42 +213,32 @@ class MediaAssetService(BaseService):
         if (
             captured.get("context_hash") != digest
             or source.get("context_hash") != digest
-            or not image
-            or str(image.media_id) != str(captured.get("reference_media_id"))
+            or video_references_changed(self.session, captured, creation.id)
         ):
             raise WorkflowError("shot_version_conflict", "分镜、参考图或声音已变化，保留原确定视频")
-        previous_record = (
-            self.session.scalar(
-                select(AIGenerationRecord)
-                .join(MediaAsset, MediaAsset.record_id == AIGenerationRecord.id)
-                .where(MediaAsset.media_id == current.media_id)
-            )
-            if current
-            else None
-        )
-        previous_task = (
-            self.session.get(AsyncTask, previous_record.task_id) if previous_record else None
-        )
-        if previous_task and (previous_task.created_at, previous_task.id) > (
-            task.created_at,
-            task.id,
-        ):
-            raise WorkflowError("shot_video_superseded", "已有更新生成的视频，旧任务仅保留历史")
-        previous_receipt = (
-            (previous_record.response_data or {}).get("shot_video_auto_apply", {})
-            if previous_record
-            else {}
-        )
-        same_automatic_source = (
-            previous_receipt.get("status") == "applied"
-            and previous_receipt.get("row_version") == str(shot.row_version)
-            and previous_receipt.get("media_id") == str(current.media_id)
-            and previous_receipt.get("source_row_version") == captured.get("row_version")
-        )
-        if source.get("row_version") != captured.get("row_version") or (
-            captured.get("row_version") != str(shot.row_version) and not same_automatic_source
-        ):
+        if source.get("row_version") != captured.get("row_version"):
             raise WorkflowError("shot_version_conflict", "分镜版本已变化，保留原确定视频")
+        if captured.get("row_version") != str(shot.row_version):
+            previous = (
+                self.session.scalar(
+                    select(AIGenerationRecord)
+                    .join(MediaAsset, MediaAsset.record_id == AIGenerationRecord.id)
+                    .where(MediaAsset.media_id == current.media_id)
+                )
+                if current
+                else None
+            )
+            receipt = (
+                (previous.response_data or {}).get("shot_video_auto_apply", {}) if previous else {}
+            )
+            if not (
+                receipt.get("status") == "applied"
+                and receipt.get("row_version") == str(shot.row_version)
+                and receipt.get("source_row_version") == captured.get("row_version")
+            ):
+                raise WorkflowError("shot_version_conflict", "分镜版本已变化，保留原确定视频")
+        if current is not None:
+            raise WorkflowError("shot_video_has_current", "新视频已保存为候选，请主动采用")
         asset = self.session.scalar(
             select(MediaAsset).where(
                 MediaAsset.record_id == record.id, MediaAsset.output_index == 1
@@ -247,17 +253,10 @@ class MediaAssetService(BaseService):
             or media.created_by != task.initiated_by
         ):
             raise WorkflowError("source_mismatch", "生成视频的归属与任务不一致")
-        parsed = MediaAssetApply.model_validate(
-            {
-                "target": {"type": "shot_video", "id": str(shot.id)},
-                "expected_media_id": str(current.media_id) if current else None,
-                "expected_row_version": str(shot.row_version),
-                "expected_context_hash": digest,
-            }
-        )
-        before_storyboard_version = str(creation.storyboard_version)
-        result = self._apply_shot_video(asset, record, parsed)
-        return {"before_storyboard_version": before_storyboard_version, **result}
+        return {
+            "target": {"type": "shot_video", "id": str(shot.id)},
+            "media_id": str(asset.media_id),
+        }
 
     def _apply_shot_video(self, asset, record, parsed):
         from short_drama.service.creation.storyboard.videos.video_context import video_context_hash
@@ -313,6 +312,14 @@ class MediaAssetService(BaseService):
             raise WorkflowError("shot_version_conflict", "当前视频已变化，请重新选择")
         request = record.request_data
         source, captured = request.get("source") or {}, request.get("source_snapshot") or {}
+        if source.get("scene") == "shot_video":
+            if str(source.get("shot_id")) != str(shot.id):
+                raise WorkflowError("source_mismatch", "视频候选不属于当前分镜", 422)
+            if not parsed.acknowledge_stale_source and (
+                captured.get("context_hash") != digest
+                or video_references_changed(self.session, captured, creation.id)
+            ):
+                raise WorkflowError("shot_video_source_changed", "视频来源已变化，请核对后再采用")
         original = request.get("parameters", {})
         provided = parsed.parameters.model_dump(exclude_none=True)
         for name, key in (

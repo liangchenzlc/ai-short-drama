@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     )
     minio_audio_bucket: str = "short-drama-audio"
     generation_audio_budget_seconds: int = 300
-    generation_batches_enabled: bool = False
+    generation_batches_enabled: bool = True
     agent_enabled: bool = True
     agent_model_timeout_seconds: int = Field(default=120, ge=1, le=600)
     agent_lease_seconds: int = Field(default=180, ge=150, le=3600)

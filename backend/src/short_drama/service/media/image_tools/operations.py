@@ -281,7 +281,7 @@ class ImageOperationService(ImageGroupService):
                         position.media_id = media.id
                         publish(media)
                     # 新切分组来自当前图；不以旧生成时的主图作自动写入前置条件。
-                    self.write_primary(result, self.groups.items(result.id)[0], manual=True)
+                    self.write_primary(result, self.groups.items(result.id)[0])
                     result.status, operation.status = "completed", "completed"
                     operation.result_group_id = result.id
                 else:
@@ -374,7 +374,7 @@ class ImageOperationService(ImageGroupService):
             if was_primary:
                 # 更新主图本身；保留用户选中的图位，不影响下次生成参数。
                 mode = group.primary_mode
-                self.write_primary(group, item, manual=True)
+                self.write_primary(group, item)
                 group.primary_mode = mode
             operation.status = "completed"
         operation.result_media_id = media.id

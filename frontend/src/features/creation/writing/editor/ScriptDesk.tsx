@@ -22,10 +22,11 @@ export function ScriptDesk({
   stopping,
   feedback,
   registerSettings,
+  settingsEditor,
 }: {
   projectId: string;
-  writing: WritingSnapshot;
-  session: WritingSession;
+  writing: Pick<WritingSnapshot, 'script' | 'loaded' | 'activeWritingTasks'>;
+  session: Pick<WritingSession, 'edit'>;
   readOnly: boolean;
   onRewrite: (selection: ScriptSelection) => void;
   selection: ScriptSelection | null;
@@ -36,6 +37,7 @@ export function ScriptDesk({
   stopping: string | null;
   feedback: ReactNode;
   registerSettings: (barrier: NavigationBarrier | null) => void;
+  settingsEditor?: ReactNode;
 }) {
   const [parameters, setParameters] = useSearchParams();
   const tab = parameters.get('writing') === 'settings' ? 'settings' : 'script';
@@ -118,7 +120,7 @@ export function ScriptDesk({
           aria-labelledby="writing-settings-tab"
           hidden={tab !== 'settings'}
         >
-          <StorySettingsEditor projectId={projectId} readOnly={readOnly} registerBarrier={registerSettings} />
+          {settingsEditor ?? <StorySettingsEditor projectId={projectId} readOnly={readOnly} registerBarrier={registerSettings} />}
         </div>
         <div
           id="writing-script-pane"

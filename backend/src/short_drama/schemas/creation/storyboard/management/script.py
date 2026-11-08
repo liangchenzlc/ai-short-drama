@@ -15,12 +15,17 @@ ShotSizeEnum = Literal[
     "full_shot", "medium_shot", "close_up", "extreme_close_up", "wide_shot", "two_shot"
 ]
 ShotTitle = Annotated[str, Field(max_length=255)]
+ShotDetails = dict[
+    Literal["camera_angle", "camera_movement", "dialogue_note", "sound"],
+    Annotated[str, Field(max_length=4000)],
+]
 
 
 class ShotScriptCreate(InputModel):
     project_id: Identifier
     position: PositiveUInt32
     script: MediumText = ""
+    details: ShotDetails = Field(default_factory=dict)
     duration_ms: int = Field(default=3000, strict=True, ge=1000, le=10000)
     title: ShotTitle = ""
     shot_size: ShotSizeEnum | None = None
@@ -29,6 +34,7 @@ class ShotScriptCreate(InputModel):
 class ShotScriptUpdate(InputModel):
     position: PositiveUInt32 = None
     script: MediumText = None
+    details: ShotDetails = None
     duration_ms: int = Field(default=None, strict=True, ge=1000, le=10000)
     title: ShotTitle = None
     shot_size: ShotSizeEnum | None = None
@@ -40,6 +46,7 @@ class ShotScriptRead(ReadModel):
     project_id: Identifier
     position: PositiveUInt32
     script: MediumText
+    details: ShotDetails = Field(default_factory=dict)
     duration_ms: int = 3000
     title: ShotTitle = ""
     shot_size: ShotSizeEnum | None = None

@@ -458,6 +458,8 @@ class AssistantStandardService(BaseService):
         result["position"] = row.position
         result["deleted"] = row.deleted_at is not None
         if kind == "asset":
+            if row.profile:
+                result["profile"] = deepcopy(row.profile)
             voice = storyboard.session.get(
                 CharacterVoice, (row.project_id, row.id), with_for_update=True
             )
@@ -469,6 +471,8 @@ class AssistantStandardService(BaseService):
                 str(row.current_version_id) if row.current_version_id is not None else None
             )
         if kind == "shot":
+            if row.details:
+                result["details"] = deepcopy(row.details)
             result["media_state"] = {
                 kind: [
                     {"id": str(item.id), "media_id": str(item.media_id)}

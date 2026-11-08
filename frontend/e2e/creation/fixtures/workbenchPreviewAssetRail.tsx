@@ -58,7 +58,7 @@ function asLibraryAsset(asset: AssetView, position: number): LibraryAssetRead {
   const image = asset.adoptedImage;
   return {
     id: asset.id, kind: asset.kind, name: asset.name, label: '', description: asset.description, prompt: asset.imagePrompt,
-    tags: asset.tags, scene_time: '', state: 'confirmed', row_version: '1', media_id: image?.media_id ?? null,
+    tags: [], scene_time: '', state: 'confirmed', row_version: '1', media_id: image?.media_id ?? null,
     image: image?.url ? { media_id: image.media_id, url: image.url, width: image.width, height: image.height } : null,
     reference_count: 0, created_at: null, updated_at: null, link_id: null, position,
   };

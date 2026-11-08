@@ -1,5 +1,6 @@
 import { projectAssetsApi } from '@host/api/creation/assets/management';
 import { ApiError, errorMessage } from '@host/api/http';
+import { AssetDetails } from '@host/features/creation/assets/editor/assetView';
 import { ConfigSelect } from '@host/features/ai-config/selection/ModelSelect';
 import { AssetPromptInput } from '@host/features/creation/assets/images/AssetPromptInput';
 import { PrivateAssetReferences } from '@host/features/creation/assets/images/PrivateAssetReferences';
@@ -32,64 +33,10 @@ import type { AssetDraft, AssetRead, AssetScope, LibraryAssetRead } from '@host/
 import type { LocalAssetDraft } from '@host/types/creation/assets/sessions/local-asset-draft-model';
 import type { CreationDraftValue } from '@host/types/creation/drafts/requests';
 import type { NavigationBarrier } from '@host/types/creation/writing/sessions/writing-navigation';
-import { Alert, Button, Input, Popover, Select, Skeleton, Upload } from 'antd';
+import { Alert, Button, Popover, Skeleton, Upload } from 'antd';
 import { Check, History, MoreHorizontal, PanelRightClose, PanelRightOpen, Trash2, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 const labels = { character: '角色', scene: '场景', prop: '道具' };
-
-function AssetInformation({
-  value,
-  disabled,
-  onChange,
-}: {
-  value: Pick<LocalAssetDraft, 'name' | 'kind' | 'description'>;
-  disabled: boolean;
-  onChange: (patch: Partial<Pick<LocalAssetDraft, 'name' | 'kind' | 'description'>>) => void;
-}) {
-  return (
-    <div className="standard-asset-information">
-      <div className="standard-asset-name-type">
-        <label>
-          素材名称
-          <Input
-            aria-label="素材名称"
-            value={value.name}
-            placeholder="输入名称"
-            maxLength={255}
-            disabled={disabled}
-            onChange={(event) => onChange({ name: event.target.value })}
-          />
-        </label>
-        <label>
-          素材类型
-          <Select
-            classNames={{ popup: { root: 'standard-creation-popup' } }}
-            aria-label="素材类型"
-            value={value.kind ?? undefined}
-            placeholder="选择类型"
-            disabled={disabled}
-            options={Object.entries(labels).map(([value, label]) => ({
-              value,
-              label,
-            }))}
-            onChange={(kind) => onChange({ kind })}
-          />
-        </label>
-      </div>
-      <label className="standard-asset-description">
-        素材描述
-        <Input.TextArea
-          aria-label="描述"
-          value={value.description}
-          maxLength={8000}
-          disabled={disabled}
-          placeholder="外观、特征或环境"
-          onChange={(event) => onChange({ description: event.target.value })}
-        />
-      </label>
-    </div>
-  );
-}
 
 function useSettingsPanel() {
   const controls = useCreationControls();
@@ -110,64 +57,6 @@ function useSettingsPanel() {
       trigger.current?.focus();
     },
   };
-}
-
-function ObjectPanel({
-  title,
-  settings,
-  actions,
-  status,
-  preview,
-  children,
-}: {
-  title: string;
-  settings: ReturnType<typeof useSettingsPanel>;
-  actions?: ReactNode;
-  status?: ReactNode;
-  preview: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section
-      className={`standard-object-panel creation-asset-detail${settings.open ? '' : ' is-settings-collapsed'}`}
-      aria-label={`素材 ${title}`}
-    >
-      <header className="standard-object-heading">
-        <h3 title={title}>{title}</h3>
-        <div className="standard-asset-object-actions">
-          {status}
-          {actions}
-          <Button
-            ref={settings.trigger}
-            type="text"
-            aria-label={settings.open ? '收起生成设置' : '展开生成设置'}
-            title={settings.open ? '收起生成设置' : '展开生成设置'}
-            aria-expanded={settings.open}
-            icon={settings.open ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-            onClick={settings.open ? settings.close : settings.reveal}
-          />
-        </div>
-      </header>
-      <div className={`standard-object-media${settings.open ? '' : ' is-settings-collapsed'}`}>
-        <section className="standard-object-preview" aria-label="素材图片预览">
-          {preview}
-        </section>
-        <div ref={settings.pane} className="standard-object-settings" hidden={!settings.open} aria-label="素材生成设置">
-          <header className="standard-asset-settings-heading">
-            <h4>生成设置</h4>
-            <Button
-              type="text"
-              aria-label="关闭生成设置"
-              title="收起生成设置"
-              icon={<X size={17} />}
-              onClick={settings.close}
-            />
-          </header>
-          <div className="standard-object-settings-scroll standard-asset-settings-content">{children}</div>
-        </div>
-      </div>
-    </section>
-  );
 }
 
 export function LocalAssetEditor({
@@ -192,6 +81,7 @@ export function LocalAssetEditor({
   const settings = useSettingsPanel();
   const [modelFeedback, setModelFeedback] = useState<HTMLDivElement | null>(null);
   const [referenceImages, setReferenceImages] = useState<AssetPromptReference[]>([]);
+  const editor = useRef<HTMLElement>(null);
   const value = draft.generation ?? emptyAssetGeneration;
   const ignoredReferenceState = useCallback(() => {}, []);
   const [uploadBusy, setUploadBusy] = useState(false);
@@ -214,101 +104,146 @@ export function LocalAssetEditor({
   useEffect(() => {
     settings.reveal();
     const frame = requestAnimationFrame(() =>
-      settings.pane.current?.querySelector<HTMLInputElement>('input[aria-label="素材名称"]')?.focus(),
+      editor.current?.querySelector<HTMLInputElement>('input[aria-label="素材名称"]')?.focus(),
     );
     return () => cancelAnimationFrame(frame);
   }, [draft.id]);
   const editPrivate = (patch: Partial<CreationDraftValue>) => onChange({ generation: { ...value, ...patch } });
   return (
-    <ObjectPanel
-      title={draft.name || '未命名素材'}
-      settings={settings}
-      preview={
-        <div className="standard-asset-empty-preview" role="status">
-          还没有生成图片
+    <section ref={editor} className="assetView creation-asset-detail productionAssetView" aria-label={`素材 ${draft.name || '未命名素材'}`}>
+      <header className="assetViewHeader">
+        <h2>{draft.name || '未命名素材'}</h2>
+        {draft.kind && <span>{labels[draft.kind]}</span>}
+        <div className="standard-asset-object-actions">
+          <Button
+            ref={settings.trigger}
+            type="text"
+            aria-label={settings.open ? '收起生成设置' : '展开生成设置'}
+            title={settings.open ? '收起生成设置' : '展开生成设置'}
+            aria-expanded={settings.open}
+            icon={settings.open ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+            onClick={settings.open ? settings.close : settings.reveal}
+          />
         </div>
-      }
-    >
-      <AssetInformation value={draft} disabled={readOnly} onChange={onChange} />
-      {draft.message && (
-        <StudioFeedback
-          type={draft.status === 'error' ? 'error' : 'warning'}
-          title={`新素材 · ${draft.name || '未命名素材'}`}
-          noticeKey={`asset-create:${draft.id}`}
-          message={draft.message}
-          actions={
-            draft.status === 'unknown' || draft.status === 'error' ? (
-              <Button onClick={onRetry}>{draft.status === 'unknown' ? '核对原创建请求' : '重试创建'}</Button>
-            ) : undefined
-          }
+      </header>
+      <div className="assetViewBody">
+        <AssetDetails
+          asset={{
+            kind: draft.kind,
+            name: draft.name,
+            description: draft.description,
+            profile: { ...draft.profile, ...(draft.kind === 'scene' ? { time: draft.scene_time } : {}) },
+          }}
+          nameAriaLabel="素材名称"
+          descriptionAriaLabel="描述"
+          disabled={readOnly}
+          onChange={({ profile, ...fields }) => {
+            const patch: Partial<LocalAssetDraft> = { ...fields };
+            if (profile) {
+              const { time, ...otherProfile } = profile;
+              patch.profile = otherProfile;
+              if (fields.kind && fields.kind !== draft.kind) patch.scene_time = '';
+              else if (draft.kind === 'scene') patch.scene_time = time ?? '';
+            }
+            onChange(patch);
+          }}
         />
-      )}
-      <PrivateAssetReferences
-        assetId={draft.id}
-        projectId=""
-        privateIds={value.reference_media_ids}
-        saved={null}
-        disabled={readOnly || draft.status === 'saving'}
-        onChange={onReferencesChange}
-        onState={ignoredReferenceState}
-        onImagesChange={setReferenceImages}
-        onBusyChange={handleUploadBusy}
-      />
-      <GenerationComposer
-        feedbackRef={setModelFeedback}
-        prompt={value.input_text}
-        onPrompt={(input_text) => editPrivate({ input_text })}
-        promptInput={(id) => (
-          <AssetPromptInput
-            id={id}
-            value={value.input_text}
-            onChange={(input_text) => editPrivate({ input_text })}
-            references={referenceImages}
-            disabled={readOnly}
-          />
-        )}
-        disabled={readOnly}
-        model={
-          <ConfigSelect
-            presentation="standard-creation"
-            optionLayout="compact"
-            feedbackContainer={modelFeedback}
-            kind="image"
-            value={value.model_config_id ?? undefined}
-            onChange={(id) => editPrivate({ model_config_id: id ?? null })}
-            onResolvedChange={(id) => {
-              if (id && id !== value.model_config_id && !readOnly) editPrivate({ model_config_id: id });
-            }}
-            disabled={readOnly}
-            label="生图模型"
-          />
-        }
-        parameters={
-          <AssetGenerationParameters
-            countPlacement="options"
-            value={value}
-            disabled={readOnly}
-            onChange={editPrivate}
-          />
-        }
-        sendDisabled
-        busy={false}
-        onSend={() => {}}
-      />
-      {!readOnly && (
-        <Button
-          type="text"
-          size="small"
-          danger
-          className="standard-local-asset-discard"
-          aria-label="放弃本机素材草稿"
-          disabled={draft.status === 'saving' || uploadBusy}
-          onClick={onRemove}
-        >
-          放弃本机素材草稿
-        </Button>
-      )}
-    </ObjectPanel>
+        <div className="assetMedia">
+          <section className="productionAssetPreview" aria-label="素材图片预览">
+            <ImageGroupPreview
+              presentation="asset-creation"
+              group={null}
+              label={draft.name || '素材'}
+              disabled
+              onRefresh={() => {}}
+              onBeforeChange={async () => false}
+              onChanged={() => {}}
+            />
+          </section>
+          {draft.message && (
+            <StudioFeedback
+              type={draft.status === 'error' ? 'error' : 'warning'}
+              title={`新素材 · ${draft.name || '未命名素材'}`}
+              noticeKey={`asset-create:${draft.id}`}
+              message={draft.message}
+              actions={
+                draft.status === 'unknown' || draft.status === 'error' ? (
+                  <Button onClick={onRetry}>{draft.status === 'unknown' ? '核对原创建请求' : '重试创建'}</Button>
+                ) : undefined
+              }
+            />
+          )}
+          <div ref={settings.pane} className="standard-object-settings productionAssetSettings" hidden={!settings.open} aria-label="素材生成设置">
+            <Button type="text" size="small" aria-label="关闭生成设置" title="收起生成设置" icon={<X size={16} />} onClick={settings.close} />
+            <PrivateAssetReferences
+              assetId={draft.id}
+              projectId=""
+              privateIds={value.reference_media_ids}
+              saved={null}
+              disabled={readOnly || draft.status === 'saving'}
+              onChange={onReferencesChange}
+              onState={ignoredReferenceState}
+              onImagesChange={setReferenceImages}
+              onBusyChange={handleUploadBusy}
+            />
+            <GenerationComposer
+              feedbackRef={setModelFeedback}
+              prompt={value.input_text}
+              onPrompt={(input_text) => editPrivate({ input_text })}
+              promptInput={(id) => (
+                <AssetPromptInput
+                  id={id}
+                  value={value.input_text}
+                  onChange={(input_text) => editPrivate({ input_text })}
+                  references={referenceImages}
+                  disabled={readOnly}
+                />
+              )}
+              disabled={readOnly}
+              model={
+                <ConfigSelect
+                  presentation="standard-creation"
+                  optionLayout="compact"
+                  feedbackContainer={modelFeedback}
+                  kind="image"
+                  value={value.model_config_id ?? undefined}
+                  onChange={(id) => editPrivate({ model_config_id: id ?? null })}
+                  onResolvedChange={(id) => {
+                    if (id && id !== value.model_config_id && !readOnly) editPrivate({ model_config_id: id });
+                  }}
+                  disabled={readOnly}
+                  label="生图模型"
+                />
+              }
+              parameters={
+                <AssetGenerationParameters
+                  countPlacement="options"
+                  value={value}
+                  disabled={readOnly}
+                  onChange={editPrivate}
+                />
+              }
+              sendDisabled
+              busy={false}
+              onSend={() => {}}
+            />
+            {!readOnly && (
+              <Button
+                type="text"
+                size="small"
+                danger
+                className="standard-local-asset-discard"
+                aria-label="放弃本机素材草稿"
+                disabled={draft.status === 'saving' || uploadBusy}
+                onClick={onRemove}
+              >
+                放弃本机素材草稿
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -618,6 +553,7 @@ export function ProjectAssetEditor({
         loading={images.loading}
         error={images.error}
         label={state.asset.name || '素材'}
+        currentImage={state.saved.image}
         emptyCount={draft.value.image_settings?.count}
         primaryStale={state.saved.state === 'unconfirmed'}
         disabled={readOnly || generationBusy || busy || blocked}
@@ -764,13 +700,12 @@ export function ProjectAssetEditor({
   const historyActions = <div className="standard-asset-history-actions">{renderActions('history')}</div>;
   return (
     <>
-      <ObjectPanel
-        title={state.asset.name || '未命名素材'}
-        settings={settings}
-        status={status}
-        preview={preview}
-        actions={
-          <>
+      <section className="assetView creation-asset-detail productionAssetView" aria-label={`素材 ${state.asset.name || '未命名素材'}`}>
+        <header className="assetViewHeader">
+          <h2>{state.asset.name || '未命名素材'}</h2>
+          <span>{labels[state.asset.kind]}</span>
+          <div className="standard-asset-object-actions">
+            {status}
             <Button
               type="text"
               aria-label="生成记录"
@@ -782,75 +717,108 @@ export function ProjectAssetEditor({
               }}
             />
             {renderActions('main')}
-          </>
-        }
-      >
-        <AssetInformation
-          value={state.asset}
-          disabled={readOnly || busy || toolBusy || generationBusy || state.recoveryBlocked}
-          onChange={(patch) => session.edit(patch as Partial<AssetDraft>)}
-        />
-        {state.status === 'error' && (
-          <StudioFeedback
-            type="error"
-            title={`素材保存 · ${state.asset.name}`}
-            noticeKey={`asset-save:${asset.id}`}
-            message={state.message}
-            actions={
-              state.recoveryBlocked ? (
-                <>
-                  <Button onClick={downloadDraft}>下载本机恢复记录</Button>
-                  <Button
-                    onClick={async () => {
-                      if (
-                        await confirmAction('明确清除本机素材恢复记录？请先下载原记录备份。服务端素材会保留。', {
-                          className: 'standard-creation-dialog',
-                        })
-                      )
-                        session.discardRecovery();
-                    }}
-                  >
-                    清除本机恢复记录
-                  </Button>
-                </>
-              ) : (
-                <Button disabled={readOnly} onClick={() => void session.retry()}>
-                  重试保存
-                </Button>
-              )
-            }
+            <Button
+              ref={settings.trigger}
+              type="text"
+              aria-label={settings.open ? '收起生成设置' : '展开生成设置'}
+              title={settings.open ? '收起生成设置' : '展开生成设置'}
+              aria-expanded={settings.open}
+              icon={settings.open ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+              onClick={settings.open ? settings.close : settings.reveal}
+            />
+          </div>
+        </header>
+        <div className="assetViewBody">
+          <AssetDetails
+            asset={{
+              ...state.asset,
+              profile: {
+                ...state.asset.profile,
+                ...(state.asset.kind === 'scene' ? { time: state.asset.scene_time } : {}),
+              },
+            }}
+            nameAriaLabel="素材名称"
+            descriptionAriaLabel="描述"
+            disabled={readOnly || busy || toolBusy || generationBusy || state.recoveryBlocked}
+            onChange={({ profile, ...fields }) => {
+              const patch: Partial<AssetDraft> = { ...fields };
+              if (profile) {
+                const { time, ...otherProfile } = profile;
+                patch.profile = otherProfile;
+                if (fields.kind && fields.kind !== state.asset.kind) patch.scene_time = '';
+                else if (state.asset.kind === 'scene') patch.scene_time = time ?? '';
+              }
+              session.edit(patch);
+            }}
           />
-        )}
-        {state.status === 'conflict' && (
-          <StudioFeedback
-            type="warning"
-            title={`素材保存 · ${state.asset.name}`}
-            noticeKey={`asset-save:${asset.id}`}
-            message={state.message}
-            actions={
-              <>
-                <Button onClick={() => void reviewConflict()}>核对最新版本</Button>
-                <Button onClick={downloadDraft}>下载素材草稿</Button>
-              </>
-            }
-          />
-        )}
-        <StandardAssetGeneration
-          asset={state.asset}
-          scope={scope}
-          draft={draft}
-          readOnly={readOnly}
-          disabled={blocked || busy || toolBusy}
-          historyOpen={historyOpen}
-          onCloseHistory={closeHistory}
-          onSaveBeforeGenerate={saveBeforeGenerate}
-          onCandidatesChanged={candidatesChanged}
-          onSubmissionBusyChange={setGenerationBusy}
-          onVersionConflict={versionConflict}
-          candidateHistory={candidateHistory}
-          historyActions={historyActions}
-        />
-      </ObjectPanel>
+          <div className="assetMedia">
+            <section className="productionAssetPreview" aria-label="素材图片预览">{preview}</section>
+            {state.status === 'error' && (
+              <StudioFeedback
+                type="error"
+                title={`素材保存 · ${state.asset.name}`}
+                noticeKey={`asset-save:${asset.id}`}
+                message={state.message}
+                actions={
+                  state.recoveryBlocked ? (
+                    <>
+                      <Button onClick={downloadDraft}>下载本机恢复记录</Button>
+                      <Button
+                        onClick={async () => {
+                          if (
+                            await confirmAction('明确清除本机素材恢复记录？请先下载原记录备份。服务端素材会保留。', {
+                              className: 'standard-creation-dialog',
+                            })
+                          )
+                            session.discardRecovery();
+                        }}
+                      >
+                        清除本机恢复记录
+                      </Button>
+                    </>
+                  ) : (
+                    <Button disabled={readOnly} onClick={() => void session.retry()}>
+                      重试保存
+                    </Button>
+                  )
+                }
+              />
+            )}
+            {state.status === 'conflict' && (
+              <StudioFeedback
+                type="warning"
+                title={`素材保存 · ${state.asset.name}`}
+                noticeKey={`asset-save:${asset.id}`}
+                message={state.message}
+                actions={
+                  <>
+                    <Button onClick={() => void reviewConflict()}>核对最新版本</Button>
+                    <Button onClick={downloadDraft}>下载素材草稿</Button>
+                  </>
+                }
+              />
+            )}
+            <div ref={settings.pane} className="standard-object-settings productionAssetSettings" hidden={!settings.open} aria-label="素材生成设置">
+              <Button type="text" size="small" aria-label="关闭生成设置" title="收起生成设置" icon={<X size={16} />} onClick={settings.close} />
+              <StandardAssetGeneration
+                asset={state.asset}
+                scope={scope}
+                draft={draft}
+                readOnly={readOnly}
+                disabled={blocked || busy || toolBusy}
+                historyOpen={historyOpen}
+                onCloseHistory={closeHistory}
+                onSaveBeforeGenerate={saveBeforeGenerate}
+                onCandidatesChanged={candidatesChanged}
+                onSubmissionBusyChange={setGenerationBusy}
+                onVersionConflict={versionConflict}
+                candidateHistory={candidateHistory}
+                historyActions={historyActions}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
       {showImages && (
         <ImagePicker
           purpose="artwork"

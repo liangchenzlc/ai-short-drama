@@ -21,6 +21,53 @@ function artwork(count: number, kind: 'asset' | 'shot' = 'asset'): ImageGroup {
     })) };
 }
 
+test('asset image group switches the large preview and adopts a selected image', async ({ page }, info) => {
+  const data = await fixture(page, true, String(test.info().project.use.baseURL));
+  data.imageGroups.set('asset:501', artwork(4));
+  await page.goto(`${root}/assets?asset=501`);
+  const preview = page.getByRole('region', { name: '素材图片预览' });
+  await expect(preview.locator('.image-subject')).toHaveCount(1);
+  await preview.getByRole('button', { name: '查看图片 2', exact: true }).click();
+  await expect(preview.getByRole('img', { name: '林晚第 2 张', exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('asset-image-group.png'), animations: 'disabled' });
+  await preview.getByRole('button', { name: '设为主图', exact: true }).click();
+  await expect.poll(() => data.asset.media_id).toBe('9902');
+  await expect(preview.getByRole('button', { name: '图片 2，主图', exact: true })).toBeVisible();
+  await preview.getByRole('button', { name: '查看全部', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '全部图片' }).getByRole('img')).toHaveCount(4);
+  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+});
+
+test('a new single-image candidate keeps the current artwork visible until adoption', async ({ page }) => {
+  const data = await fixture(page, true, String(test.info().project.use.baseURL));
+  const group = artwork(1);
+  group.primary_index = null;
+  group.items[0].media_id = '9902';
+  data.imageGroups.set('asset:501', group);
+  await page.goto(`${root}/assets?asset=501`);
+  const preview = page.getByRole('region', { name: '素材图片预览' });
+  await expect(preview.getByRole('img', { name: '当前主图', exact: true })).toBeVisible();
+  expect(data.asset.media_id).toBe('9901');
+  await preview.getByRole('button', { name: '查看图片 1', exact: true }).click();
+  await expect(preview.getByRole('img', { name: '林晚第 1 张', exact: true })).toBeVisible();
+  await preview.getByRole('button', { name: '设为主图', exact: true }).click();
+  await expect.poll(() => data.asset.media_id).toBe('9902');
+  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+});
+
+test('a first generated image can be explicitly adopted', async ({ page }) => {
+  const data = await fixture(page, true, String(test.info().project.use.baseURL));
+  Object.assign(data.asset, { image: null, media_id: null, state: 'unconfirmed' });
+  const group = artwork(1);
+  group.primary_index = null;
+  data.imageGroups.set('asset:501', group);
+  await page.goto(`${root}/assets?asset=501`);
+  const preview = page.getByRole('region', { name: '素材图片预览' });
+  await preview.getByRole('button', { name: '设为主图', exact: true }).click();
+  await expect.poll(() => data.asset.media_id).toBe('9901');
+  expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
+});
+
 for (const count of [1, 2, 4]) {
   test(`${count} images keep their own subjects, hover toolbars and immediate primary`, async ({ page }) => {
     const data = await fixture(page, true, String(test.info().project.use.baseURL));
@@ -29,9 +76,9 @@ for (const count of [1, 2, 4]) {
     const grid = page.locator('.creation-asset-detail .image-subject-grid');
     await expect(grid).toHaveAttribute('data-image-count', String(count));
     const subjects = grid.locator('.image-subject');
-    await expect(subjects).toHaveCount(count);
+    await expect(subjects).toHaveCount(1);
     await expect(page.locator('.creation-asset-detail .image-group-caption')).toHaveCount(0);
-    await page.locator('.standard-object-heading').hover();
+    await page.locator('.assetViewHeader').hover();
     await expect(subjects.first().locator('.image-subject-toolbar')).toHaveCSS('opacity', '0');
     await subjects.first().hover();
     await expect(subjects.first().locator('.image-subject-toolbar')).toHaveCSS('opacity', '1');
@@ -40,10 +87,10 @@ for (const count of [1, 2, 4]) {
     if (count === 4) await page.screenshot({ path: test.info().outputPath('desktop-four-images.png'), fullPage: true });
     await expect(subjects.first().locator('.image-primary-badge')).toHaveText('主图');
     if (count > 1) {
-      await expect(subjects.nth(1).locator('.image-subject-toolbar')).toHaveCSS('opacity', '0');
-      await subjects.nth(1).hover();
-      await subjects.nth(1).getByRole('button', { name: '将第 2 张设为主图', exact: true }).click();
-      await expect(subjects.nth(1).locator('.image-primary-badge')).toHaveText('主图');
+      await page.getByRole('button', { name: '查看图片 2', exact: true }).click();
+      await subjects.first().hover();
+      await subjects.first().getByRole('button', { name: '将第 2 张设为主图', exact: true }).click();
+      await expect(subjects.first().locator('.image-primary-badge')).toHaveText('主图');
       expect(data.asset.media_id).toBe('9902');
       expect(data.requests.filter(request => request.path.endsWith('/primary') && request.method === 'PUT')).toHaveLength(1);
     }
@@ -68,7 +115,9 @@ test('changing count preserves artwork until admission then reserves four fixed 
   await page.keyboard.press('Escape');
   await expect(page.locator('.creation-asset-detail .image-subject')).toHaveCount(1);
   await page.getByRole('button', { name: '生成图片', exact: true }).click();
-  await expect(page.locator('.creation-asset-detail .image-subject')).toHaveCount(4);
+  await expect(page.locator('.creation-asset-detail .image-subject')).toHaveCount(1);
+  await expect(page.locator('.creation-asset-detail .imageGalleryThumbs button')).toHaveCount(4);
+  await page.getByRole('button', { name: '查看图片 4', exact: true }).click();
   await expect(page.locator('.creation-asset-detail .image-group-state')).toHaveCount(0);
   await expect(page.getByText('第 4 张生成中…', { exact: true })).toBeVisible();
   expect(data.errors).toEqual([]);
@@ -125,19 +174,20 @@ test('an asset preview retries its failed image in place without losing the othe
   });
   await page.goto(`${root}/assets?asset=501`);
   const preview = page.locator('.creation-asset-detail .standard-image-group');
-  await expect(preview.locator('.image-subject')).toHaveCount(2);
+  await expect(preview.locator('.imageGalleryThumbs button')).toHaveCount(2);
   await expect(preview.locator('.image-group-state')).toHaveCount(0);
   const saveStatus = page.getByRole('button', { name: /^保存状态：/ });
   await saveStatus.click();
   await expect(page.locator('.studio-feedback-details').getByText('图片部分完成', { exact: true })).toBeVisible();
   await saveStatus.click();
-  const second = preview.locator('.image-subject').nth(1);
+  await preview.getByRole('button', { name: '查看图片 2', exact: true }).click();
+  const second = preview.locator('.image-subject').first();
   await expect(second.getByText('预览加载失败', { exact: true })).toBeVisible();
-  await expect(preview.locator('.image-subject').first().locator('img')).toBeVisible();
+  await expect(preview.getByRole('button', { name: '图片 1，主图', exact: true })).toBeVisible();
   offline = false;
   await second.getByRole('button', { name: '重新读取第 2 张图片', exact: true }).click();
   await expect.poll(() => second.locator('img').evaluate((node: HTMLImageElement) => node.complete && node.naturalWidth > 0)).toBe(true);
-  await expect(preview.locator('.image-subject')).toHaveCount(2);
+  await expect(preview.locator('.imageGalleryThumbs button')).toHaveCount(2);
   await expect(preview.locator('.image-group-caption')).toHaveCount(0);
   expect(reads).toBeGreaterThanOrEqual(2);
   expect(data.requests.some(request => request.method === 'POST' && request.path === '/ai/generations/image')).toBe(false);
@@ -157,7 +207,8 @@ test('image tools save one position with the original version and no model task 
     return route.fulfill({ json: { id: '70001', item_id: submitted.item_id, operation_type: 'resize', status: 'completed', task_id: null } });
   });
   await page.goto(`${root}/assets?asset=501`);
-  const second = page.locator('.creation-asset-detail .image-subject').nth(1);
+  await page.getByRole('button', { name: '查看图片 2', exact: true }).click();
+  const second = page.locator('.creation-asset-detail .image-subject').first();
   await second.hover(); await second.getByRole('button', { name: '编辑第 2 张图片', exact: true }).click();
   await page.getByRole('menuitem', { name: '调整尺寸', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '调整尺寸', exact: true });
@@ -181,9 +232,11 @@ test('four-image shot preview is shared with asset tools and works at the minimu
   await page.locator('.storyboard-shot-card').first().click();
   const grid = page.locator('.shot-image-candidates .image-subject-grid');
   await expect(grid).toHaveAttribute('data-image-count', '4');
-  await expect(grid.locator('.image-subject')).toHaveCount(4);
-  await grid.locator('.image-subject').nth(1).focus();
-  await expect(grid.locator('.image-subject').nth(1).locator('.image-subject-toolbar')).toHaveCSS('opacity', '1');
+  await expect(grid.locator('.image-subject')).toHaveCount(1);
+  await expect(page.locator('.shot-image-candidates .imageGalleryThumbs i')).toHaveCount(1);
+  await page.getByRole('button', { name: '查看图片 2', exact: true }).click();
+  await grid.locator('.image-subject').first().focus();
+  await expect(grid.locator('.image-subject').first().locator('.image-subject-toolbar')).toHaveCSS('opacity', '1');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: test.info().outputPath('desktop-four-images.png'), fullPage: true });
   expect(data.errors).toEqual([]); expect(data.unexpected).toEqual([]);
@@ -260,7 +313,8 @@ test('crop and keyboard annotation save the chosen position and retain original 
   });
   await page.goto(`${root}/assets?asset=501`);
   async function openTool(name: string) {
-    const second = page.locator('.creation-asset-detail .image-subject').nth(1);
+    await page.getByRole('button', { name: '查看图片 2', exact: true }).click();
+    const second = page.locator('.creation-asset-detail .image-subject').first();
     await second.hover(); await second.getByRole('button', { name: '编辑第 2 张图片', exact: true }).click();
     await page.getByRole('menuitem', { name, exact: true }).click();
     const dialog = page.getByRole('dialog', { name, exact: true });
@@ -294,10 +348,11 @@ test('keyboard focus exposes image tools and opens crop on the desktop', async (
   data.imageGroups.set('asset:501', artwork(4));
   await page.goto(root + '/assets?asset=501');
   const subjects = page.locator('.creation-asset-detail .image-subject');
-  await expect(subjects).toHaveCount(4);
-  await subjects.nth(1).focus();
-  await expect(subjects.nth(1).locator('.image-subject-toolbar')).toHaveCSS('opacity', '1');
-  const edit = subjects.nth(1).getByRole('button', { name: '编辑第 2 张图片', exact: true });
+  await page.getByRole('button', { name: '查看图片 2', exact: true }).click();
+  await expect(subjects).toHaveCount(1);
+  await subjects.first().focus();
+  await expect(subjects.first().locator('.image-subject-toolbar')).toHaveCSS('opacity', '1');
+  const edit = subjects.first().getByRole('button', { name: '编辑第 2 张图片', exact: true });
   await edit.focus(); await edit.press('Enter');
   const crop = page.getByRole('menuitem', { name: '裁切', exact: true });
   await expect(crop).toBeVisible(); await crop.focus(); await crop.press('Enter');

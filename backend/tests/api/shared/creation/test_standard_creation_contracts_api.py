@@ -62,6 +62,7 @@ def test_private_draft_http_contract_keeps_scope_on_route_and_preserves_large_id
         "video_settings": None,
         "reference_media_ids": [],
         "reference_images": [],
+        "video_references": [],
         "draft_version": "9007199254740997",
         "source_version": "3",
         "row_version": "9007199254740997",
@@ -100,6 +101,7 @@ def test_private_draft_http_contract_keeps_scope_on_route_and_preserves_large_id
             assert created.status_code == 201
             assert created.json()["id"] == row["id"]
             assert created.json()["draft_version"] == row["draft_version"]
+            assert created.json()["video_references"] == []
             assert created.json()["created_at"] == row["created_at"]
             updated = await client.patch(target, json={"row_version": row["row_version"]})
             assert updated.status_code == 200

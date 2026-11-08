@@ -8,6 +8,7 @@ export function blankAssetDraft(kind: AssetKind | 'all'): LocalAssetDraft {
     name: '',
     label: '',
     description: '',
+    profile: {},
     prompt: '',
     tags: [],
     scene_time: '',
@@ -20,6 +21,7 @@ export function assetDraftHasInput(draft: LocalAssetDraft) {
   return !!(
     draft.name ||
     draft.description ||
+    Object.values(draft.profile ?? {}).some(Boolean) ||
     draft.prompt ||
     draft.label ||
     draft.tags.length ||
@@ -36,6 +38,7 @@ export function assetDraftBody(draft: LocalAssetDraft): AssetDraft | null {
     name: draft.name.trim(),
     label: draft.label,
     description: draft.description,
+    profile: draft.profile ?? {},
     prompt: draft.prompt,
     tags: draft.tags,
     scene_time: draft.scene_time,
@@ -65,6 +68,7 @@ export function mergeCreatedAsset(created: LibraryAssetRead, draft: LocalAssetDr
     name: draft.name,
     label: draft.label,
     description: draft.description,
+    profile: draft.profile ?? {},
     prompt: draft.prompt,
     tags: draft.tags,
     scene_time: draft.scene_time,

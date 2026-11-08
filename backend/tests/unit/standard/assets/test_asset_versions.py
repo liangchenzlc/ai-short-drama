@@ -106,6 +106,44 @@ def test_create_and_noop_replay_do_not_fabricate_history(session):
     assert [row.id for row in versions(session, item.id)] == [first[0].id]
 
 
+def test_character_profile_is_saved_in_new_immutable_versions(session):
+    item = character(session, profile={"role": "主角", "appearance": "黑色短发"})
+    assert item.profile == {"role": "主角", "appearance": "黑色短发"}
+    first = versions(session, item.id)[0]
+    old_snapshot = copy.deepcopy(first.snapshot_json)
+    old_hash = first.content_hash
+
+    updated = AssetService(session).update(
+        item.id,
+        {"row_version": "1", "profile": {"role": "主角", "appearance": "白发"}},
+    )
+    assert updated.profile["appearance"] == "白发"
+    history = versions(session, item.id)
+    assert len(history) == 2
+    assert history[0].snapshot_json == old_snapshot
+    assert history[0].content_hash == old_hash
+    assert history[1].content_hash != old_hash
+    with session.begin():
+        asset = session.get(Asset, int(item.id))
+        current = AssetVersionService(session).current_snapshot_locked(asset)
+        previous = AssetVersionService(session).snapshot_locked(asset, first.id)
+    assert current["asset"]["profile"]["appearance"] == "白发"
+    assert previous == old_snapshot
+
+
+def test_asset_profile_fields_follow_its_kind(session):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AssetService(session).create(
+            {"kind": "scene", "name": "Cafe", "profile": {"time": "evening"}},
+            project_id=session.info["test_project_id"],
+        )
+    item = character(session)
+    with pytest.raises(WorkflowError):
+        AssetService(session).update(item.id, {"row_version": "1", "profile": {"material": "wood"}})
+
+
 def test_reverting_content_is_new_version_and_state_only_is_not(session):
     image = media(session)
     item = character(session, media_id=str(image.id))

@@ -1,14 +1,14 @@
 # 标准图片组与逐图工具
 
-素材图和分镜图生成后直接成为作品，多张默认第一张为主图，不展示候选或确认采用步骤。
-标准分集界面提供 1／2／4 张；原公共生成接口及画布入口继续共用生成服务、协议适配、任务执行和归档。
+素材图和分镜图生成后保存为候选组，不自动改变作品主图；即使作品尚无主图，也需明确选择。
+单次与批量生成遵守同一规则。标准界面提供 1／2／4 张；公共生成接口及画布入口继续共用生成服务、协议适配、任务执行和归档。
 所有 ID、版本使用十进制字符串，时间为 UTC。
 
 ## 共享图片组
 
 | 方法 | 路径（前缀 `/api/v1`） | 返回／用途 |
 | --- | --- | --- |
-| GET | `/image-groups/current/{asset\|shot}/{target_id}` | 当前组或 null；旧主图首次读取建立兼容组 |
+| GET | `/image-groups/current/{asset\|shot}/{target_id}` | 最新活动组或 null；生成受理后为新候选组 |
 | GET | `/image-groups/history/{asset\|shot}/{target_id}?offset=0&limit=20` | 当前与历史组分页，limit 1–100 |
 | GET | `/image-groups/{group_id}` | 图片组详情 |
 | PUT | `/image-groups/{group_id}/primary` | 设置主图，返回更新后的组 |
@@ -18,9 +18,11 @@
 状态为 `generating/completed/partial/failed`；图位包含 `id/output_index/media_id/url/width/height/item_version/status/error/prompt/history`，
 图位状态为 `generating/ready/failed`。`history` 项为 `{media_id,url,width,height}`，URL 每次读取现签。
 
-图位按 `output_index` 固定，不按完成顺序重排。第一张失败时，终态将序号最小的成功图设为主图并返回提示。
-若来源内容、原主图或用户选择已变化，自动写主图停止，结果仍保存。只改下一次张数不会清空当前组；
-公共图片生成回执的 `image_group_id` 标识受理后建立的新组。
+图位按 `output_index` 固定，不按完成顺序重排；部分成功时，成功项仍是候选，不自动设为主图。
+生成期间或完成后来源资料发生变化时，当前候选组的 `notice` 提醒用户核对。
+作品当前主图仍通过素材／分镜读取；原主图所在组保留在 `history`，可预览并重新选择。
+`current` 返回最新候选组，历史接口返回当前及旧组；选择历史组主图后，可继续从历史中读取并选择其他候选组。
+只改下一次张数不会清空当前组；公共图片生成回执的 `image_group_id` 标识受理后建立的新组。
 
 主图请求体如下，值须使用当前实际读取结果：
 

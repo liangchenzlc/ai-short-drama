@@ -156,7 +156,7 @@ def fill(flow, current, index, data=None):
         from short_drama.service.creation.writing.script.publication import publish
 
         publish(media)
-        if index == 1:
+        if index == 1 and row.primary_mode == "pending":
             flow.groups.write_primary(row, item)
     return flow.groups.current("asset", flow.asset.id)
 
@@ -173,8 +173,269 @@ def operation(flow, current, kind, parameters=None, index=1, **extra):
     return flow.tools.create_operation(body, str(uuid4())), body
 
 
+@pytest.mark.parametrize("kind", ["asset", "shot"])
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("batch", [False, True])
+def test_single_and_batch_results_do_not_replace_the_primary(flow, kind, existing, batch):
+    from short_drama.domain import AIGenerationRecord, Asset, AsyncTask
+    from short_drama.service.creation.storyboard.images.image import ShotImageService
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
+    from short_drama.service.generations.batches.batch import GenerationBatchService
+
+    storyboard = ProjectStoryboardService(flow.session)
+    target_id = flow.asset.id
+    if kind == "shot":
+        shot = storyboard.create(
+            flow.project.id, {"storyboard_version": "1", "script": "雨夜"}, str(uuid4())
+        )["shot"]
+        target_id = shot["id"]
+    before = None
+    if existing:
+        with flow.tools._transaction():
+            values = flow.tools._upload(pixels())
+            media = flow.tools._media(values, (None, flow.project.id), 1)
+            before = str(media.id)
+            if kind == "asset":
+                flow.session.get(Asset, target_id).media_id = media.id
+        if kind == "shot":
+            ShotImageService(flow.session).create(
+                {
+                    "project_id": str(flow.project.id),
+                    "shot_id": target_id,
+                    "media_id": before,
+                    "layout": "single",
+                    "resolution": "2K",
+                    "context_hash": shot["context_hash"],
+                }
+            )
+    if batch:
+        flow.settings.generation_batches_enabled = True
+        service = GenerationBatchService(flow.session, flow.settings)
+        body = {
+            "scene": f"{kind}_image",
+            "config_id": str(flow.config.id),
+            "scope": {"project_id": str(flow.project.id)},
+            "source_ids": [str(target_id)],
+            "mode": "regenerate",
+        }
+        preview = service.preflight(body)
+        assert preview["task_count"] == 1, preview
+        service.create(
+            {**body, "preflight_hash": preview["preflight_hash"], "accepted_ids": [str(target_id)]},
+            str(uuid4()),
+        )
+    elif kind == "asset":
+        group(flow)
+    else:
+        shot = storyboard.get(flow.project.id, target_id)["shot"]
+        flow.generations.create(
+            "image",
+            {
+                "config_id": str(flow.config.id),
+                "input": {"prompt": ""},
+                "parameters": {"count": 1, "resolution": "2K", "aspect": None},
+                "source": {
+                    "scene": "shot_image",
+                    "shot_id": target_id,
+                    "row_version": shot["row_version"],
+                    "context_mode": "saved",
+                    "context_hash": shot["context_hash"],
+                    "layout": "single",
+                },
+            },
+            str(uuid4()),
+        )
+    with flow.tools._transaction():
+        record = flow.session.scalars(select(AIGenerationRecord)).one()
+        task = flow.session.get(AsyncTask, record.task_id)
+        values = flow.tools._upload(pixels(color=(80, 100, 120, 255)))
+        media = flow.tools._media(values, (None, flow.project.id), 1)
+        generated_id = str(media.id)
+        flow.groups.attach(task, record, media.id, 1)
+        flow.groups.finalize(task.id)
+    current = flow.groups.current(kind, target_id)
+    assert current["primary_index"] is None
+    assert flow.groups.detail(current["id"])["items"][0]["media_id"] == generated_id
+    previous = None
+    if existing:
+        history = flow.groups.history(kind, target_id)
+        previous = next(
+            group
+            for group in history["items"]
+            if any(item["media_id"] == before for item in group["items"])
+        )
+        assert previous["items"][0]["url"]
+    if kind == "asset":
+        assert str(flow.library.get(target_id).media_id or "") == (before or "")
+    else:
+        assert (storyboard.get(flow.project.id, target_id)["shot"]["image"] or {}).get(
+            "media_id"
+        ) == before
+    item = current["items"][0]
+    assert item["media_id"] == generated_id
+    flow.groups.primary(
+        current["id"],
+        {
+            "item_id": item["id"],
+            "expected_item_version": item["item_version"],
+            "expected_primary_version": current["primary_version"],
+            "expected_target_version": current["target_version"],
+        },
+    )
+    if kind == "asset":
+        assert str(flow.library.get(target_id).media_id) == generated_id
+    else:
+        assert (
+            storyboard.get(flow.project.id, target_id)["shot"]["image"]["media_id"] == generated_id
+        )
+    if previous:
+        old = flow.groups.detail(previous["id"])
+        old_item = old["items"][0]
+        flow.groups.primary(
+            old["id"],
+            {
+                "item_id": old_item["id"],
+                "expected_item_version": old_item["item_version"],
+                "expected_primary_version": old["primary_version"],
+                "expected_target_version": old["target_version"],
+            },
+        )
+        assert flow.groups.current(kind, target_id)["id"] == old["id"]
+        candidate = flow.groups.detail(current["id"])
+        item = candidate["items"][0]
+        flow.groups.primary(
+            candidate["id"],
+            {
+                "item_id": item["id"],
+                "expected_item_version": item["item_version"],
+                "expected_primary_version": candidate["primary_version"],
+                "expected_target_version": candidate["target_version"],
+            },
+        )
+        assert flow.groups.current(kind, target_id)["id"] == candidate["id"]
+
+
+def test_partial_image_group_does_not_adopt_a_later_successful_result(flow):
+    from short_drama.domain import AIGenerationRecord, AsyncTask
+
+    current = group(flow, 2)
+    with flow.tools._transaction():
+        record = flow.session.scalars(select(AIGenerationRecord)).one()
+        task = flow.session.get(AsyncTask, record.task_id)
+        values = flow.tools._upload(pixels())
+        media = flow.tools._media(values, (None, flow.project.id), 1)
+        flow.groups.attach(task, record, media.id, 2)
+        flow.groups.finalize(task.id)
+    current = flow.groups.current("asset", flow.asset.id)
+    assert current["status"] == "partial"
+    assert current["primary_index"] is None
+    assert current["items"][1]["status"] == "ready"
+    assert flow.library.get(flow.asset.id).media_id is None
+
+
+def test_changed_image_source_is_reported_with_the_saved_candidate(flow):
+    from short_drama.domain import AIGenerationRecord, AsyncTask
+
+    current = group(flow)
+    asset = flow.library.get(flow.asset.id)
+    flow.library.patch(asset.id, {"row_version": str(asset.row_version), "description": "新设定"})
+    with flow.tools._transaction():
+        record = flow.session.scalar(
+            select(AIGenerationRecord).where(AIGenerationRecord.task_id == int(current["task_id"]))
+        )
+        task = flow.session.get(AsyncTask, record.task_id)
+        values = flow.tools._upload(pixels())
+        media = flow.tools._media(values, (None, flow.project.id), 1)
+        flow.groups.attach(task, record, media.id, 1)
+        flow.groups.finalize(task.id)
+    current = flow.groups.current("asset", asset.id)
+    assert current["items"][0]["status"] == "ready"
+    assert current["primary_index"] is None
+    assert "已变化" in current["notice"]
+
+
+def test_candidate_notice_updates_when_the_source_changes_after_completion(flow):
+    from short_drama.domain import AIGenerationRecord, AsyncTask
+
+    current = group(flow)
+    with flow.tools._transaction():
+        record = flow.session.scalar(
+            select(AIGenerationRecord).where(AIGenerationRecord.task_id == int(current["task_id"]))
+        )
+        task = flow.session.get(AsyncTask, record.task_id)
+        values = flow.tools._upload(pixels())
+        media = flow.tools._media(values, (None, flow.project.id), 1)
+        flow.groups.attach(task, record, media.id, 1)
+        flow.groups.finalize(task.id)
+    asset = flow.library.get(flow.asset.id)
+    flow.library.patch(asset.id, {"row_version": str(asset.row_version), "description": "新设定"})
+    assert "已变化" in flow.groups.current("asset", asset.id)["notice"]
+
+
+def test_assistant_image_completion_reports_a_candidate_without_conflict(flow):
+    from short_drama.domain import AIGenerationRecord, AsyncTask, MediaAsset
+    from short_drama.service.assistant.operations.media_settlement import (
+        _result_refs,
+        _settle_media,
+    )
+    from short_drama.service.base import utcnow
+    from short_drama.service.generations.runtime.business_media import adopt_business_media_locked
+
+    current = group(flow)
+    parent = SimpleNamespace(media_usage={"images": {"succeeded": 0}})
+    intent = SimpleNamespace(
+        generation_task_id=int(current["task_id"]),
+        reservation_state="committed",
+        frozen_target={
+            "kind": "asset",
+            "id": str(flow.asset.id),
+            "project_id": str(flow.project.id),
+            "row_version": current["target_version"],
+        },
+        media_kind="image",
+        requested_count=1,
+    )
+    with flow.tools._transaction():
+        record = flow.session.scalar(
+            select(AIGenerationRecord).where(
+                AIGenerationRecord.task_id == intent.generation_task_id
+            )
+        )
+        task = flow.session.get(AsyncTask, intent.generation_task_id)
+        task.status, task.finished_at = "succeeded", utcnow()
+        record.status = "succeeded"
+        values = flow.tools._upload(pixels())
+        media = flow.tools._media(values, (None, flow.project.id), 1)
+        flow.session.add(
+            MediaAsset(
+                id=1001,
+                record_id=record.id,
+                output_index=1,
+                media_id=media.id,
+                media_type="image",
+                name="candidate",
+                row_version=1,
+            )
+        )
+        flow.groups.attach(task, record, media.id, 1)
+        flow.groups.finalize(task.id)
+        flow.session.flush()
+        _settle_media(flow.session, 1, parent, intent, flow.settings)
+        assert intent.status == "succeeded" and intent.error is None
+        assert intent.result["adopted"] is False
+        assert _result_refs([intent])[0]["status"] == "candidate"
+        record.config_snapshot = {**record.config_snapshot, "business_media": intent.frozen_target}
+        adopt_business_media_locked(flow.session, task, record, flow.settings)
+        assert record.response_data["business_adoption"] == {
+            "adopted": False,
+            "status": "candidate",
+        }
+
+
 @pytest.mark.parametrize("count", [1, 2, 4])
-def test_fixed_positions_and_first_result_is_primary(flow, count):
+def test_fixed_positions_and_explicit_first_primary(flow, count):
     current = group(flow, count)
     assert len(current["items"]) == count
     assert all(item["status"] == "generating" for item in current["items"])

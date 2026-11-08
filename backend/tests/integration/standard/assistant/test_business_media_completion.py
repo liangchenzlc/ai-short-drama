@@ -241,7 +241,7 @@ def test_voice_native_archive_adopts_without_agent_loop_and_protects_human_chang
         ("voice", "workbench", False),
         ("canvas", "workbench", False),
         ("video", "workbench", False),
-        ("video", "media_generation", True),
+        ("video", "media_generation", False),
     ],
 )
 def test_sent_media_adoption_uses_current_workbench_permission(

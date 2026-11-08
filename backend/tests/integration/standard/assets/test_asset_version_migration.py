@@ -2,6 +2,7 @@
 
 import json
 import re
+from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select, text
@@ -146,6 +147,116 @@ def test_unknown_drift_stops_before_additive_ddl(migration_mysql_engine, sql, ex
 def _run_backfill(engine, *, write=False):
     with AppSession(engine, autoflush=False) as session, session.begin():
         return backfill(session, apply=write)
+
+
+def test_workbench_profile_migration_preserves_asset_and_version(migration_mysql_engine):
+    engine = migration_mysql_engine
+    _seed_character(engine)
+    assert _run_backfill(engine, write=True)["failures"] == []
+    with engine.begin() as connection:
+        _assert_disposable(connection)
+        original = connection.execute(
+            text("SELECT snapshot_json, content_hash FROM asset_versions WHERE asset_id = 91001")
+        ).one()
+        connection.execute(text("ALTER TABLE assets DROP COLUMN profile"))
+        migration = (
+            Path(__file__).resolve().parents[5]
+            / "docs/database/migrations/2026-11-07-workbench-profile/001_asset_profile.sql"
+        ).read_text(encoding="utf-8")
+        connection.exec_driver_sql(migration)
+        assert (
+            connection.scalar(text("SELECT JSON_LENGTH(profile) FROM assets WHERE id = 91001")) == 0
+        )
+        assert (
+            connection.execute(
+                text(
+                    "SELECT snapshot_json, content_hash FROM asset_versions WHERE asset_id = 91001"
+                )
+            ).one()
+            == original
+        )
+    assert _run_backfill(engine, write=True)["failures"] == []
+
+
+def test_workbench_shot_details_migration_preserves_existing_dialogue(migration_mysql_engine):
+    engine = migration_mysql_engine
+    _seed_character(engine)
+    with engine.begin() as connection:
+        _assert_disposable(connection)
+        connection.execute(
+            text(
+                "INSERT INTO shot_scripts (id,project_id,position,script) "
+                "VALUES (92001,90001,1,'original')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO shot_dialogues (shot_id,row_version,document) "
+                "VALUES (92001,1,:document)"
+            ),
+            {"document": json.dumps({"reviewed": True, "lines": []})},
+        )
+        original = connection.execute(
+            text("SELECT row_version, document FROM shot_dialogues WHERE shot_id = 92001")
+        ).one()
+        connection.execute(text("ALTER TABLE shot_scripts DROP COLUMN details"))
+        migration = (
+            Path(__file__).resolve().parents[5]
+            / "docs/database/migrations/2026-11-07-workbench-profile/002_shot_details.sql"
+        ).read_text(encoding="utf-8")
+        connection.exec_driver_sql(migration)
+        assert (
+            connection.scalar(text("SELECT JSON_LENGTH(details) FROM shot_scripts WHERE id=92001"))
+            == 0
+        )
+        assert (
+            connection.execute(
+                text("SELECT row_version, document FROM shot_dialogues WHERE shot_id = 92001")
+            ).one()
+            == original
+        )
+
+
+def test_workbench_video_reference_migration_preserves_personal_draft(migration_mysql_engine):
+    engine = migration_mysql_engine
+    _seed_character(engine)
+    with engine.begin() as connection:
+        _assert_disposable(connection)
+        connection.execute(
+            text(
+                "INSERT INTO user_creation_drafts "
+                "(id,user_id,project_id,object_id,purpose,input_text) "
+                "VALUES (93001,1,90001,91001,'asset_image','existing input')"
+            )
+        )
+        original = connection.execute(
+            text("SELECT input_text, row_version FROM user_creation_drafts WHERE id=93001")
+        ).one()
+        connection.execute(
+            text(
+                "ALTER TABLE user_creation_drafts "
+                "DROP CHECK ck_user_creation_drafts_video_references, DROP COLUMN video_references"
+            )
+        )
+        migration = (
+            Path(__file__).resolve().parents[5]
+            / "docs/database/migrations/2026-11-07-workbench-profile/003_video_references.sql"
+        ).read_text(encoding="utf-8")
+        connection.exec_driver_sql(migration)
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT JSON_LENGTH(video_references) FROM user_creation_drafts WHERE id=93001"
+                )
+            )
+            == 0
+        )
+        assert (
+            connection.execute(
+                text("SELECT input_text, row_version FROM user_creation_drafts WHERE id=93001")
+            ).one()
+            == original
+        )
 
 
 def test_backfill_current_edit_number_is_one_version_and_reentry_is_noop(migration_mysql_engine):

@@ -11,7 +11,6 @@ from short_drama.domain import (
     AsyncTask,
     MediaAsset,
     MediaFile,
-    MediaRecycleBin,
     ShotImage,
     ShotVideo,
 )
@@ -127,6 +126,143 @@ def adoption(shot):
         "expected_row_version": shot["row_version"],
         "expected_context_hash": shot["video_context_hash"],
     }
+
+
+def test_video_prompt_includes_saved_camera_and_sound_details():
+    with generation_session() as session:
+        flow = setup_video(session)
+        shot = current(flow)
+        flow.storyboard.update(
+            flow.project,
+            shot["id"],
+            {
+                "row_version": shot["row_version"],
+                "details": {"camera_movement": "缓慢推进", "sound": "门铃轻响"},
+            },
+        )
+        shot = current(flow)
+        task, _ = flow.generations.create("video", request(shot), "video-details")
+        detail = flow.generations.detail(task["generation_id"])
+        assert detail["source_snapshot"]["shot"]["details"]["camera_movement"] == "缓慢推进"
+        assert "缓慢推进" in detail["effective_prompt"]
+        assert "门铃轻响" in detail["effective_prompt"]
+
+
+def test_video_prompt_keeps_saved_shot_content_with_a_custom_prompt():
+    with generation_session() as session:
+        flow = setup_video(session)
+        shot = current(flow)
+        shot = flow.storyboard.update(
+            flow.project,
+            shot["id"],
+            {
+                "row_version": shot["row_version"],
+                "title": "雨中回望",
+                "shot_size": "close_up",
+                "video_prompt": "镜头微微晃动",
+            },
+        )["shot"]
+        task, _ = flow.generations.create("video", request(shot), "video-saved-shot")
+        detail = flow.generations.detail(task["generation_id"])
+        assert detail["source_snapshot"]["shot"]["title"] == "雨中回望"
+        assert detail["source_snapshot"]["shot"]["shot_size"] == "close_up"
+        assert "雨中回望" in detail["effective_prompt"]
+        assert "close_up" in detail["effective_prompt"]
+        assert "林晚先抬眼" in detail["effective_prompt"]
+        assert "镜头微微晃动" in detail["effective_prompt"]
+
+
+@pytest.mark.parametrize("references", [[], [101, 102]])
+def test_assistant_video_freezes_explicit_references_and_allows_no_image(references):
+    from short_drama.schemas.assistant.operations.media import AssistantShotVideoRequest
+    from short_drama.service.assistant.operations.media import admit_media_locked
+    from short_drama.service.assistant.operations.shot_video import prepare_shot_video_locked
+    from short_drama.service.creation.storyboard.videos.video_admission import (
+        shot_video_target_matches,
+    )
+
+    with generation_session() as session:
+        flow = setup_video(session)
+        if not references:
+            session.delete(session.scalar(select(ShotImage)))
+        else:
+            session.add(
+                MediaFile(
+                    id=102,
+                    project_id=flow.project,
+                    format_code="image/png",
+                    storage_locator="minio://images/asset.png",
+                    original_name="",
+                )
+            )
+        session.commit()
+        shot = current(flow)
+        values = AssistantShotVideoRequest.model_validate(
+            {
+                "target_kind": "shot_video",
+                "target_id": shot["id"],
+                "row_version": shot["row_version"],
+                "model_config_id": "1",
+                "model_version": "1",
+                "prompt": "人物回头",
+                "reference_media_ids": references,
+            }
+        )
+        with session.begin():
+            payload, target = prepare_shot_video_locked(
+                session, 1, str(flow.project), values, int(shot["row_version"])
+            )
+            assert target["provider_input"]["reference_media_ids"] == references
+            assert shot_video_target_matches(session, 1, target)
+            assert payload["source"]["reference_media_id"] == ("101" if references else None)
+            intent = SimpleNamespace(
+                id=41,
+                operation_id=42,
+                media_kind="video",
+                frozen_request=payload,
+                frozen_target=target,
+            )
+            admitted = admit_media_locked(session, 1, intent, settings)
+            record = session.scalar(
+                select(AIGenerationRecord).where(
+                    AIGenerationRecord.task_id == int(admitted["generation_id"])
+                )
+            )
+            assert record.request_data["input"]["reference_media_ids"] == references
+            assert record.request_data["source_snapshot"]["reference_media_ids"] == list(
+                map(str, references)
+            )
+            assert record.request_data["source_snapshot"]["input_mode"] == (
+                "omni_reference" if references else "text_to_video"
+            )
+
+
+def test_video_can_be_generated_and_adopted_without_a_shot_image():
+    with generation_session() as session:
+        flow = setup_video(session)
+        session.delete(session.scalar(select(ShotImage)))
+        session.commit()
+        shot = current(flow)
+        task, created = flow.generations.create(
+            "video",
+            {
+                "source": {
+                    "scene": "shot_video",
+                    "shot_id": shot["id"],
+                    "row_version": shot["row_version"],
+                    "context_hash": shot["video_context_hash"],
+                }
+            },
+            "text-only-video",
+        )
+        assert created
+        detail = flow.generations.detail(task["generation_id"])
+        assert detail["input"]["reference_media_ids"] == []
+        assert "参考图" not in detail["effective_prompt"]
+        assert "分镜图" not in detail["effective_prompt"]
+        candidate = output(flow, task["generation_id"])
+        MediaAssetService(session, settings, None).apply(candidate, adoption(current(flow)))
+        assert current(flow)["video"]["media_id"] == "201"
 
 
 @pytest.mark.parametrize("layout", ["single", "four", "five", "nine"])
@@ -280,7 +416,11 @@ def test_video_adoption_blocks_concurrent_edits_even_when_stale_is_acknowledged(
         media = MediaAssetService(session, settings, None)
         with pytest.raises(WorkflowError, match="分镜"):
             media.apply(asset_id, {**old, "acknowledge_stale_source": True})
-        applied = media.apply(asset_id, adoption(current(flow)))
+        with pytest.raises(WorkflowError, match="来源"):
+            media.apply(asset_id, adoption(current(flow)))
+        applied = media.apply(
+            asset_id, {**adoption(current(flow)), "acknowledge_stale_source": True}
+        )
         assert applied["media_id"] == "201"
         assert (
             media.apply(asset_id, {**adoption(current(flow)), "acknowledge_stale_source": True})
@@ -300,6 +440,48 @@ def test_video_adoption_blocks_concurrent_edits_even_when_stale_is_acknowledged(
             media.apply(asset_id, {**adoption(current(flow)), "acknowledge_stale_source": True})
         assert caught.value.code == "shot_archived"
         assert session.scalar(select(ShotVideo)).media_id == 201
+
+
+def test_video_adoption_detects_a_changed_unlinked_asset_reference():
+    from short_drama.domain import Asset
+    from short_drama.service.creation.assets.management.assets import AssetService
+    from short_drama.service.creation.drafts.drafts import UserCreationDraftService
+
+    with generation_session() as session:
+        flow = setup_video(session)
+        for identifier in (501, 502):
+            session.add(
+                MediaFile(
+                    id=identifier,
+                    project_id=flow.project,
+                    format_code="image/png",
+                    storage_locator=f"minio://images/{identifier}.png",
+                    original_name="",
+                )
+            )
+        session.commit()
+        asset = AssetService(session).create(
+            {"kind": "prop", "name": "红伞", "media_id": "501"}, project_id=flow.project
+        )
+        shot = current(flow)
+        draft = UserCreationDraftService(session).create_for_scope(
+            flow.project,
+            {
+                "object_id": flow.shot_id,
+                "purpose": "storyboard_video",
+                "model_config_id": "1",
+                "video_references": [{"type": "asset", "asset_id": str(asset.id)}],
+            },
+        )
+        body = request(shot)
+        body["source"].update(draft_id=draft["id"], draft_version=draft["draft_version"])
+        task, _ = flow.generations.create("video", body, "video-unlinked-asset")
+        candidate = output(flow, task["generation_id"])
+        saved = session.get(Asset, asset.id)
+        saved.media_id = 502
+        session.commit()
+        with pytest.raises(WorkflowError, match="来源"):
+            MediaAssetService(session, settings, None).apply(candidate, adoption(current(flow)))
 
 
 def generated_video(flow, key, media_id):
@@ -336,37 +518,116 @@ def confirm_generated_video(flow, task_id):
         )
 
 
-def test_completed_video_becomes_persisted_current_without_an_apply_request():
+def adopt_generated_video(flow, task_id):
+    record = flow.session.scalar(
+        select(AIGenerationRecord).where(AIGenerationRecord.task_id == task_id)
+    )
+    candidate = flow.session.scalar(select(MediaAsset).where(MediaAsset.record_id == record.id))
+    flow.session.commit()
+    return MediaAssetService(flow.session, settings, None).apply(
+        candidate.id, adoption(current(flow))
+    )
+
+
+def test_completed_video_remains_a_candidate_until_explicitly_adopted():
     with generation_session() as session:
         flow = setup_video(session)
         before = current(flow)
         task_id = generated_video(flow, "automatic-video", 201)
         receipt = confirm_generated_video(flow, task_id)
+        assert receipt["status"] == "candidate", receipt
+        assert current(flow)["video"] is None
+        assert current(flow)["row_version"] == before["row_version"]
+        assert confirm_generated_video(flow, task_id) == receipt
+        assert session.get(MediaFile, 201).published_at is None
+        adopt_generated_video(flow, task_id)
         confirmed = current(flow)
-        assert receipt["status"] == "applied", receipt
         assert confirmed["video"]["media_id"] == "201"
         assert int(confirmed["row_version"]) == int(before["row_version"]) + 1
-        assert not confirmed["video"]["is_stale"]
-        assert confirm_generated_video(flow, task_id) == receipt
-        assert current(flow)["row_version"] == confirmed["row_version"]
         assert session.get(MediaFile, 201).published_at is not None
 
 
+def test_regenerated_video_remains_a_candidate_until_explicitly_adopted():
+    with generation_session() as session:
+        flow = setup_video(session)
+        original = generated_video(flow, "original-candidate", 201)
+        confirm_generated_video(flow, original)
+        adopt_generated_video(flow, original)
+        pending = generated_video(flow, "new-candidate", 202)
+        receipt = confirm_generated_video(flow, pending)
+        assert receipt["status"] == "skipped"
+        assert current(flow)["video"]["media_id"] == "201"
+        record = session.scalar(
+            select(AIGenerationRecord).where(AIGenerationRecord.task_id == pending)
+        )
+        candidate = session.scalar(select(MediaAsset).where(MediaAsset.record_id == record.id))
+        session.commit()
+        MediaAssetService(session, settings, None).apply(candidate.id, adoption(current(flow)))
+        assert current(flow)["video"]["media_id"] == "202"
+
+
+def test_assistant_video_completion_keeps_existing_video_until_manual_adoption():
+    from short_drama.schemas.assistant.operations.media import AssistantShotVideoRequest
+    from short_drama.service.assistant.operations.media_settlement import _result_refs
+    from short_drama.service.assistant.operations.shot_video import (
+        prepare_shot_video_locked,
+        settle_shot_video_locked,
+    )
+
+    with generation_session() as session:
+        flow = setup_video(session)
+        original = generated_video(flow, "assistant-original", 201)
+        adopt_generated_video(flow, original)
+        shot = current(flow)
+        values = AssistantShotVideoRequest.model_validate(
+            {
+                "target_kind": "shot_video",
+                "target_id": shot["id"],
+                "row_version": shot["row_version"],
+                "model_config_id": "1",
+                "model_version": "1",
+                "prompt": "人物回头",
+                "reference_media_ids": [101],
+            }
+        )
+        with session.begin():
+            _, target = prepare_shot_video_locked(
+                session, 1, str(flow.project), values, int(shot["row_version"])
+            )
+        pending = generated_video(flow, "assistant-pending", 202)
+        with session.begin():
+            task = session.get(AsyncTask, pending)
+            task.status, task.finished_at = "succeeded", utcnow()
+            record = session.scalar(
+                select(AIGenerationRecord).where(AIGenerationRecord.task_id == pending)
+            )
+            candidate = session.scalar(select(MediaAsset).where(MediaAsset.record_id == record.id))
+            intent = SimpleNamespace(frozen_target=target, operation_id=42)
+            result, status, error = settle_shot_video_locked(session, 1, intent, task, [candidate])
+            assert status == "succeeded" and error is None
+            assert result["adopted"] is False
+            intent.result, intent.status = result, status
+            intent.media_kind, intent.requested_count, intent.generation_task_id = (
+                "video",
+                1,
+                pending,
+            )
+            assert _result_refs([intent])[0]["status"] == "candidate"
+        assert current(flow)["video"]["media_id"] == "201"
+
+
 @pytest.mark.parametrize("newest_first", [False, True])
-def test_parallel_video_completion_keeps_the_newest_successful_task(newest_first):
+def test_parallel_video_completion_keeps_the_first_result_until_manual_adoption(newest_first):
     with generation_session() as session:
         flow = setup_video(session)
         older = generated_video(flow, "older-video", 201)
         newer = generated_video(flow, "newer-video", 202)
         first, second = (newer, older) if newest_first else (older, newer)
         confirm_generated_video(flow, first)
+        adopt_generated_video(flow, first)
         receipt = confirm_generated_video(flow, second)
-        assert current(flow)["video"]["media_id"] == "202"
-        assert receipt["status"] == ("skipped" if newest_first else "applied")
-        if newest_first:
-            assert receipt["code"] == "shot_video_superseded"
-        else:
-            assert session.scalar(select(MediaRecycleBin)).media_id == 201
+        assert current(flow)["video"]["media_id"] == ("202" if newest_first else "201")
+        assert receipt["status"] == "skipped"
 
 
 @pytest.mark.parametrize(
@@ -390,6 +651,7 @@ def test_invalidated_video_result_preserves_the_previous_confirmed_work(change):
         flow = setup_video(session)
         original = generated_video(flow, "existing-video", 201)
         confirm_generated_video(flow, original)
+        adopt_generated_video(flow, original)
         pending = generated_video(flow, "delayed-video", 202)
         shot = current(flow)
         if change in {"script", "title"}:
@@ -448,6 +710,7 @@ def test_worker_completion_exposes_a_safe_warning_when_the_source_has_changed():
         flow = setup_video(session)
         original = generated_video(flow, "original-video", 201)
         confirm_generated_video(flow, original)
+        adopt_generated_video(flow, original)
         pending = generated_video(flow, "delayed-video", 202)
         shot = current(flow)
         flow.storyboard.update(
@@ -493,6 +756,7 @@ def test_unsuccessful_or_other_workflows_do_not_replace_the_current_video(state)
         flow = setup_video(session)
         original = generated_video(flow, "original-video", 201)
         confirm_generated_video(flow, original)
+        adopt_generated_video(flow, original)
         task_id = generated_video(flow, "ignored-video", 202)
         record = session.scalar(
             select(AIGenerationRecord).where(AIGenerationRecord.task_id == task_id)

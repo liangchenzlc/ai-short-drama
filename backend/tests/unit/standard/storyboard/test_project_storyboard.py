@@ -139,6 +139,56 @@ def test_shot_context_is_canonical_and_ignores_image_settings():
     assert len(digest) == 64 and digest == digest.lower()
 
 
+def test_shot_details_are_saved_when_creating_and_participate_in_idempotency():
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
+
+    with generation_session() as session:
+        project_id, _ = setup_storyboard(session)
+        service = ProjectStoryboardService(session)
+        data = {"storyboard_version": "1", "details": {"camera_angle": "俯视"}}
+        created = service.create(project_id, data, "shot-create-details")
+        assert created["shot"]["details"] == {"camera_angle": "俯视"}
+        assert service.get(project_id, created["shot"]["id"])["shot"]["details"] == {
+            "camera_angle": "俯视"
+        }
+        with pytest.raises(WorkflowError, match="幂等键"):
+            service.create(
+                project_id,
+                {**data, "details": {"camera_angle": "仰视"}},
+                "shot-create-details",
+            )
+
+
+def test_shot_details_are_saved_and_update_the_generation_context():
+    from short_drama.service.creation.storyboard.management.storyboard import (
+        ProjectStoryboardService,
+    )
+
+    with generation_session() as session:
+        project_id, _ = setup_storyboard(session)
+        service = ProjectStoryboardService(session)
+        created = service.create(project_id, {"storyboard_version": "1"}, "shot-details")
+        shot = created["shot"]
+        details = {
+            "camera_angle": "平视",
+            "camera_movement": "缓慢推进",
+            "dialogue_note": "她轻声问好",
+            "sound": "门铃轻响",
+        }
+        updated = service.update(
+            project_id, shot["id"], {"row_version": shot["row_version"], "details": details}
+        )["shot"]
+        assert updated["details"] == details
+        assert updated["context_hash"] != shot["context_hash"]
+        assert service.get(project_id, shot["id"])["shot"]["details"] == details
+        assert (
+            service.get_shot_context(project_id, shot["id"])["context"]["shot"]["details"]
+            == details
+        )
+
+
 def test_create_replay_update_reorder_and_archive_preserve_versions_and_rows():
 
     from short_drama.domain.creation.storyboard.management.script import ShotScript

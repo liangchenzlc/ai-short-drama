@@ -13,6 +13,7 @@ export interface AssetRead {
   name: string;
   label: string;
   description: string;
+  profile: Record<string, string>;
   prompt: string;
   tags: string[];
   scene_time: string;
@@ -55,6 +56,7 @@ export interface AssetDraft {
   name: string;
   label: string;
   description: string;
+  profile?: Record<string, string>;
   prompt: string;
   tags: string[];
   scene_time: string;

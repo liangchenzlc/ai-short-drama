@@ -92,6 +92,37 @@ def test_asset_content_hash_ignores_state_image_version_and_tag_order():
     )
 
 
+def test_asset_profile_is_in_generation_context_and_changes_the_hash():
+    from short_drama.service.creation.assets.images.image_context import (
+        asset_image_content,
+        asset_image_content_hash,
+    )
+    from short_drama.service.creation.storyboard.management.context import normalize_shot_context
+
+    values = {
+        "id": 101,
+        "kind": "character",
+        "name": "Lin",
+        "description": "reporter",
+        "prompt": "",
+        "label": "",
+        "tags": [],
+        "scene_time": "",
+        "profile": {"appearance": "short black hair"},
+        "media_id": None,
+        "state": "unconfirmed",
+    }
+    original = SimpleNamespace(**values)
+    changed = SimpleNamespace(**{**values, "profile": {"appearance": "white hair"}})
+    content = asset_image_content(original)
+    assert content["profile"] == values["profile"]
+    assert asset_image_content_hash(content) != asset_image_content_hash(
+        asset_image_content(changed)
+    )
+    shot = normalize_shot_context(shot_id=1, script="", duration_ms=3000, assets=[original])
+    assert shot["assets"][0]["profile"] == values["profile"]
+
+
 @pytest.mark.parametrize(
     "body",
     [
@@ -155,13 +186,54 @@ def test_asset_image_create_freezes_saved_content_without_mutating_asset():
         assert created and summary["source"]["scene"] == "asset_image"
         assert record.request_data["source_snapshot"]["asset"]["name"] == "umbrella"
         assert record.request_data["source_snapshot"]["asset_content_hash"]
-        assert record.request_data["input"]["prompt"] == "umbrella studio photo"
+        assert "umbrella studio photo" in record.request_data["input"]["prompt"]
+        assert "red" in record.request_data["input"]["prompt"]
         assert (asset.media_id, asset.model_id, asset.state, asset.row_version) == (
             None,
             None,
             "unconfirmed",
             7,
         )
+
+
+def test_asset_image_generation_uses_saved_profile_in_the_model_prompt():
+    from sqlalchemy import select
+
+    from short_drama.domain import AIGenerationRecord, Asset
+    from short_drama.service.generations.admission.generation import AIGenerationService
+    from short_drama.service.projects.management.project import ProjectService
+
+    with generation_session() as session:
+        config(session)
+        project = ProjectService(session).create({"name": "Profile generation"})
+        asset = Asset(
+            id=101,
+            project_id=int(project.id),
+            position=1,
+            kind="character",
+            name="Lin",
+            profile={"appearance": "short black hair"},
+            row_version=1,
+        )
+        session.add(asset)
+        session.commit()
+        AIGenerationService(session, settings).create(
+            "image",
+            request(
+                input={"prompt": "dramatic lighting"},
+                source={
+                    "scene": "asset_image",
+                    "asset_id": "101",
+                    "row_version": "1",
+                    "project_id": str(project.id),
+                },
+            ),
+            "asset-profile-image-1",
+        )
+        generated = session.scalar(select(AIGenerationRecord)).request_data
+        assert generated["source_snapshot"]["asset"]["profile"] == asset.profile
+        assert "short black hair" in generated["input"]["prompt"]
+        assert "dramatic lighting" in generated["input"]["prompt"]
 
 
 def test_asset_image_accepts_reference_inputs():

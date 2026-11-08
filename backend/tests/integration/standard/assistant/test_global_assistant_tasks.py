@@ -1218,7 +1218,7 @@ def image_group_workspace(workspace, *, kind="asset"):
                 group.status, group.primary_index, group.primary_mode = "completed", 1, "manual"
                 session.flush()
                 if group_index == 0:
-                    native.write_primary(group, items[0], manual=True)
+                    native.write_primary(group, items[0])
                 groups.append(
                     {
                         "id": str(group.id),
@@ -4283,6 +4283,40 @@ def test_batch_undo_restores_existing_asset_with_a_new_version(task_workspace, a
         row = session.get(Asset, int(reference["id"]))
         assert row.prompt == operation.changes[0]["before"]["prompt"]
         assert row.deleted_at is None and row.row_version == 3
+
+
+def test_batch_undo_restores_character_profile(task_workspace):
+    from short_drama.domain import Asset
+
+    reference = subject_assets(task_workspace)[0]
+    patch = {
+        "actions": [
+            {
+                "action": "update_asset",
+                "asset": reference["id"],
+                "patch": {"row_version": "1", "profile": {"appearance": "黑色短发"}},
+            }
+        ]
+    }
+    _conversation, accepted, _claim, operations = standard_tool_run(
+        task_workspace, "修改角色外貌", [patch], references=[reference]
+    )
+    operation = operations[0]
+    assert operation.status == "succeeded"
+    factory, settings, _model = task_workspace
+    with factory() as session:
+        service = task_service(session, settings)
+        service.control_task(accepted.task.id, {"kind": "stop"}, "stop-before-profile-restore")
+        preview = service.undo_preview(operation.id)
+        assert preview.items[0].allowed
+        service.undo_batch(
+            operation.id,
+            {"preview_hash": preview.preview_hash, "selected_keys": [preview.items[0].key]},
+            "restore-profile",
+        )
+    with factory() as session:
+        task_service(session, settings)
+        assert session.get(Asset, int(reference["id"])).profile == {}
 
 
 def test_batch_undo_restores_deleted_middle_shot_order_and_links(task_workspace):

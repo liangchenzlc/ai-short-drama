@@ -8,11 +8,15 @@ from sqlalchemy.orm import Session
 
 from short_drama.core.exceptions import WorkflowError
 from short_drama.domain import Asset, AssetVersion, CharacterVoice, ShotDialogue
+from short_drama.schemas.creation.assets.management.assets import PROFILE_FIELDS
 
 
 def validate_asset_kind_change(session: Session, asset: Asset, values: Mapping[str, Any]) -> None:
     kind = values.get("kind", asset.kind)
     scene_time = values.get("scene_time", asset.scene_time)
+    profile = values.get("profile", asset.profile) or {}
+    if set(profile) - PROFILE_FIELDS[kind]:
+        raise WorkflowError("invalid_asset", "素材资料与素材类型不匹配", 422)
     if kind != "scene" and scene_time:
         raise WorkflowError("invalid_asset", "仅场景可保存场景时间，请先明确修改场景时间", 422)
     if kind == asset.kind:

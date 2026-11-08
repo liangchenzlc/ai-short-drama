@@ -18,7 +18,7 @@ export function BatchPreview({ scene, selectedIds, eligibleIds, missingIds, outs
   const targets = mode === 'missing' ? missingIds : eligibleIds;
   const label = scene === 'asset_image' ? '资产图片' : scene === 'shot_image' ? '分镜图' : '分镜视频';
   return (
-    <Dialog title="批量生成" onClose={onClose}>
+    <Dialog title="批量生成" className="batchPreviewModal" onClose={onClose}>
       <div className="batchPreviewDialog">
         <div className="batchPreviewSummary"><strong>{selectedIds.length} 项</strong><span>{label}</span></div>
         <label>生成模型<Select aria-label="批量生成模型" value="demo" options={[{ value: 'demo', label: '演示模型' }]} /></label>

@@ -1,6 +1,7 @@
 import { aiModelConfigs } from '@host/api/ai-config/management';
 import { generations } from '@host/api/generations/tasks/requests';
 import { ApiError, errorMessage } from '@host/api/http';
+import { mediaLibrary } from '@host/api/media/library';
 import { AI_CONFIGS_CHANGED } from '@host/features/ai-config/catalog/config-events';
 import { CreationModelSelect } from '@host/features/ai-config/selection/CreationModelSelect';
 import { CreationDraftFeedback } from '@host/features/creation/shared/feedback/CreationDraftFeedback';
@@ -20,18 +21,18 @@ import { taskLabel } from '@host/features/generations/presentation/presentation'
 import { TaskDetail } from '@host/features/generations/tasks/TaskDetail';
 import { attemptStorage, clearAttempt, requestAttempt } from '@host/features/shared/async/request-receipt';
 import { Dialog } from '@host/shared/ui/Dialog';
-import { PreviewImage } from '@host/shared/ui/ImagePreview';
 import { StudioFeedback as Alert, feedbackType } from '@host/shared/ui/StudioFeedback';
 import type { AiModelCapabilitiesDto } from '@host/types/ai-config/api';
-import type { CreationDraftValue } from '@host/types/creation/drafts/requests';
+import type { LibraryAssetRead } from '@host/types/creation/assets/management';
+import type { CreationDraftValue, DraftVideoReference } from '@host/types/creation/drafts/requests';
 import type { PendingShotGeneration } from '@host/types/creation/storyboard/editor/shot-generation-submission';
 import type { PreparedShot } from '@host/types/creation/storyboard/images/shot-image-workflow';
 import type { ShotRead } from '@host/types/creation/storyboard/shots';
 import type { NavigationBarrier } from '@host/types/creation/writing/sessions/writing-navigation';
 import type { MediaAsset } from '@host/types/generations/api';
 import { Button, Alert as InlineAlert, InputNumber, Popover, Spin } from 'antd';
-import { SlidersHorizontal, X } from 'lucide-react';
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Plus, SlidersHorizontal, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 function ShotVideoParameters({
   settings,
   durationMs,
@@ -232,6 +233,9 @@ export function ShotVideoCandidates({
   onCloseSettings,
   historyOpen,
   onHistoryOpenChange,
+  assets,
+  referenceRequest,
+  handledReference,
 }: {
   projectId: string;
   registerBarrier: (barrier: NavigationBarrier | null) => void;
@@ -242,6 +246,9 @@ export function ShotVideoCandidates({
   onOpenSettings: () => void;
   historyOpen: boolean;
   onHistoryOpenChange: (open: boolean) => void;
+  assets: LibraryAssetRead[];
+  referenceRequest: { shotId: string; reference: DraftVideoReference; sequence: number } | null;
+  handledReference: RefObject<number>;
   shot: ShotRead;
   disabled: boolean;
   model: string;
@@ -271,6 +278,27 @@ export function ShotVideoCandidates({
     resolution: shot.video_settings.resolution,
     duration_ms: shot.video_settings.duration_ms ?? shot.duration_ms,
   };
+  const defaults: DraftVideoReference[] = assets
+    .filter((asset) => shot.asset_ids.includes(asset.id) && ['character', 'scene'].includes(asset.kind) && asset.media_id)
+    .map((asset) => ({ type: 'asset', asset_id: asset.id }));
+  const references = draft.value.video_references ?? draft.saved?.video_references ?? defaults;
+  const selectedAssets = references.filter((item): item is Extract<DraftVideoReference, { type: 'asset' }> => item.type === 'asset');
+  const shotReference = references.find((item): item is Extract<DraftVideoReference, { type: 'shot_image' }> => item.type === 'shot_image');
+  const missingReference = selectedAssets.some((item) => !assets.find((asset) => asset.id === item.asset_id)?.media_id);
+  const referenceIds = references.flatMap((item) => item.type === 'shot_image' ? [item.media_id] :
+    [assets.find((asset) => asset.id === item.asset_id)?.media_id].filter((id): id is string => !!id));
+  const referenceCount = new Set(referenceIds).size;
+  useEffect(() => {
+    if (!referenceRequest || referenceRequest.shotId !== shot.id || !draft.loaded || disabled ||
+      handledReference.current === referenceRequest.sequence) return;
+    const snapshot = draft.session.getSnapshot();
+    const current = snapshot.value.video_references ?? snapshot.saved?.video_references ?? defaults;
+    const incoming = referenceRequest.reference;
+    const next = current.filter((item) => incoming.type === 'shot_image' ? item.type !== 'shot_image' :
+      item.type !== 'asset' || item.asset_id !== incoming.asset_id);
+    draft.edit({ video_references: [...next, incoming] });
+    handledReference.current = referenceRequest.sequence;
+  }, [referenceRequest, shot.id, draft.loaded, disabled, JSON.stringify(defaults)]);
   const [modelId, setModelId] = useState<string>();
   const onResolved = useCallback((id: string | undefined) => {
     setModelId(id);
@@ -385,7 +413,8 @@ export function ShotVideoCandidates({
       ? '正在载入个人视频设置…'
       : draft.status === 'error' || draft.status === 'conflict'
         ? '请先处理个人生成设置保存提示。'
-        : videoBlockReason(effectiveShot, modelId, capabilities, capLoading));
+        : missingReference ? '视频参考素材尚无图片，请移除或先生成图片。'
+          : videoBlockReason(effectiveShot, modelId, capabilities, capLoading, referenceCount));
   const sendReason = uncertain
     ? '上次视频请求仍待核对，已保留原请求。'
     : recoveryBlocked
@@ -438,6 +467,8 @@ export function ShotVideoCandidates({
         modelId,
         latestCaps,
         false,
+        new Set((savedDraft.video_references ?? []).flatMap((item) => item.type === 'shot_image' ? [item.media_id] :
+          [assets.find((asset) => asset.id === item.asset_id)?.media_id].filter((id): id is string => !!id))).size,
       );
       if (block) {
         setMessage(block);
@@ -511,6 +542,34 @@ export function ShotVideoCandidates({
     }
   }
 
+  async function adoptVideo(asset: MediaAsset) {
+    if (mutation.current || disabled) return;
+    mutation.current = true;
+    setBusy(true);
+    setMessage('');
+    let prepared: PreparedShot | null = null;
+    try {
+      prepared = await prepareShot();
+      if (!prepared || !prepared.isCurrent() || !alive.current) return;
+      await mediaLibrary.apply(asset.asset_id, {
+        target: { type: 'shot_video', id: prepared.shot.id },
+        expected_media_id: prepared.shot.video?.media_id ?? null,
+        expected_row_version: prepared.shot.row_version,
+        expected_context_hash: prepared.shot.video_context_hash,
+      });
+      if (!alive.current || !prepared.isCurrent()) return;
+      setMessage('已采用视频。');
+      onChanged();
+      void history.refresh();
+    } catch (cause) {
+      if (alive.current) setMessage(errorMessage(cause));
+    } finally {
+      prepared?.release();
+      mutation.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
+
   return (
     <section className={`shot-video-workspace standard-shot-media${settingsOpen ? '' : ' is-settings-collapsed'}`}>
       <div className="standard-object-preview" aria-label="分镜视频预览">
@@ -562,31 +621,31 @@ export function ShotVideoCandidates({
         onClose={onCloseSettings}
       >
         {information}
-        <section className="standard-private-references">
-          <div className="standard-reference-heading">
-            <h4>参考图片</h4>
-            <small>当前分镜主图</small>
-          </div>
-          <div className="standard-video-reference-row">
-            {shot.image?.url ? (
-              <>
-                <PreviewImage
-                  presentation="standard-creation"
-                  src={shot.image.url}
-                  alt="视频生成的分镜参考图"
-                  triggerClassName="standard-video-reference"
-                />
-                <p>
-                  分镜 {String(shot.position).padStart(2, '0')}
-                  <br />
-                  作为视频参考
-                </p>
-              </>
-            ) : (
-              <p className="creation-help">请先生成分镜图或设置主图。</p>
-            )}
-          </div>
-        </section>
+        <div className="shotVideoReferences"><span>视频参考</span>
+          {selectedAssets.map((item) => {
+            const asset = assets.find((value) => value.id === item.asset_id);
+            return <div className="shotReference" key={item.asset_id}>
+              {asset?.image?.url && <img src={asset.image.url} alt="" />}
+              <span>{asset?.name ?? '素材'}{asset?.media_id ? '' : ' · 缺图'}</span>
+              <button type="button" aria-label={`移除参考：${asset?.name ?? '素材'}`} disabled={disabled || busy}
+                onClick={() => draft.edit({ video_references: references.filter((value) => value !== item) })}><X size={12} /></button>
+            </div>;
+          })}
+          {shotReference && <div className="shotReference">
+            {shot.image?.media_id === shotReference.media_id && shot.image.url && <img src={shot.image.url} alt="" />}
+            <span>分镜图</span>
+            <button type="button" aria-label="移除参考：分镜图" disabled={disabled || busy}
+              onClick={() => draft.edit({ video_references: references.filter((item) => item !== shotReference) })}><X size={12} /></button>
+          </div>}
+          <Popover trigger="click" title="添加视频参考" content={<div className="shotReferenceMenu">
+            {assets.filter((asset) => asset.media_id && !selectedAssets.some((item) => item.asset_id === asset.id))
+              .map((asset) => <button type="button" key={asset.id} onClick={() => draft.edit({
+                video_references: [...references, { type: 'asset', asset_id: asset.id }],
+              })}>{asset.image?.url && <img src={asset.image.url} alt="" />}{asset.name}</button>)}
+          </div>}>
+            <Button size="small" type="text" aria-label="添加视频参考" disabled={disabled || busy} icon={<Plus size={15} />} />
+          </Popover>
+        </div>
         <GenerationComposer
           feedbackRef={setModelFeedback}
           purpose="video"
@@ -697,6 +756,11 @@ export function ShotVideoCandidates({
                         {asset.name}
                         {asset.duration_ms ? ` · ${asset.duration_ms / 1000} 秒` : ''}
                       </span>
+                      <Button size="small" aria-label={`采用${asset.name}`} loading={busy}
+                        disabled={disabled || asset.media_id === shot.video?.media_id}
+                        onClick={() => void adoptVideo(asset)}>
+                        {asset.media_id === shot.video?.media_id ? '已采用' : '采用'}
+                      </Button>
                     </div>
                   </article>
                 ))}

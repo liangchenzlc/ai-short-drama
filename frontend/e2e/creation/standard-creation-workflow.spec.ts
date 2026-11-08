@@ -52,6 +52,10 @@ for (const viewport of windows) test('three creation stages fill the desktop at 
     await expect(input).toBeVisible(); await input.fill('保留当前未发送讨论');
     expect((await work.boundingBox())!.width).toBeLessThan(before);
     if (stage !== 'source') await expect(page.getByRole('textbox', { name: '画面要求', exact: true })).toBeVisible();
+    if (stage === 'assets') {
+      const image = await page.locator('.productionAssetPreview .image-subject-grid').boundingBox();
+      expect(Math.abs(image!.width / image!.height - 16 / 9)).toBeLessThan(0.05);
+    }
     await expect(page.getByRole('dialog', { name: /生成设置|AI 创作助手区域/ })).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1 && document.documentElement.scrollHeight <= innerHeight + 1)).toBe(true);
     await page.screenshot({ path: info.outputPath(stage + '-desktop-' + viewport.width + '.png'), animations: 'disabled' });
@@ -67,8 +71,7 @@ test.describe('desktop creation controls', () => {
     await page.setViewportSize({ width, height: 720 });
     for (const kind of ['asset', 'image', 'video']) {
       await page.goto(root + (kind === 'asset' ? '/assets?asset=501' : '/storyboard?shot=101'));
-      if (kind === 'video') await page.getByRole('tab', { name: '分镜视频', exact: true }).click();
-      const settings = page.locator('.standard-object-settings:visible');
+      const settings = page.locator(kind === 'asset' ? '.assetMedia' : `#storyboard-${kind}-settings`);
       const send = settings.getByRole('button', { name: kind === 'video' ? '生成视频' : '生成图片', exact: true });
       await send.scrollIntoViewIfNeeded(); await expect(send).toBeInViewport({ ratio: 1 }); await expect(send).toBeEnabled();
       await expect(settings.getByRole('combobox').last()).toBeVisible();
@@ -109,7 +112,7 @@ for (const assistantOpen of [false, true]) test(`short asset settings keep the c
   await page.setViewportSize({ width: 1440, height: 600 });
   await page.goto(`${root}/assets?asset=501`);
   if (assistantOpen) await page.getByRole('button', { name: 'AI 创作助手', exact: true }).click();
-  const settings = page.locator('.standard-asset-settings-content');
+  const settings = page.locator('.assetMedia');
   const prompt = settings.getByRole('textbox', { name: '画面要求', exact: true });
   const send = settings.getByRole('button', { name: '生成图片', exact: true });
   await expect(send).toBeEnabled();
@@ -136,7 +139,7 @@ test('image and video drafts freeze their own parameters without changing shared
   const imageDraft = state.creationDrafts.get('101:storyboard_image');
   expect(submissions[0].body.source).toMatchObject({ draft_id: imageDraft.id, draft_version: imageDraft.draft_version });
   expect(submissions[0].body.parameters.count).toBe(4); expect(imageDraft.input_text).toBe('私人分镜图要求');
-  await page.getByRole('tab', { name: '分镜视频', exact: true }).click();
+  await page.getByRole('button', { name: '用作视频参考', exact: true }).first().click();
   await page.getByRole('textbox', { name: '视频提示词', exact: true }).fill('私人分镜视频要求');
   await page.getByRole('button', { name: '视频比例与分辨率', exact: true }).click();
   await page.getByRole('dialog', { name: '视频生成选项', exact: true }).getByRole('button', { name: '视频时长 5秒', exact: true }).click();
@@ -144,11 +147,13 @@ test('image and video drafts freeze their own parameters without changing shared
   await page.getByRole('button', { name: '生成视频', exact: true }).click();
   await expect.poll(() => submissions.length).toBe(2);
   const videoDraft = state.creationDrafts.get('101:storyboard_video');
-  expect(submissions[1].body.source).toMatchObject({ draft_id: videoDraft.id, draft_version: videoDraft.draft_version, reference_media_id: shared.image.media_id });
+  expect(submissions[1].body.source).toMatchObject({ draft_id: videoDraft.id, draft_version: videoDraft.draft_version });
+  expect(videoDraft.video_references).toEqual(expect.arrayContaining([
+    { type: 'asset', asset_id: '501' }, { type: 'shot_image', media_id: shared.image.media_id },
+  ]));
   expect(submissions[1].body.parameters.duration_ms).toBe(5000); expect(videoDraft.input_text).toBe('私人分镜视频要求');
   expect(state.shots[0].duration_ms).toBe(shared.duration_ms); expect(state.shots[0].video_settings).toEqual(shared.video_settings);
   expect(state.shots[0].video_prompt).toBe(shared.video_prompt); expect(state.shots[0].asset_ids).toEqual(shared.asset_ids);
-  await page.getByRole('tab', { name: '分镜图', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '画面要求', exact: true })).toHaveText('私人分镜图要求');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
@@ -159,7 +164,6 @@ for (const kind of ['image', 'video'] as const) test(`unknown shot ${kind} uses 
   await page.route(`**/api/v1/ai/generations/${kind}`, route => { keys.push(route.request().headers()['idempotency-key']); return route.fulfill({ status: 503, json: { error: { code: 'OFFLINE', message: '受理回执未确认' } } }); });
   await page.route('**/api/v1/ai/generations/by-idempotency-key?**', route => { const query = new URL(route.request().url()).searchParams; expect(query.get('service_type')).toBe(kind); lookups.push(query.get('idempotency_key')!); return route.fulfill({ json: null }); });
   await page.goto(`${root}/storyboard?shot=101`);
-  if (kind === 'video') await page.getByRole('tab', { name: '分镜视频', exact: true }).click();
   const send = page.getByRole('button', { name: kind === 'image' ? '生成图片' : '生成视频', exact: true });
   await expect(send).toBeEnabled(); await send.click();
   await expect.poll(() => keys.length).toBe(1);
@@ -169,7 +173,6 @@ for (const kind of ['image', 'video'] as const) test(`unknown shot ${kind} uses 
   page.removeAllListeners('dialog');
   page.on('dialog', dialog => { void dialog.accept(); });
   await page.reload();
-  if (kind === 'video') await page.getByRole('tab', { name: '分镜视频', exact: true }).click();
   await openSaveDetails(page);
   await check.click(); await expect.poll(() => lookups.length).toBe(1);
   expect(lookups[0]).toBe(keys[0]); expect(keys).toHaveLength(1); await expect(send).toBeDisabled();
@@ -217,7 +220,6 @@ for (const kind of ['image', 'video'] as const) test(`resolved default ${kind} m
     return route.fulfill({ json: { generation_id: '97001', service_type: kind, status: 'queued' } });
   });
   await page.goto(`${root}/storyboard?shot=101`);
-  if (kind === 'video') await page.getByRole('tab', { name: '分镜视频', exact: true }).click();
   await expect.poll(() => draftRequested).toBe(true);
   const model = page.getByRole('combobox', { name: kind === 'image' ? '分镜生图模型' : '视频模型', exact: true });
   await expect(model).toBeDisabled();
@@ -259,17 +261,19 @@ test('shot reload keeps a local backup and locks editing without confirmation', 
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 
-test('adjacent selection crosses the twenty-shot page boundary and retains the stable shot identity', async ({ page }) => {
+test('左侧加载更多后切换分镜，保持镜头身份', async ({ page }) => {
   const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   await page.goto(`${root}/storyboard?shot=120`);
   const panel = page.locator('.standard-storyboard-panel');
   await expect(panel.getByRole('textbox', { name: '分镜 20 脚本', exact: true })).toBeVisible();
   await expect(page.locator('.storyboard-shot-card')).toHaveCount(20);
-  await panel.getByRole('button', { name: '下一个分镜', exact: true }).click();
+  await page.getByRole('button', { name: '加载更多', exact: true }).click();
+  await expect(page.locator('.storyboard-shot-card')).toHaveCount(40);
+  await page.getByRole('button', { name: '选择分镜 21', exact: true }).click();
   await expect(panel.getByRole('textbox', { name: '分镜 21 脚本', exact: true })).toBeVisible();
   await expect(page).toHaveURL(url => url.searchParams.get('shot') === '121');
   await expect(page.locator('.storyboard-shot-card')).toHaveCount(40);
-  await panel.getByRole('button', { name: '上一个分镜', exact: true }).click();
+  await page.getByRole('button', { name: '选择分镜 20', exact: true }).click();
   await expect(panel.getByRole('textbox', { name: '分镜 20 脚本', exact: true })).toHaveValue(state.shots[19].script);
   await expect(page).toHaveURL(url => url.searchParams.get('shot') === '120');
   expect(state.requests.some(request => request.path === `${root}/shots` && request.query.get('offset') === '20' && request.query.get('limit') === '20')).toBe(true);
@@ -280,7 +284,7 @@ test('desktop storyboard settings and assistant coexist without trapping focus a
   const state = await standardFixture(page);
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(root + '/storyboard?shot=101');
-  const settings = page.locator('.standard-object-settings:visible');
+  const settings = page.locator('#storyboard-image-settings');
   const prompt = settings.getByRole('textbox', { name: '画面要求', exact: true });
   await prompt.fill('保留分镜图要求');
   const output = settings.getByRole('button', { name: '比例与分辨率', exact: true });
@@ -295,9 +299,9 @@ test('desktop storyboard settings and assistant coexist without trapping focus a
   await expect(settings).toBeVisible(); await expect(prompt).toHaveText('保留分镜图要求');
   await prompt.focus(); await expect(prompt).toBeFocused();
   await page.keyboard.press('Escape'); await expect(settings).toBeVisible(); await expect(assistant).toBeVisible();
-  await settings.getByRole('button', { name: '关闭分镜生成设置', exact: true }).click();
-  const toggle = page.getByRole('button', { name: '展开生成设置', exact: true });
-  await expect(toggle).toBeFocused(); await toggle.press('Enter');
+  await page.getByRole('button', { name: '选择分镜 02', exact: true }).click();
+  await page.getByRole('button', { name: '选择分镜 01', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '分镜 1 脚本', exact: true })).toBeVisible();
   await expect(prompt).toHaveText('保留分镜图要求'); await expect(input).toHaveValue('保留助手讨论');
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
@@ -348,7 +352,7 @@ for (const viewport of windows) test('desktop panels retain geometry and reachab
     const layout = page.locator('.standard-creation-layout');
     const list = page.locator('.creation-work-stage');
     const panel = page.locator('.creation-main-panel');
-    const settings = page.locator('.standard-object-settings:visible');
+    const settings = page.locator(stage === 'assets' ? '.assetMedia' : '#storyboard-image-settings');
     await expect(settings).toBeVisible();
     for (const open of [false, true]) {
       if (open) await page.getByRole('button', { name: 'AI 创作助手', exact: true }).click();

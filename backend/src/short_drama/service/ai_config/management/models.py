@@ -2,7 +2,6 @@
 
 from copy import deepcopy
 from datetime import datetime
-from types import SimpleNamespace
 
 from pydantic import SecretStr
 from sqlalchemy import select, update
@@ -229,7 +228,9 @@ class AIModelConfigService(BaseService):
 
     def capabilities(self, identifier):
         from short_drama.ai import GenerationError, capabilities
-        from short_drama.service.ai_config.management.runtime import refresh_runtime_model
+        from short_drama.service.ai_config.management.runtime import (
+            resolved_runtime_capability_cache,
+        )
 
         with self._transaction():
             entity = self._require(self.model, identifier, for_update=False)
@@ -246,17 +247,12 @@ class AIModelConfigService(BaseService):
                         CanvasChannelModel.model_config_id == entity.id
                     )
                 )
-                derived = SimpleNamespace(
-                    **snapshot,
-                    runtime_profile=deepcopy(entity.runtime_profile),
-                    apikey=entity.apikey,
-                    runtime_credentials_cipher=entity.runtime_credentials_cipher,
-                )
                 try:
-                    refresh_runtime_model(derived, binding.channel_key if binding else "")
+                    snapshot["capability_cache"] = resolved_runtime_capability_cache(
+                        entity, binding.channel_key if binding else ""
+                    )
                 except GenerationError:
                     return capabilities({})
-                snapshot["capability_cache"] = derived.capability_cache
             return capabilities(snapshot)
 
     def _versioned_update(self, entity, values, expected_version):

@@ -1,4 +1,7 @@
 export type CreationPurpose = 'asset_image' | 'storyboard_image' | 'storyboard_video';
+export type DraftVideoReference =
+  | { type: 'asset'; asset_id: string }
+  | { type: 'shot_image'; media_id: string };
 
 export interface CreationDraftValue {
   model_config_id: string | null;
@@ -14,6 +17,7 @@ export interface CreationDraftValue {
     duration_ms?: number | null;
   } | null;
   reference_media_ids: string[];
+  video_references?: DraftVideoReference[];
 }
 
 export interface UserCreationDraft extends CreationDraftValue {

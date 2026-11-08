@@ -118,7 +118,9 @@ PATCH 只更新提供的字段，`model_config_id:null` 清除模型。每次受
 
 `source_version` 由服务端在保存时读取，用于追溯当时来源，不是前端缓存的生成许可。生成仍须提交来源的最新 `row_version/content_version/context_hash`。保存成功才能引用 `source.draft_id/draft_version`，二者必须成对；`shot_image` 还须使用 `context_mode=saved`，`asset_image` 须带当前项目 ID。服务端校验本人、对象、用途及版本后冻结草稿；未选模型、模型不一致、来源或草稿版本冲突均阻止生成。
 
-私人图片输入替代本次补充提示词，模型与可见参数在该任务内使用已保存草稿；素材名称、描述、提示词与镜头正文仍由服务端读取，隐藏 `layout` 仍需匹配来源值。私人视频输入仅替代本次视频提示词段，保留镜头正文和当前采用图片，时长不修改脚本时长。任务 `source_snapshot.creation_draft` 保存私人输入、草稿版本及 `source_version/current_source_version`，实际参数在任务 `parameters` 中冻结。来源参考图与私人参考图按永久 ID 合并去重，共同校验 16 张及模型上限；视频仍只使用当前采用分镜图。无私人引用的旧请求沿用原来源语义，素材图、分镜图生成后直接保存到作品图片组，默认第一张主图；标准分镜视频成功归档后自动确定，文本及其他创作结果保留各自审核流程。
+私人图片输入替代本次补充提示词，模型与可见参数在该任务内使用已保存草稿；素材资料、镜头名称、景别、正文及机位／运镜由服务端读取，隐藏 `layout` 仍需匹配来源值。私人视频输入补充镜头正文，时长不修改脚本时长。任务 `source_snapshot.creation_draft` 保存私人输入、草稿版本及 `source_version/current_source_version`，实际参数和媒体身份在任务中冻结。图片参考按永久 ID 合并去重，共同校验 16 张及模型上限；图片和视频的参考分别保存。
+
+视频草稿的 `video_references` 接受 `[{"type":"asset","asset_id":"..."},{"type":"shot_image","media_id":"..."}]`，最多保存 100 个身份，提交时去重并按模型能力及最多 9 张限制校验。首次创建时省略该字段，会带入当前关联且有主图的角色和场景；显式 `[]` 是主动清空，刷新后保持为空。素材身份在提交时解析为当时的主图，分镜图必须属于本镜图片组；所有引用均校验项目、可见性和媒体类型。素材图、分镜图和视频生成后均保留候选，须明确采用。
 
 旧分集版本需离线切换，不叠加历史增量迁移。
 
@@ -196,7 +198,7 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 
 任务和媒体库列表都支持 `source_scene=asset_image&source_id=<素材ID>`。本人按项目内素材身份读取历史，新素材 ID 不继承其他素材任务。任务详情提供 source_snapshot 与 effective_prompt；幂等重放先返回既有任务，不因素材后来编辑而重新生成。
 
-素材和分镜图片任务在准入时建立固定图位，回执返回 `image_group_id`。归档直接保存作品图片组，默认第一张主图，不进入候选采用步骤；第一张失败时在终态使用序号最小的成功图并给出提示。自动更新检查来源内容及原主图，迟到结果不覆盖手动选择。详见[图片组与工具 API](image-groups.md)。
+素材和分镜图片任务在准入时建立固定图位，回执返回 `image_group_id`。归档仅保存候选，第一张成功或部分成功都不会自动改变主图；已有主图保留，空主图也须明确选择。详见[图片组与工具 API](image-groups.md)。
 
 流程素材 confirm 兼容入口仍校验 `row_version/expected_media_id` 及来源确认；媒体库 apply 的分镜入口校验当前目标版本、上下文和已采用媒体，不因生成记录较旧额外要求来源确认。创作模式的主图选择改用图片组 primary API，校验目标、图位和主图版本；未通过的并发写入不自动覆盖。
 
@@ -252,7 +254,7 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 | POST | `/assets/{asset_id}/image-candidates/upload` | multipart 字段 file，真实上传，201/去重200 |
 | POST | `/assets/{asset_id}/confirm` | 确认采用候选，返回素材详情 |
 
-新建字段：`kind/name/label/description/prompt/tags/scene_time`。kind 为 character/scene/prop；名称必填且≤255、label≤120；tags最多20项，每项≤40字符，去首尾空格并去重，空白标签拒绝；scene_time≤60且仅场景可填。
+新建字段：`kind/name/label/description/profile/prompt/tags/scene_time`。kind 为 character/scene/prop；名称必填且≤255、label≤120；tags最多20项，每项≤40字符，去首尾空格并去重，空白标签拒绝；scene_time≤60且仅场景可填。`profile` 是完整替换的类型专属字符串对象：角色允许 `role/gender/age/identity/appearance/personality`，场景允许 `scene_type/location/lighting/environment/atmosphere`，道具允许 `prop_type/material/color/size/condition/appearance/purpose`。每项最多 4000 字符；切换类型须同时清空或替换不属于新类型的资料。角色资料写入新版本快照，不修改旧快照及摘要。
 
 公开 PATCH 支持 `kind`，沿用 `row_version`。每次受理保存均推进 `row_version`；无变化保存保留确认状态、内容 hash 和角色作品历史，不因无变化保存要求额外确认。转为非场景时必须明确清除已有 `scene_time`；角色已有不可变作品历史、声音绑定或对白引用时返回 422 `asset_kind_incompatible`，不删除这些依赖。新角色创建即产生不可变版本，因此不能通过改类型丢弃历史。允许的转换保留通用分镜关联，推进版本并取消确认；受影响媒体继续按原内容上下文判断过期。无权限与行版本冲突仍分别返回 404 与 409。
 
@@ -272,9 +274,9 @@ ID/版本为示例值，调用时使用真实读取值。此来源 input.prompt 
 | PUT | `E/shots/order` | `{storyboard_version,shot_ids}`，必须包含全部活动镜头 |
 | POST | `E/storyboard-results/{generation_id}/apply` | 将候选追加或替换到本项目 |
 
-列表包含 `project_id/storyboard_version/items/total/offset/limit`。单镜读取/新建/编辑返回 `{shot,storyboard_version}`。shot 含 id、position、title、shot_size、script、duration_ms、source_excerpt、row_version、asset_ids、image_settings、context_hash、image、deleted_at，以及下文的视频字段。
+列表包含 `project_id/storyboard_version/items/total/offset/limit`。单镜读取/新建/编辑返回 `{shot,storyboard_version}`。shot 含 id、position、title、shot_size、script、details、duration_ms、source_excerpt、row_version、asset_ids、image_settings、context_hash、image、deleted_at，以及下文的视频字段。
 
-新建需 storyboard_version；编辑需 row_version。可编辑 title（≤255 字符，默认空）、shot_size、script、duration_ms（1000–10000，默认3000）、asset_ids和image_settings。shot_size 可空，非空值固定为 `full_shot/medium_shot/close_up/extreme_close_up/wide_shot/two_shot`；缺失不从脚本猜测。生成候选采用时保存 title 与 shot_size，旧镜头的默认空名称和其他内容保留。名称与景别属于元信息，不加入图片或视频内容 hash，修改仍推进行版本。素材关联为完整集合替换；image_settings若提供必须包含全部字段：`resolution=1K|2K|4K`、`aspect=inherit|16:9|9:16|1:1|4:3|3:4`、`layout=single|four|five|nine`。source_excerpt为生成来源，不通过普通编辑伪造。
+新建需 storyboard_version；编辑需 row_version。可编辑 title（≤255 字符，默认空）、shot_size、script、details、duration_ms（1000–10000，默认3000）、asset_ids 和 image_settings。`details` 完整替换，仅含 `camera_angle/camera_movement/dialogue_note/sound` 字符串，每项最多 4000 字符；对白设想不改变已审核的原生对白。shot_size 可空，非空值固定为 `full_shot/medium_shot/close_up/extreme_close_up/wide_shot/two_shot`。名称、景别和资料纳入生成上下文及内容 hash。素材关联为完整集合替换；image_settings 若提供必须包含全部字段：`resolution=1K|2K|4K`、`aspect=null|16:9|9:16|1:1|4:3|3:4`、`layout=single|four|five|nine`。source_excerpt 为生成来源，不通过普通编辑伪造。
 
 每次受理镜头编辑均推进行版本，包括内容未变化的保存；仅有效修改推进集合版本，无变化保存保留内容 hash。活动分镜最多500个。删除同时核验行版本和集合版本，冲突分别返回 409 `shot_version_conflict/storyboard_version_conflict`；删除后提升两个版本并解绑素材，将剩余活动镜头压紧为连续序号，序号变化的镜头递增 `row_version`，集合版本只提升一次。序号不进入图片或视频内容 hash，已有采用媒体保持有效。删除保留历史媒体与已入轨剪辑，成片按既有规则显示来源已归档，需要明确处理同步变化；不会自动移除剪辑或取消已发出的生成任务，也不再允许编辑、生成或采用到已删除镜头。重复删除返回 404。
 
@@ -320,7 +322,7 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 
 - asset_image：必须带expected_row_version；会添加候选并执行素材确认逻辑，不使用parameters中的生成参数。
 - shot_image：必须带expected_row_version和expected_context_hash，并核对expected_media_id；历史生成记录可在核对当前目标后采用，acknowledge_stale_source保留兼容，不能跳过当前并发版本检查。parameters可补layout/aspect/resolution，但不得与已有生成记录中的值冲突。分镜候选页面省略parameters，采用原生成记录中的参数；当前图片设置不同不应被传成历史图片参数。
-- shot_video：此采用接口保留兼容，标准分镜页面已改为成功归档后自动确定，不再调用它。兼容请求必须带 expected_row_version 和 expected_context_hash（来自分镜的 video_context_hash），并比较 expected_media_id。历史生成记录可在核对当前目标后采用，acknowledge_stale_source 保留兼容，不能绕过当前版本冲突；分镜视频任务的补充参数不得与生成快照冲突。通用视频仍可补充时长与清晰度，但同样需要目标版本与来源核对。单位统一毫秒；同一已采用且来源未变的视频允许重复采用请求返回当前状态。
+- shot_video：明确采用视频候选须带 expected_row_version 和 expected_context_hash（来自分镜的 video_context_hash），并比较 expected_media_id。分镜视频候选必须属于该镜头；来源内容或所选素材主图已变化时须明确传 `acknowledge_stale_source:true`，该确认不能绕过当前版本冲突。生成参数不得与冻结记录冲突；同一已采用且来源未变的视频允许重复采用请求返回当前状态。
 
 生成输出不会因未采用而自动删除；替换旧分镜媒体保留回收记录。HTTP 当前未提供物理媒体删除或自动清理接口。签名URL过期后应重新读取详情。
 
@@ -340,7 +342,7 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 
 旧数据库须先执行 [参考图增量迁移](../database/migrations/2026-09-24-generation-references/README.md)。
 
-## 分镜图生视频
+## 分镜视频生成
 
 旧库还需执行 [分镜视频迁移](../database/migrations/2026-09-28-shot-video/README.md)。分镜 PATCH 新增 `video_prompt`（最多 16000 字符，空表示使用默认内容）、`video_settings:{resolution}`（480p/720p/1080p）。GET 返回 `video_default_prompt`、`video_system_prompt`、`video_context_hash` 及 `video`（播放 URL、时长、清晰度和 is_stale）。已保存图片与视频的兼容字段 `is_stale` 固定为 false，后续修改参数不会使作品失效；图片组的来源变化通过 `notice` 表达。历史 `first_frame_media_id` 字段保留；全能参考任务不填该字段，参考信息保存在生成记录中。
 
@@ -357,13 +359,13 @@ replace需confirm_replace=true；旧镜头归档，新镜头整批创建。来�
 }
 ```
 
-ID、版本及 hash 必须替换为实际读取值。服务端从保存内容装配提示词、时长与清晰度，并校验参考图为本镜当前主图及分镜版本、上下文 token，允许 single/four/five/nine 排版。无私人引用时可传 parameters，但需完整匹配已保存时长与清晰度；服务端仅使用请求参数或模型默认值。引用 `source.draft_id/draft_version` 后，本次提示词段、画幅、时长和清晰度取本人已保存草稿，仍保留镜头正文及采用图校验，仍禁止同时传 input。ModelHub 发送 `functionMode=omni_reference`，输入为 `reference_media_ids`，不用首尾帧字段。生成历史与媒体库支持 `source_scene=shot_video&source_id=<shot_id>`。
+ID、版本及 hash 必须替换为实际读取值。`reference_media_id` 可省略；无参考使用文生视频。引用 `source.draft_id/draft_version` 时，实际参考取已保存草稿：素材解析当前主图，分镜图使用明确选择的媒体。服务端校验镜头版本、上下文、权限及模型能力，并冻结媒体和输入；不能同时传通用 input。ModelHub 有参考时使用 `omni_reference`，不使用首尾帧字段。生成历史与媒体库支持 `source_scene=shot_video&source_id=<shot_id>`。
 
-模型能力返回可选 `video_input:{first_frame,reference_images,duration_seconds,resolutions}`。分镜视频需要 reference_images=true，仅支持首帧的模型不能替代全能参考模式。通用视频仍保留原首尾帧输入，另支持 reference_media_ids（最多 9 张），两种方式不可混用。数组为 NULL 表示尚无该模型的完整本地约束，不等于已验证全部参数；整数秒等协议规则仍由服务端校验。
+模型能力返回可选 `video_input:{first_frame,reference_images,duration_seconds,resolutions}`。有图片参考时需要模型支持参考图片；无参考使用文本路径。通用视频仍保留原首尾帧输入，另支持 reference_media_ids（最多 9 张），两种方式不可混用。数组为 NULL 表示尚无该模型的完整本地约束，不等于已验证全部参数；整数秒等协议规则仍由服务端校验。
 
 视频设置另支持 `video_settings.duration_ms`：可空整数毫秒，1000–3600000 且必须整秒，实际生成范围由模型约束。缺省或 NULL 沿用分镜脚本时长；设置后独立保存，不修改 `shot.duration_ms` 或图片上下文。生成参数与提示词均使用有效视频时长，当前 ModelHub Mini 可设 4–15 秒。
 
-标准 `source.scene=shot_video` 任务成功归档后，在同一事务内自动写入镜头当前视频并发布为项目作品，成片来源读取同一视频槽；不依赖浏览器打开或前端调用采用接口。自动确定仍验证任务租约、作者当前项目权限、活动镜头、来源版本、上下文、参考图和原生音轨，排除画布及 Agent 管理的任务。并行结果按任务提交时间与 ID 比较，较早任务晚到不覆盖较新结果；仅自动回填自身造成的行版本递增可沿同源回执继续，不绕过普通编辑或手动替换的冲突保护。未通过校验时产物保留私人历史、当前视频不变，任务详情通过 `shot_video_auto_apply_skipped` 的固定中文提示说明原因。未成功生成时保留旧视频；已有成片草稿仍须显式同步来源。此次未批量改写既有未采用的历史结果。
+标准 `source.scene=shot_video` 任务成功归档后保留候选，不自动写入镜头视频槽；已有视频及空视频槽均保持原样。用户核对后通过媒体采用接口显式替换，成片继续读取已采用视频；已有成片草稿仍须显式同步来源。原生音轨必须通过技术检查才能采用。
 
 # 成片功能补充
 

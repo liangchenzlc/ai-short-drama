@@ -413,14 +413,14 @@
 
 .sd-tabs {
   display: flex;
-  flex: 0 0 36px;
-  gap: 24px;
-  padding-inline: var(--sd-inline);
+  flex: 0 0 44px;
+  gap: 4px;
+  padding-inline: calc(var(--sd-inline) - 12px);
   border-bottom: 1px solid var(--sd-line);
 }
 .sd-tabs button {
-  height: 36px;
-  padding: 0 0 8px;
+  height: 44px;
+  padding: 0 12px;
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;

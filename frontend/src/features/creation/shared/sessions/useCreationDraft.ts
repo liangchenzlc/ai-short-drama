@@ -31,6 +31,14 @@ function isRecovery(value: unknown): value is DraftRecovery {
     (doc.model_config_id === null || (typeof doc.model_config_id === 'string' && /^\d+$/.test(doc.model_config_id))) &&
     Array.isArray(doc.reference_media_ids) &&
     doc.reference_media_ids.every((id) => typeof id === 'string' && /^\d+$/.test(id)) &&
+    (doc.video_references === undefined ||
+      (Array.isArray(doc.video_references) &&
+        doc.video_references.every(
+          (item) =>
+            item &&
+            ((item.type === 'asset' && /^\d+$/.test(item.asset_id)) ||
+              (item.type === 'shot_image' && /^\d+$/.test(item.media_id))),
+        ))) &&
     (!item.pending ||
       isRecovery({
         row_version: item.pending.version,

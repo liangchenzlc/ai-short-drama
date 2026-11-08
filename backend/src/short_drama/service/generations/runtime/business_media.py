@@ -86,6 +86,19 @@ def adopt_business_media_locked(session, task, record, settings):
     data = record.response_data or {}
     if data.get("business_adoption") is not None:
         return
+    if (
+        target.get("kind") in {"asset", "shot"}
+        and task.service_type in {"image", "video"}
+        and (
+            task.status == "succeeded"
+            or any(item.get("saved") for item in data.get("media_manifest", []))
+        )
+    ):
+        record.response_data = {
+            **data,
+            "business_adoption": {"adopted": False, "status": "candidate"},
+        }
+        return
     dao = BusinessInvocationDAO(session)
     receipt = session.info["business_media_receipts"].get(task.id)
     try:

@@ -108,6 +108,200 @@ def test_unchanged_draft_save_fences_delayed_input_without_changing_generation_v
         )
 
 
+def test_shot_image_freezes_and_uses_saved_title_size_and_script():
+    with generation_session() as session:
+        flow = setup_draft(session)
+        flow.shot = flow.storyboard.update(
+            flow.project,
+            flow.shot["id"],
+            {"row_version": flow.shot["row_version"], "shot_size": "close_up"},
+        )["shot"]
+        draft = flow.drafts.create_for_scope(
+            flow.project,
+            {
+                "object_id": flow.shot["id"],
+                "purpose": "storyboard_image",
+                "model_config_id": "1",
+                "input_text": "胶片色彩",
+            },
+        )
+        result, _ = flow.generations.create("image", image_request(flow, draft), "shot-core-fields")
+        detail = flow.generations.detail(result["generation_id"])
+        assert detail["source_snapshot"]["shot"]["title"] == "夜雨"
+        assert detail["source_snapshot"]["shot"]["shot_size"] == "close_up"
+        assert "夜雨" in detail["input"]["prompt"]
+        assert "close_up" in detail["input"]["prompt"]
+        assert "林晚走进雨夜街口" in detail["input"]["prompt"]
+        assert "胶片色彩" in detail["input"]["prompt"]
+
+
+def test_video_draft_defaults_linked_assets_but_preserves_an_explicit_empty_selection():
+    from short_drama.service.creation.assets.management.assets import AssetService
+
+    with generation_session() as session:
+        flow = setup_draft(session, "video")
+        session.add(
+            MediaFile(
+                id=501,
+                project_id=flow.project,
+                format_code="image/png",
+                storage_locator="minio://images/character.png",
+                original_name="",
+            )
+        )
+        session.commit()
+        asset = AssetService(session).create(
+            {"kind": "character", "name": "Lin", "media_id": "501"},
+            project_id=flow.project,
+        )
+        flow.storyboard.update(
+            flow.project,
+            flow.shot["id"],
+            {"row_version": flow.shot["row_version"], "asset_ids": [str(asset.id)]},
+        )
+        draft = flow.drafts.create_for_scope(
+            flow.project, {"object_id": flow.shot["id"], "purpose": "storyboard_video"}
+        )
+        assert draft["video_references"] == [{"type": "asset", "asset_id": str(asset.id)}]
+        saved = flow.drafts.update_for_scope(
+            flow.project,
+            flow.shot["id"],
+            "storyboard_video",
+            {"row_version": draft["row_version"], "video_references": []},
+        )
+        assert saved["video_references"] == []
+        assert (
+            flow.drafts.get_for_scope(flow.project, flow.shot["id"], "storyboard_video")[
+                "video_references"
+            ]
+            == []
+        )
+        flow.drafts.update_for_scope(
+            flow.project,
+            flow.shot["id"],
+            "storyboard_video",
+            {
+                "row_version": saved["row_version"],
+                "video_references": [{"type": "asset", "asset_id": str(asset.id)}],
+            },
+        )
+        with session.begin():
+            stored = session.scalar(
+                select(UserCreationDraft).where(UserCreationDraft.id == int(draft["id"]))
+            )
+            assert stored.video_references == [{"type": "asset", "asset_id": str(asset.id)}]
+        flow.drafts.delete_for_scope(flow.project, flow.shot["id"], "storyboard_video")
+        cleared = flow.drafts.create_for_scope(
+            flow.project,
+            {"object_id": flow.shot["id"], "purpose": "storyboard_video", "video_references": []},
+        )
+        assert cleared["video_references"] == []
+
+
+def test_video_generation_freezes_only_the_selected_private_references():
+    from short_drama.service.creation.assets.management.assets import AssetService
+
+    with generation_session() as session:
+        flow = setup_video(session)
+        actor(session, flow.project)
+        session.add(
+            MediaFile(
+                id=501,
+                project_id=flow.project,
+                format_code="image/png",
+                storage_locator="minio://images/character.png",
+                original_name="",
+            )
+        )
+        session.commit()
+        asset = AssetService(session).create(
+            {"kind": "character", "name": "Lin", "media_id": "501"},
+            project_id=flow.project,
+        )
+        shot = current(flow)
+        flow.storyboard.update(
+            flow.project,
+            flow.shot_id,
+            {"row_version": shot["row_version"], "asset_ids": [str(asset.id)]},
+        )
+        shot = current(flow)
+        drafts = UserCreationDraftService(session)
+        draft = drafts.create_for_scope(
+            flow.project,
+            {
+                "object_id": flow.shot_id,
+                "purpose": "storyboard_video",
+                "model_config_id": "1",
+                "video_references": [{"type": "asset", "asset_id": str(asset.id)}],
+            },
+        )
+        body = request(shot)
+        body["source"].update(draft_id=draft["id"], draft_version=draft["draft_version"])
+        task, _ = flow.generations.create("video", body, "selected-video-asset")
+        first_task_id = task["generation_id"]
+        frozen = flow.generations.detail(first_task_id)
+        assert frozen["input"]["reference_media_ids"] == ["501"]
+        draft = drafts.update_for_scope(
+            flow.project,
+            flow.shot_id,
+            "storyboard_video",
+            {"row_version": draft["row_version"], "video_references": []},
+        )
+        body["source"].update(draft_version=draft["draft_version"])
+        task, _ = flow.generations.create("video", body, "cleared-video-references")
+        assert flow.generations.detail(task["generation_id"])["input"]["reference_media_ids"] == []
+        assert flow.generations.detail(first_task_id)["input"]["reference_media_ids"] == ["501"]
+
+
+def test_video_draft_accepts_a_selected_shot_image_as_an_independent_reference():
+    with generation_session() as session:
+        flow = setup_video(session)
+        actor(session, flow.project)
+        shot = current(flow)
+        draft = UserCreationDraftService(session).create_for_scope(
+            flow.project,
+            {
+                "object_id": flow.shot_id,
+                "purpose": "storyboard_video",
+                "model_config_id": "1",
+                "video_references": [{"type": "shot_image", "media_id": "101"}],
+            },
+        )
+        body = request(shot)
+        body["source"].update(draft_id=draft["id"], draft_version=draft["draft_version"])
+        task, _ = flow.generations.create("video", body, "selected-shot-image")
+        detail = flow.generations.detail(task["generation_id"])
+        assert detail["input"]["reference_media_ids"] == ["101"]
+        assert detail["source_snapshot"]["reference_media_id"] == "101"
+        assert "分镜图" in detail["effective_prompt"]
+
+
+def test_private_shot_image_reference_can_be_frozen_for_video():
+    with generation_session() as session:
+        flow = setup_video(session)
+        session.info.pop("actor")
+        image = session.get(MediaFile, 101)
+        image.project_id, image.scope_user_id = None, 1
+        session.commit()
+        actor(session, flow.project)
+        shot = current(flow)
+        draft = UserCreationDraftService(session).create_for_scope(
+            flow.project,
+            {
+                "object_id": flow.shot_id,
+                "purpose": "storyboard_video",
+                "model_config_id": "1",
+                "video_references": [{"type": "shot_image", "media_id": "101"}],
+            },
+        )
+        body = request(shot)
+        body["source"].update(draft_id=draft["id"], draft_version=draft["draft_version"])
+        task, _ = flow.generations.create("video", body, "private-video-image")
+        assert flow.generations.detail(task["generation_id"])["input"]["reference_media_ids"] == [
+            "101"
+        ]
+
+
 def test_drafts_are_per_object_purpose_owner_and_versioned():
     with generation_session() as session:
         flow = setup_draft(session)
@@ -199,7 +393,8 @@ def test_saved_private_image_values_enter_frozen_request_without_mutating_work()
         assert created
         detail = flow.generations.detail(result["generation_id"])
         assert detail["parameters"] == {"aspect": "9:16", "resolution": "4K", "count": 2}
-        assert detail["input"]["prompt"] == "只使用侧光"
+        assert "只使用侧光" in detail["input"]["prompt"]
+        assert "林晚走进雨夜街口" in detail["input"]["prompt"]
         assert detail["source"]["layout"] == "four"
         assert detail["source_snapshot"]["creation_draft"]["draft_version"] == "1"
         assert flow.storyboard.get(flow.project, flow.shot["id"])["shot"] == flow.shot
@@ -226,6 +421,42 @@ def test_saved_private_image_values_enter_frozen_request_without_mutating_work()
         assert changed.value.code == "draft_version_conflict"
 
 
+def test_shot_image_prompt_uses_saved_camera_and_asset_profile():
+    from short_drama.service.creation.assets.management.assets import AssetService
+
+    with generation_session() as session:
+        flow = setup_draft(session)
+        asset = AssetService(session).create(
+            {"kind": "character", "name": "Lin", "profile": {"appearance": "short black hair"}},
+            project_id=flow.project,
+        )
+        flow.shot = flow.storyboard.update(
+            flow.project,
+            flow.shot["id"],
+            {
+                "row_version": flow.shot["row_version"],
+                "details": {"camera_angle": "平视"},
+                "asset_ids": [str(asset.id)],
+            },
+        )["shot"]
+        draft = flow.drafts.create_for_scope(
+            flow.project,
+            {
+                "object_id": flow.shot["id"],
+                "purpose": "storyboard_image",
+                "model_config_id": str(flow.model),
+                "input_text": "侧光",
+            },
+        )
+        result, _ = flow.generations.create(
+            "image", image_request(flow, draft), "shot-visual-details"
+        )
+        detail = flow.generations.detail(result["generation_id"])
+        assert "平视" in detail["input"]["prompt"]
+        assert "short black hair" in detail["input"]["prompt"]
+        assert "侧光" in detail["input"]["prompt"]
+
+
 @pytest.mark.parametrize("prompt_length", [6, 16000])
 def test_private_video_keeps_current_adopted_image_script_and_source_checks(prompt_length):
     with generation_session() as session:
@@ -242,6 +473,7 @@ def test_private_video_keeps_current_adopted_image_script_and_source_checks(prom
                 "model_config_id": "1",
                 "input_text": prompt,
                 "video_settings": {"duration_ms": 7000, "resolution": "480p"},
+                "video_references": [{"type": "shot_image", "media_id": "101"}],
             },
         )
         body = request(shot)

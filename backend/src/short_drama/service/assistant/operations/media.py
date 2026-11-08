@@ -130,6 +130,12 @@ def admit_media_locked(session, owner, intent, settings):
                 "native_speech",
             }
         }
+        if intent.media_kind == "video" and snapshot.get("context_hash"):
+            references = list(map(str, request["input"].get("reference_media_ids", [])))
+            request["source_snapshot"]["reference_media_ids"] = references
+            request["source_snapshot"]["input_mode"] = (
+                "omni_reference" if references else "text_to_video"
+            )
         request.pop("business_intent", None)
         return request
 
@@ -335,6 +341,12 @@ def submit_generation_batch_locked(session, identity, values, receipt_id, settin
                         "character_id",
                     }
                 }
+                if item.target_kind == "shot_video":
+                    references = list(map(str, request["input"].get("reference_media_ids", [])))
+                    request["source_snapshot"]["reference_media_ids"] = references
+                    request["source_snapshot"]["input_mode"] = (
+                        "omni_reference" if references else "text_to_video"
+                    )
                 request.pop("business_intent", None)
                 return request
 
