@@ -72,6 +72,26 @@ def initialize(flow, count=1):
     flow.session.info["actor"] = actor()
 
 
+@pytest.mark.parametrize("kind", ["crop", "split"])
+def test_older_generation_does_not_replace_edited_newer_primary(flow, kind):
+    flow.session.info["actor"] = actor()
+    flow.asset = create_asset(flow)
+    older = submit(flow, flow.asset)
+    newer = submit(flow, flow.asset)
+    assert drain(flow, newer) == "succeeded"
+    flow.session.expire_all()
+    parameters = {"width": 0.5} if kind == "crop" else {"rows": 2, "columns": 2}
+    tools, _, operation = prepare(flow, kind, parameters)
+    tools.execute_operation(operation["id"])
+    edited = tools.current("asset", flow.asset.id)
+    media_id = edited["items"][0]["media_id"]
+    assert drain(flow, older) == "succeeded"
+    flow.session.expire_all()
+    current = tools.current("asset", flow.asset.id)
+    assert current["id"] == edited["id"]
+    assert current["items"][0]["media_id"] == media_id
+
+
 def test_image_group_migration_reentry_rejects_disabled_check(migration_mysql_engine):
     from scripts.image_groups_ddl import apply_ddl
 

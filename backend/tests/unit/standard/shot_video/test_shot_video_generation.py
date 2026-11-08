@@ -442,6 +442,33 @@ def test_video_adoption_blocks_concurrent_edits_even_when_stale_is_acknowledged(
         assert session.scalar(select(ShotVideo)).media_id == 201
 
 
+def test_historical_video_without_a_frozen_input_context_can_be_confirmed():
+    with generation_session() as session:
+        flow = setup_video(session)
+        task, _ = flow.generations.create("video", request(current(flow)), "historical-video")
+        asset_id = output(flow, task["generation_id"])
+        record = session.scalar(
+            select(AIGenerationRecord).where(
+                AIGenerationRecord.task_id == int(task["generation_id"])
+            )
+        )
+        snapshot = dict(record.request_data["source_snapshot"])
+        for key in (
+            "generation_context_hash",
+            "reference_tracks_primary",
+            "confirmed_video_media_id",
+        ):
+            snapshot.pop(key)
+        record.request_data = {**record.request_data, "source_snapshot": snapshot}
+        session.commit()
+        media = MediaAssetService(session, settings, None)
+        with pytest.raises(WorkflowError) as changed:
+            media.apply(asset_id, adoption(current(flow)))
+        assert changed.value.code == "shot_video_source_changed"
+        media.apply(asset_id, {**adoption(current(flow)), "acknowledge_stale_source": True})
+        assert current(flow)["video"]["media_id"] == "201"
+
+
 def test_video_adoption_detects_a_changed_unlinked_asset_reference():
     from short_drama.domain import Asset
     from short_drama.service.creation.assets.management.assets import AssetService
@@ -484,8 +511,8 @@ def test_video_adoption_detects_a_changed_unlinked_asset_reference():
             MediaAssetService(session, settings, None).apply(candidate, adoption(current(flow)))
 
 
-def generated_video(flow, key, media_id):
-    task, _ = flow.generations.create("video", request(current(flow)), key)
+def generated_video(flow, key, media_id, body=None):
+    task, _ = flow.generations.create("video", body or request(current(flow)), key)
     asset_id = output(flow, task["generation_id"], media_id)
     session = flow.session
     saved_task = session.get(AsyncTask, int(task["generation_id"]))
@@ -541,6 +568,157 @@ def test_completed_video_is_applied_automatically():
         assert int(confirmed["row_version"]) == int(before["row_version"]) + 1
         assert confirm_generated_video(flow, task_id) == receipt
         assert session.get(MediaFile, 201).published_at is not None
+
+
+@pytest.mark.parametrize(
+    ("image_change", "selected_image"), [("add", False), ("replace", False), ("replace", True)]
+)
+def test_video_is_applied_when_its_selected_references_are_unchanged(image_change, selected_image):
+    from short_drama.service.creation.drafts.drafts import UserCreationDraftService
+
+    with generation_session() as session:
+        flow = setup_video(session)
+        images = ShotImageService(session)
+        image = session.scalar(select(ShotImage))
+        session.commit()
+        if image_change == "add":
+            images.delete(image.id)
+        shot = current(flow)
+        draft = UserCreationDraftService(session).create_for_scope(
+            flow.project,
+            {
+                "object_id": flow.shot_id,
+                "purpose": "storyboard_video",
+                "model_config_id": "1",
+                "video_references": (
+                    [{"type": "shot_image", "media_id": "101"}] if selected_image else []
+                ),
+            },
+        )
+        body = {
+            "source": {
+                "scene": "shot_video",
+                "shot_id": shot["id"],
+                "row_version": shot["row_version"],
+                "context_hash": shot["video_context_hash"],
+                "draft_id": draft["id"],
+                "draft_version": draft["draft_version"],
+            }
+        }
+        pending = generated_video(flow, "text-video", 201, body)
+        session.add(
+            MediaFile(
+                id=102,
+                project_id=flow.project,
+                format_code="image/png",
+                storage_locator="minio://images/new.png",
+                original_name="",
+            )
+        )
+        session.commit()
+        if image_change == "add":
+            images.create(
+                {
+                    "project_id": flow.project,
+                    "shot_id": flow.shot_id,
+                    "media_id": "102",
+                    "layout": "single",
+                    "resolution": "2K",
+                    "context_hash": shot["context_hash"],
+                }
+            )
+        else:
+            images.update(image.id, {"media_id": "102"})
+        receipt = confirm_generated_video(flow, pending)
+        assert receipt["status"] == "applied", receipt
+        assert current(flow)["video"]["media_id"] == "201"
+
+
+def test_video_is_not_applied_after_private_references_change():
+    from short_drama.service.creation.drafts.drafts import UserCreationDraftService
+
+    with generation_session() as session:
+        flow = setup_video(session)
+        shot = current(flow)
+        drafts = UserCreationDraftService(session)
+        draft = drafts.create_for_scope(
+            flow.project,
+            {
+                "object_id": flow.shot_id,
+                "purpose": "storyboard_video",
+                "model_config_id": "1",
+                "video_references": [],
+            },
+        )
+        body = request(shot)
+        body["source"].update(draft_id=draft["id"], draft_version=draft["draft_version"])
+        pending = generated_video(flow, "changed-video-references", 201, body)
+        drafts.update_for_scope(
+            flow.project,
+            flow.shot_id,
+            "storyboard_video",
+            {
+                "row_version": draft["row_version"],
+                "video_references": [{"type": "shot_image", "media_id": "101"}],
+            },
+        )
+        assert confirm_generated_video(flow, pending)["status"] == "skipped"
+        assert current(flow)["video"] is None
+        media = MediaAssetService(session, settings, None)
+        with pytest.raises(WorkflowError) as changed:
+            media.apply(301, adoption(current(flow)))
+        assert changed.value.code == "shot_video_source_changed"
+        media.apply(301, {**adoption(current(flow)), "acknowledge_stale_source": True})
+        assert current(flow)["video"]["media_id"] == "201"
+
+
+def test_delayed_video_does_not_replace_a_manually_chosen_video():
+    with generation_session() as session:
+        flow = setup_video(session)
+        older = generated_video(flow, "manually-selected-video", 201)
+        pending = generated_video(flow, "pending-video", 202)
+        adopt_generated_video(flow, older)
+        assert confirm_generated_video(flow, pending)["status"] == "skipped"
+        assert current(flow)["video"]["media_id"] == "201"
+
+
+def test_newer_text_video_supersedes_older_video_after_unselected_image_changes():
+    from short_drama.service.creation.drafts.drafts import UserCreationDraftService
+
+    with generation_session() as session:
+        flow = setup_video(session)
+        draft = UserCreationDraftService(session).create_for_scope(
+            flow.project,
+            {
+                "object_id": flow.shot_id,
+                "purpose": "storyboard_video",
+                "model_config_id": "1",
+                "video_references": [],
+            },
+        )
+
+        def body():
+            value = request(current(flow))
+            value["source"].update(draft_id=draft["id"], draft_version=draft["draft_version"])
+            return value
+
+        older = generated_video(flow, "text-video-before-image", 201, body())
+        image = session.scalar(select(ShotImage))
+        session.add(
+            MediaFile(
+                id=102,
+                project_id=flow.project,
+                format_code="image/png",
+                storage_locator="minio://images/new.png",
+                original_name="",
+            )
+        )
+        session.commit()
+        ShotImageService(session).update(image.id, {"media_id": "102"})
+        newer = generated_video(flow, "text-video-after-image", 202, body())
+        assert confirm_generated_video(flow, older)["status"] == "applied"
+        assert confirm_generated_video(flow, newer)["status"] == "applied"
+        assert current(flow)["video"]["media_id"] == "202"
 
 
 def test_regenerated_video_replaces_the_current_video():

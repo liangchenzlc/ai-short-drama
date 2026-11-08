@@ -335,6 +335,50 @@ def test_partial_image_group_adopts_the_successful_result(flow):
     assert str(flow.library.get(flow.asset.id).media_id) == current["items"][1]["media_id"]
 
 
+def test_asset_batch_uses_form_settings_instead_of_private_draft(flow):
+    from short_drama.domain import AIGenerationRecord
+    from short_drama.service.creation.drafts.drafts import UserCreationDraftService
+    from short_drama.service.generations.batches.batch import GenerationBatchService
+
+    UserCreationDraftService(flow.session).create_for_scope(
+        flow.project.id,
+        {
+            "object_id": str(flow.asset.id),
+            "purpose": "asset_image",
+            "model_config_id": str(flow.config.id),
+            "input_text": "红色灯笼",
+            "image_settings": {"aspect": "9:16", "resolution": "4K", "count": 1},
+        },
+    )
+    flow.settings.generation_batches_enabled = True
+    service = GenerationBatchService(flow.session, flow.settings)
+    body = {
+        "scene": "asset_image",
+        "config_id": str(flow.config.id),
+        "scope": {"project_id": str(flow.project.id)},
+        "source_ids": [str(flow.asset.id)],
+        "count": 2,
+        "asset_parameters": {"aspect": "16:9", "resolution": "2K"},
+    }
+    preview = service.preflight(body)
+    assert preview["task_count"] == 1, preview
+    assert preview["items"][0]["parameters"] == {"aspect": "16:9", "resolution": "2K", "count": 2}
+    automatic = service.preflight({**body, "asset_parameters": {}})
+    assert automatic["items"][0]["parameters"] == {"aspect": None, "resolution": None, "count": 2}
+    service.create(
+        {**body, "preflight_hash": preview["preflight_hash"], "accepted_ids": body["source_ids"]},
+        str(uuid4()),
+    )
+    record = flow.session.scalars(select(AIGenerationRecord)).one()
+    assert record.request_data["parameters"] == preview["items"][0]["parameters"]
+    assert record.request_data["source_snapshot"]["creation_draft"]["image_settings"] == {
+        "aspect": "16:9",
+        "resolution": "2K",
+        "count": 2,
+    }
+    assert "红色灯笼" in record.request_data["input"]["prompt"]
+
+
 def test_changed_image_source_still_becomes_the_primary(flow):
     from short_drama.domain import AIGenerationRecord, AsyncTask
 
@@ -424,6 +468,8 @@ def test_fixed_positions_and_explicit_first_primary(flow, count):
 
 
 def test_manual_primary_survives_late_first_result_and_version_conflict(flow):
+    from short_drama.domain import AIGenerationRecord, AsyncTask
+
     current = fill(flow, group(flow, 4), 2)
     payload = {
         "item_id": current["items"][1]["id"],
@@ -432,11 +478,58 @@ def test_manual_primary_survives_late_first_result_and_version_conflict(flow):
         "expected_target_version": current["target_version"],
     }
     selected = flow.groups.primary(current["id"], payload)
-    current = fill(flow, selected, 1)
+    with flow.tools._transaction():
+        record = flow.session.scalar(
+            select(AIGenerationRecord).where(AIGenerationRecord.task_id == int(selected["task_id"]))
+        )
+        task = flow.session.get(AsyncTask, record.task_id)
+        media = flow.tools._media(flow.tools._upload(pixels()), (None, flow.project.id), 1)
+        flow.groups.attach(task, record, media.id, 1)
+    current = flow.groups.current("asset", flow.asset.id)
     assert current["primary_index"] == 2
     assert str(flow.library.get(flow.asset.id).media_id) == current["items"][1]["media_id"]
     with pytest.raises(WorkflowError, match="主图或图片已变化"):
         flow.groups.primary(current["id"], payload)
+
+
+@pytest.mark.parametrize("operation_kind", ["crop", "split"])
+def test_older_generation_cannot_replace_edited_newer_primary(flow, operation_kind):
+    from short_drama.domain import AIGenerationRecord, AsyncTask, MediaAsset
+
+    older, newer = group(flow), group(flow)
+    with flow.tools._transaction():
+        record = flow.session.scalar(
+            select(AIGenerationRecord).where(AIGenerationRecord.task_id == int(newer["task_id"]))
+        )
+        task = flow.session.get(AsyncTask, record.task_id)
+        media = flow.tools._media(flow.tools._upload(pixels()), (None, flow.project.id), 1)
+        flow.session.add(
+            MediaAsset(
+                id=1001,
+                record_id=record.id,
+                output_index=1,
+                media_id=media.id,
+                media_type="image",
+                name="generated",
+                row_version=1,
+            )
+        )
+        flow.groups.attach(task, record, media.id, 1)
+    newer = flow.groups.current("asset", flow.asset.id)
+    parameters = {"width": 0.5} if operation_kind == "crop" else {"rows": 2, "columns": 2}
+    created, _ = operation(flow, newer, operation_kind, parameters)
+    flow.tools.execute_operation(created["id"])
+    edited = flow.groups.current("asset", flow.asset.id)
+    edited_media = edited["items"][0]["media_id"]
+    with flow.tools._transaction():
+        record = flow.session.scalar(
+            select(AIGenerationRecord).where(AIGenerationRecord.task_id == int(older["task_id"]))
+        )
+        task = flow.session.get(AsyncTask, record.task_id)
+        media = flow.tools._media(flow.tools._upload(pixels()), (None, flow.project.id), 1)
+        flow.groups.attach(task, record, media.id, 1)
+    assert str(flow.library.get(flow.asset.id).media_id) == edited_media
+    assert flow.groups.current("asset", flow.asset.id)["id"] == edited["id"]
 
 
 def test_crop_and_nonprimary_edit_preserve_positions_and_originals(flow):

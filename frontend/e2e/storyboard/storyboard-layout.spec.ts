@@ -153,6 +153,47 @@ test('已有视频保留到用户明确采用候选，并提交当前版本', as
   expect(state.errors).toEqual([]);
 });
 
+test('视频来源变化后取消不会采用，确认后携带确认标记', async ({ page }, info) => {
+  const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
+  const candidate = { asset_id: '7009', record_id: '8009', generation_id: '9009', media_id: '9409',
+    media_type: 'video', name: '旧来源视频', row_version: '1', url: null, duration_ms: 3000,
+    source: { scene: 'shot_video', shot_id: '101' } };
+  const requests: any[] = [];
+  await page.route('**/api/v1/media-library/items**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/7009/apply')) {
+      const body = route.request().postDataJSON();
+      requests.push(body);
+      if (!body.acknowledge_stale_source)
+        return route.fulfill({ status: 409, json: { error: { code: 'shot_video_source_changed' } } });
+      state.shots[0].video = { media_id: candidate.media_id, media_asset_id: candidate.asset_id,
+        url: null, resolution: '720p', duration_ms: 3000, first_frame_media_id: null, is_stale: false };
+      return route.fulfill({ json: { media_id: candidate.media_id } });
+    }
+    if (url.pathname.endsWith('/items') && url.searchParams.get('media_type') === 'video')
+      return route.fulfill({ json: { items: [candidate], total: 1, offset: 0, limit: 20 } });
+    return route.fallback();
+  });
+  await page.goto(`${root}/storyboard?shot=101`);
+  await page.getByRole('button', { name: '视频记录', exact: true }).click();
+  const history = page.getByRole('dialog', { name: '分镜视频生成记录', exact: true });
+  await history.getByRole('button', { name: '采用旧来源视频', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: '视频来源已变化', exact: true });
+  await expect(confirmation).toBeVisible();
+  await confirmation.screenshot({ path: info.outputPath('视频来源确认.png'), animations: 'disabled' });
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click();
+  expect(requests).toHaveLength(1);
+  expect(state.shots[0].video).toBeNull();
+  await history.getByRole('button', { name: '采用旧来源视频', exact: true }).click();
+  await confirmation.getByRole('button', { name: '确认采用', exact: true }).click();
+  await expect.poll(() => requests).toHaveLength(3);
+  expect(requests[2]).toMatchObject({ acknowledge_stale_source: true,
+    target: { type: 'shot_video', id: '101' }, expected_row_version: '1',
+    expected_context_hash: 'a'.repeat(64) });
+  await expect.poll(() => state.shots[0].video?.media_id).toBe('9409');
+  expect(state.errors).toEqual([]);
+});
+
 test('新分镜图候选保留旧主图并支持单张主动采用', async ({ page }) => {
   const state = await fixture(page, true, new URL(test.info().project.use.baseURL!).origin);
   state.imageGroups.set('shot:101', {

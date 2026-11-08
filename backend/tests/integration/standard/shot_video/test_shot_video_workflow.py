@@ -49,6 +49,87 @@ class VideoProvider:
         )
 
 
+def test_text_video_worker_applies_after_an_unselected_image_is_added(flow):
+    from short_drama.service.creation.drafts.drafts import UserCreationDraftService
+
+    class TextVideoProvider(VideoProvider):
+        def submit(self, snapshot, request, *_args, **kwargs):
+            assert request["input"]["reference_media_ids"] == []
+            data = b"\x00\x00\x00\x18ftypmp42" + b"\0" * 24
+            return GenerationResult(
+                status="succeeded",
+                adapter=kwargs["adapter"],
+                outputs=[{"base64": base64.b64encode(data).decode()}],
+            )
+
+    flow.session.info["actor"] = fixture_actor()
+    model = AIModelConfigService(flow.session).create(
+        {
+            "service_type": "video",
+            "name": "controlled text video",
+            "provider": "modelhub",
+            "model_key": "seedance-2.0-mini",
+            "base_url": "https://api.modelhub.cc",
+        }
+    )
+    storyboard = ProjectStoryboardService(flow.session)
+    shot = storyboard.create(
+        flow.project.id,
+        {"storyboard_version": "1", "script": "镜头缓慢推进。", "duration_ms": 5000},
+        "text-video-fixture",
+    )["shot"]
+    draft = UserCreationDraftService(flow.session).create_for_scope(
+        flow.project.id,
+        {
+            "object_id": shot["id"],
+            "purpose": "storyboard_video",
+            "model_config_id": str(model.id),
+            "video_references": [],
+        },
+    )
+    task, _ = flow.generations.create(
+        "video",
+        {
+            "config_id": str(model.id),
+            "source": {
+                "scene": "shot_video",
+                "shot_id": shot["id"],
+                "row_version": shot["row_version"],
+                "context_hash": shot["video_context_hash"],
+                "draft_id": draft["id"],
+                "draft_version": draft["draft_version"],
+            },
+        },
+        "text-video-before-image",
+    )
+    flow.session.add(
+        MediaFile(
+            id=101,
+            project_id=flow.project.id,
+            format_code="image/png",
+            original_name="",
+            storage_locator="minio://images/new-frame.png",
+        )
+    )
+    flow.session.commit()
+    ShotImageService(flow.session).create(
+        {
+            "project_id": flow.project.id,
+            "shot_id": shot["id"],
+            "media_id": "101",
+            "layout": "single",
+            "resolution": "2K",
+            "context_hash": shot["context_hash"],
+        }
+    )
+    flow.executor = GenerationExecutionService(
+        flow.factory, flow.settings, TextVideoProvider(), flow.storage
+    )
+    assert drain(flow, task["generation_id"]) == "succeeded"
+    flow.session.expire_all()
+    assert storyboard.get(flow.project.id, shot["id"])["shot"]["video"] is not None
+
+
 @pytest.mark.parametrize(
     "layout",
     ["four", "five"],

@@ -349,7 +349,7 @@ class GenerationContextService:
 
     def prepare_shot_video(self, request):
         from short_drama.ai.business_prompts import video_prompt_parts
-        from short_drama.domain import ShotImage
+        from short_drama.domain import ShotImage, ShotVideo
         from short_drama.service.creation.sound.voices.context import native_context, native_prompt
         from short_drama.service.creation.storyboard.videos.video_context import (
             DEFAULT_VIDEO_SETTINGS,
@@ -454,9 +454,22 @@ class GenerationContextService:
         else:
             parts = video_prompt_parts(prompt_snapshot, prompt)
         source.update(project_id=str(creation.id), source_id=str(shot.id))
+        current_video = self.session.scalar(
+            select(ShotVideo).where(ShotVideo.shot_id == shot.id).with_for_update()
+        )
         request["source_snapshot"] = {
             **snapshot,
             "context_hash": digest,
+            "generation_context_hash": video_context_hash(
+                image_hash,
+                reference_id,
+                shot.video_prompt,
+                settings,
+                session=self.session,
+                shot=shot,
+            ),
+            "reference_tracks_primary": selection is None and requested_reference is not None,
+            "confirmed_video_media_id": str(current_video.media_id) if current_video else None,
             "shot_context_hash": image_hash,
             "reference_media_id": str(reference_id) if reference_id is not None else None,
             "reference_media_ids": references,

@@ -22,6 +22,7 @@ import { TaskDetail } from '@host/features/generations/tasks/TaskDetail';
 import { attemptStorage, clearAttempt, requestAttempt } from '@host/features/shared/async/request-receipt';
 import { Dialog } from '@host/shared/ui/Dialog';
 import { StudioFeedback as Alert, feedbackType } from '@host/shared/ui/StudioFeedback';
+import { confirmAction } from '@host/shared/ui/confirm';
 import type { AiModelCapabilitiesDto } from '@host/types/ai-config/api';
 import type { LibraryAssetRead } from '@host/types/creation/assets/management';
 import type { CreationDraftValue, DraftVideoReference } from '@host/types/creation/drafts/requests';
@@ -551,12 +552,22 @@ export function ShotVideoCandidates({
     try {
       prepared = await prepareShot();
       if (!prepared || !prepared.isCurrent() || !alive.current) return;
-      await mediaLibrary.apply(asset.asset_id, {
+      const body = {
         target: { type: 'shot_video', id: prepared.shot.id },
         expected_media_id: prepared.shot.video?.media_id ?? null,
         expected_row_version: prepared.shot.row_version,
         expected_context_hash: prepared.shot.video_context_hash,
-      });
+      } as const;
+      try {
+        await mediaLibrary.apply(asset.asset_id, body);
+      } catch (cause) {
+        if (!(cause instanceof ApiError) || cause.code !== 'shot_video_source_changed') throw cause;
+        if (!(await confirmAction('此视频基于此前的分镜内容或参考生成。确认将它设为当前视频？', {
+          title: '视频来源已变化', confirmText: '确认采用',
+        }))) return;
+        if (!alive.current || !prepared.isCurrent()) return;
+        await mediaLibrary.apply(asset.asset_id, { ...body, acknowledge_stale_source: true });
+      }
       if (!alive.current || !prepared.isCurrent()) return;
       setMessage('已采用视频。');
       onChanged();

@@ -239,13 +239,18 @@ class PreflightOperations(GenerationBatchServiceBase):
                             payload, model_override=request.config_id
                         )
                         if kind == "image":
-                            payload["parameters"]["count"] = request.count
+                            batch_settings = {"count": request.count}
+                            if request.scene == "asset_image":
+                                batch_settings.update(
+                                    request.asset_parameters.model_dump(exclude={"count"})
+                                )
+                            payload["parameters"].update(batch_settings)
                             settings = (
                                 payload["creation_draft_snapshot"].get("image_settings") or {}
                             )
                             payload["creation_draft_snapshot"]["image_settings"] = {
                                 **settings,
-                                "count": request.count,
+                                **batch_settings,
                             }
                 payload = self.generations._prepare(kind, payload)
                 if snapshot is None:

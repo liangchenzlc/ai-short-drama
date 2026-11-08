@@ -17,6 +17,7 @@ from short_drama.domain import (
     AsyncTask,
     ImageGroup,
     ImageGroupItem,
+    ImageOperation,
     MediaAsset,
     MediaFile,
     Project,
@@ -189,7 +190,9 @@ class ImageGroupService(BaseService):
             raise WorkflowError("image_not_ready", "图片尚未保存完成", 409)
         media = self._validate_media(item.media_id, "image")
         if not manual and (
-            not self._auto_adoption_allowed(group) or self._outdated(group, kind, row)
+            group.primary_mode == "manual"
+            or not self._auto_adoption_allowed(group)
+            or self._outdated(group, kind, row)
         ):
             return False
         if not manual and (group.primary_version == UINT64_MAX or row.row_version == UINT64_MAX):
@@ -300,14 +303,34 @@ class ImageGroupService(BaseService):
         current = self.current_media(kind, row)
         if task is None or current is None:
             return False
-        previous = self.session.scalar(
-            select(AIGenerationRecord)
-            .join(MediaAsset, MediaAsset.record_id == AIGenerationRecord.id)
-            .where(MediaAsset.media_id == current)
+        target = ImageGroup.asset_id if kind == "asset" else ImageGroup.shot_id
+        current_group = self.session.scalar(
+            select(ImageGroup)
+            .join(ImageGroupItem, ImageGroupItem.group_id == ImageGroup.id)
+            .where(
+                target == row.id,
+                ImageGroupItem.media_id == current,
+                ImageGroupItem.output_index == ImageGroup.primary_index,
+            )
+            .order_by(ImageGroup.created_at.desc(), ImageGroup.id.desc())
+            .limit(1)
         )
-        if previous is None:
-            return False
-        previous_task = self.session.get(AsyncTask, previous.task_id)
+        while current_group is not None and current_group.task_id is None:
+            parent_id = self.session.scalar(
+                select(ImageGroupItem.group_id)
+                .join(ImageOperation, ImageOperation.item_id == ImageGroupItem.id)
+                .where(ImageOperation.result_group_id == current_group.id)
+                .limit(1)
+            )
+            current_group = self.session.get(ImageGroup, parent_id) if parent_id else None
+        previous_task_id = current_group.task_id if current_group else None
+        if previous_task_id is None:
+            previous_task_id = self.session.scalar(
+                select(AIGenerationRecord.task_id)
+                .join(MediaAsset, MediaAsset.record_id == AIGenerationRecord.id)
+                .where(MediaAsset.media_id == current)
+            )
+        previous_task = self.session.get(AsyncTask, previous_task_id) if previous_task_id else None
         return previous_task is not None and (previous_task.created_at, previous_task.id) > (
             task.created_at,
             task.id,
