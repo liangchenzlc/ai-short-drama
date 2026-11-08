@@ -1,9 +1,9 @@
-import { Bubble, Prompts, Welcome } from '@ant-design/x';
+import { Bubble } from '@ant-design/x';
 import { timelineBubbles } from '@host/features/assistant/messages/AgentTimeline';
 import { AssistantLoading } from '@host/features/assistant/messages/AssistantLoading';
+import { AssistantWelcome } from '@host/features/assistant/messages/AssistantWelcome';
 import type { AssistantTranscriptProps } from '@host/types/assistant/messages/transcript';
 import { Button, Skeleton } from 'antd';
-import { ArrowUpRight, Clapperboard } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 export function AssistantTranscript({
   conversationId,
@@ -101,36 +101,7 @@ export function AssistantTranscript({
         {runtime.loading ? (
           <Skeleton active title={false} paragraph={{ rows: 5 }} />
         ) : !runtime.messages.length && !active && !runtime.traceBlocks.length ? (
-          <div className="ai-assistant-empty">
-            <Welcome
-              variant="borderless"
-              icon={<Clapperboard size={26} aria-hidden="true" />}
-              title={runtime.accessEnded ? '对话暂不可访问' : '把想法聊清楚'}
-              description={runtime.accessEnded ? '当前无法读取，历史仍在服务端。恢复登录和项目访问后可重新读取。' : '一起梳理故事、画面和创作方向。'}
-            />
-            {!runtime.accessEnded ? (
-              <Prompts
-                vertical
-                items={['帮我梳理故事的节奏与冲突', '一起完善角色的动机与关系', '为当前作品提供创作建议'].map(
-                  (text) => ({
-                    key: text,
-                    label: (
-                      <button
-                        className="ai-assistant-starter"
-                        type="button"
-                        disabled={readOnly}
-                        onClick={() => setDraft(text)}
-                      >
-                        <span>{text}</span>
-                        <ArrowUpRight size={15} />
-                      </button>
-                    ),
-                    disabled: readOnly,
-                  }),
-                )}
-              />
-            ) : null}
-          </div>
+          <AssistantWelcome accessEnded={runtime.accessEnded} readOnly={readOnly} onPick={setDraft} />
         ) : null}
         {!runtime.loading && (runtime.messages.length > 0 || active || runtime.traceBlocks.length > 0) ? (
           <Bubble.List

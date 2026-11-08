@@ -44,6 +44,7 @@ export function useAssistantComposer({
   readOnly,
   contextPreview,
   prepareContext,
+  pendingSend,
   onSendingChange,
 }: AssistantConversationProps) {
   const runtime = useAssistantRuntime(conversation.id);
@@ -59,12 +60,14 @@ export function useAssistantComposer({
   const [restoredControl, setRestoredControl] = useState(() =>
     readAssistantPendingAction(accountId, conversation.id, 'control', workflowStorage()),
   );
-  const [draft, setDraft] = useState(() => ensureSkillTokens(restored.text, restored.skills));
+  const [draft, setDraft] = useState(() =>
+    ensureSkillTokens(restored.text || pendingSend?.text || '', restored.skills),
+  );
   const [skills, setSkills] = useState(restored.skills);
   const [skillsDirty, setSkillsDirty] = useState(restored.skillsDirty ?? restored.skills.length > 0);
   const [draftError, setDraftError] = useState('');
   const { models, modelId, setModelId, modelsLoading, modelsError, setModelRevision } = useAssistantModels(
-    restored.modelId,
+    restored.modelId || pendingSend?.modelId,
   );
   const [contextBusy, setContextBusy] = useState(false);
   const [contextBlockReason, setContextBlockReason] = useState('');
@@ -124,6 +127,14 @@ export function useAssistantComposer({
   };
   const active = isAgentRunActive(runtime.run?.status);
   const model = models.find((item) => item.id === modelId);
+  // 首屏正文只自动发送一次；失败时正文留在输入框，由用户自行重发。
+  const startedSend = useRef(false);
+  useEffect(() => {
+    if (!pendingSend || startedSend.current || modelsLoading || modelsError) return;
+    if (!model || !draft.trim()) return;
+    startedSend.current = true;
+    void send();
+  }, [pendingSend, modelsLoading, modelsError, model?.id, draft]);
   const previousTask = useRef(task?.id);
   useEffect(() => {
     if (!task && previousTask.current && !skillsDirty) {

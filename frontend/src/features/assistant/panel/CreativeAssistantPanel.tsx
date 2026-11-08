@@ -3,6 +3,7 @@ import { assistantApi } from '@host/api/assistant/conversations/requests';
 import { ApiError, errorMessage } from '@host/api/http';
 import { AssistantConversationBody } from '@host/features/assistant/conversations/AssistantConversationBody';
 import { AssistantHistory } from '@host/features/assistant/history/AssistantHistory';
+import { AssistantStart } from '@host/features/assistant/panel/AssistantStart';
 import { accountStorage } from '@host/features/identity/storage/account-storage';
 import { attemptStorage, clearAttempt, requestAttempt } from '@host/features/shared/async/request-receipt';
 import { StudioFeedback } from '@host/shared/ui/StudioFeedback';
@@ -23,8 +24,10 @@ export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [history, setHistory] = useState(false);
+  const [startSend, setStartSend] = useState<{ conversationId: string; text: string; modelId: string } | null>(null);
   const alive = useRef(true);
   const request = useRef(0);
+  const starting = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const latest = useRef(props);
   latest.current = props;
@@ -121,7 +124,7 @@ export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
     return () => read.abort();
   }, [accountId, projectId, selectedConversationId, open, revision]);
   async function create() {
-    if (busy || sending || !accountId || readOnly) return;
+    if (busy || sending || !accountId || readOnly) return null;
     setBusy(true);
     setError('');
     const generation = ++request.current;
@@ -132,6 +135,7 @@ export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
       const item = await assistantApi.createGlobalConversation(projectId, key);
       clearAttempt(scope, attemptStorage());
       if (alive.current && generation === request.current) remember(item);
+      return item;
     } catch (cause) {
       if (alive.current) setError(errorMessage(cause));
       throw cause;
@@ -224,20 +228,37 @@ export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
             executionTarget={props.executionTarget}
             layout={layout}
             readOnly={readOnly || conversation.status !== 'active'}
+            pendingSend={startSend?.conversationId === conversation.id ? startSend : null}
             contextPreview={props.contextPreview}
             mentionReferences={readOnly ? [] : props.mentionReferences}
             prepareContext={props.prepareContext}
             onOpenModelSettings={props.onOpenModelSettings}
-            onSendingChange={setSending}
+            onSendingChange={(value) => {
+              setSending(value);
+              // 首屏正文已进入发送流程，清掉交接状态，避免再次进入该会话时重复发送。
+              if (value) setStartSend(null);
+            }}
             onConversationTitleChange={updateTitle}
           />
         ) : !error ? (
-          <div className="ai-assistant-empty">
-            <p>在当前项目中聊想法、完善内容，创作成果会保存到这里。</p>
-            <Button type="primary" loading={busy} disabled={readOnly} onClick={() => void create().catch(() => {})}>
-              新建对话
-            </Button>
-          </div>
+          <AssistantStart
+            projectId={projectId}
+            readOnly={readOnly}
+            submitting={busy || sending}
+            onOpenModelSettings={props.onOpenModelSettings}
+            onStart={(text, modelId) => {
+              if (starting.current) return;
+              starting.current = true;
+              void (async () => {
+                const item = await create();
+                if (item && alive.current) setStartSend({ conversationId: item.id, text, modelId });
+              })()
+                .catch(() => {})
+                .finally(() => {
+                  starting.current = false;
+                });
+            }}
+          />
         ) : null}
         {history && accountId && (
           <AssistantHistory
@@ -247,7 +268,9 @@ export function CreativeAssistantPanel(props: CreativeAssistantPanelProps) {
             layout={layout}
             conversation={conversation}
             currentId={conversation?.id ?? ''}
-            onNew={create}
+            onNew={async () => {
+              await create().catch(() => {});
+            }}
             onClose={() => setHistory(false)}
             onUpdated={(item) => setConversation((old) => (old?.id === item.id ? item : old))}
             onDeleted={(id) => {
