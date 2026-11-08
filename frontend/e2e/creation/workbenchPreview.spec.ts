@@ -102,10 +102,10 @@ test('两种视频路径保留当前视频', async ({ page }) => {
   await expect(page.getByRole('button', { name: '移除参考：分镜图' })).toBeVisible();
   await page.getByRole('button', { name: '生成视频', exact: true }).click();
   await expect(page.getByRole('status', { name: '视频生成状态' })).toHaveText('已完成');
-  await expect(page.getByText('候选视频 1', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '预览候选视频 1' }).click();
-  await expect(page.getByText('正在预览候选视频 1', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '采用候选视频 1' }).click();
+  await expect(page.getByText('视频 1', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '预览视频 1' }).click();
+  await expect(page.getByText('正在预览视频 1', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '采用视频 1' }).click();
   await expect(page.getByRole('status', { name: '视频生成状态' })).toHaveText('已采用');
 });
 test('视图切换保留勾选', async ({ page }) => {

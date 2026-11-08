@@ -241,7 +241,8 @@ def test_voice_native_archive_adopts_without_agent_loop_and_protects_human_chang
         ("voice", "workbench", False),
         ("canvas", "workbench", False),
         ("video", "workbench", False),
-        ("video", "media_generation", False),
+        # 关闭媒体生成不撤销工作台写权限，生成完成后仍自动写入视频槽。
+        ("video", "media_generation", True),
     ],
 )
 def test_sent_media_adoption_uses_current_workbench_permission(

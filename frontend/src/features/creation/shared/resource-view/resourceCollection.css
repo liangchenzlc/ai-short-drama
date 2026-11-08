@@ -110,17 +110,6 @@
   color: var(--sub);
 }
 
-.resourceItemCandidate {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 3px 6px;
-  border-radius: 4px;
-  background: #111c;
-  color: #fff;
-  font-size: 11px;
-}
-
 .isGrid .resourceItemImage {
   width: 100%;
   aspect-ratio: 4 / 3;

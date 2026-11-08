@@ -300,8 +300,9 @@ def test_real_legacy_cutover_preserves_media_settlement_and_historical_undo(
         )
         group = session.scalar(select(ImageGroup).where(ImageGroup.task_id == native_id))
         asset = session.get(Asset, 9)
-        assert bool(asset.media_id) is (not human_edit)
-        assert (group.primary_index is None) is human_edit
+        # 生成完成即写入作品，与生成过程中是否有人工编辑无关。
+        assert asset.media_id
+        assert group.primary_index == 1
     with factory() as session:
         service = task_service(session, settings.model_copy(update={"agent_enabled": True}))
         for identifier in [14] if human_edit else [12, 14]:

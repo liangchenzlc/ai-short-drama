@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from short_drama.core.config import Settings
-from short_drama.core.exceptions import Conflict, WorkflowError
+from short_drama.core.exceptions import BusinessError, Conflict, NotFound, WorkflowError
 from short_drama.domain import (
     AIModelConfig,
     Asset,
@@ -24,6 +24,8 @@ from short_drama.service.creation.storyboard.videos.video_admission import (
     shot_video_may_submit as shot_video_may_submit,
 )
 from short_drama.service.creation.storyboard.videos.video_context import DEFAULT_VIDEO_SETTINGS
+from short_drama.service.identity.authentication.actor import business_actor_locked
+from short_drama.service.media.library.assets import MediaAssetService
 
 
 def _native_source(
@@ -217,7 +219,50 @@ def settle_shot_video_locked(
                 "message": "分镜、参考图或当前视频已变化，产物已保留",
             },
         )
-    return result, "succeeded", None
+    original = {
+        key: session.info[key] for key in ("actor", "resource_scope") if key in session.info
+    }
+    actor = session.info.get("actor")
+    if actor is not None and actor.user_id != owner:
+        raise NotFound("视频采用账号不匹配")
+    session.info["actor"] = actor or business_actor_locked(
+        session, user_id=owner, request_id=f"assistant-media:{intent.operation_id}"
+    )
+    try:
+        try:
+            with session.begin_nested():
+                project = session.get(Project, int(target["project_id"]))
+                storyboard_before = str(project.storyboard_version)
+                receipt = MediaAssetService(session, None, None).apply_locked(
+                    outputs[0].id,
+                    {
+                        "target": {"type": "shot_video", "id": target["id"]},
+                        "expected_row_version": target["row_version"],
+                        "expected_context_hash": target["context_hash"],
+                        "expected_media_id": (target["before"]["video"] or {}).get("media_id"),
+                    },
+                )
+        except BusinessError as error:
+            return result, "conflict", {"code": error.code, "message": error.message}
+        return (
+            {
+                **result,
+                "adopted": True,
+                "target_version": receipt["row_version"],
+                "storyboard_transition": {
+                    "before": storyboard_before,
+                    "after": str(project.storyboard_version),
+                },
+            },
+            "succeeded",
+            None,
+        )
+    finally:
+        for key in ("actor", "resource_scope"):
+            if key in original:
+                session.info[key] = original[key]
+            else:
+                session.info.pop(key, None)
 
 
 def shot_video_changes_locked(session: Session, intent: AgentMediaRequest) -> list[dict[str, Any]]:

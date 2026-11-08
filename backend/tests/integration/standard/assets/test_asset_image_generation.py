@@ -268,7 +268,7 @@ def test_parallel_single_image_requests_save_fixed_group_slots(flow, monkeypatch
         response = record.response_data
         indexes = [item["output_index"] for item in response["media_manifest"]]
         assert len(indexes) == expected_saved
-        assert current["primary_index"] is None
+        assert current["primary_index"] == 1
         assert all(current["items"][index - 1]["status"] == "ready" for index in indexes)
         assert session.scalar(select(func.count()).select_from(MediaAsset)) == expected_saved
         if failed_call:
@@ -283,7 +283,7 @@ def test_parallel_single_image_requests_save_fixed_group_slots(flow, monkeypatch
 
 @pytest.mark.parametrize("kind", ["character", "scene", "prop"])
 @pytest.mark.parametrize("count", [1, 2, 4])
-def test_generated_group_requires_primary_selection_and_supplies_shot_references(flow, kind, count):
+def test_generated_group_applies_first_image_and_supplies_shot_references(flow, kind, count):
     asset = create_asset(flow, kind)
     task_id = submit(flow, asset, count)
     pending = groups(flow).current("asset", asset.id)
@@ -291,20 +291,24 @@ def test_generated_group_requires_primary_selection_and_supplies_shot_references
     assert all(item["status"] == "generating" for item in pending["items"])
     assert drain(flow, task_id) == "succeeded"
     current = groups(flow).current("asset", asset.id)
-    assert current["status"] == "completed" and current["primary_index"] is None
+    assert current["status"] == "completed" and current["primary_index"] == 1
     saved = flow.library.get(asset.id)
-    assert saved.media_id is None and saved.row_version == asset.row_version
-    assert flow.images.list(asset.id)["total"] == 0
+    assert str(saved.media_id) == current["items"][0]["media_id"]
+    assert saved.row_version == asset.row_version + 1
     current = choose(flow, current, count)
     selected = current["items"][count - 1]
     saved = flow.library.get(asset.id)
     assert str(saved.media_id) == selected["media_id"]
-    assert saved.state == "confirmed" and saved.row_version == asset.row_version + 1
+    assert saved.state == "confirmed" and saved.row_version > asset.row_version
     with flow.factory() as session:
         versions = list(
             session.scalars(select(AssetVersion).where(AssetVersion.asset_id == asset.id))
         )
-        assert len(versions) == (2 if kind == "character" else 0)
+        # 自动采用与手动改选都会追加角色版本；场景与道具不记版本快照。
+        if kind == "character":
+            assert versions
+        else:
+            assert not versions
     shot = ShotScriptService(flow.session).create(
         {
             "project_id": flow.project.id,
@@ -324,18 +328,19 @@ def test_generated_group_requires_primary_selection_and_supplies_shot_references
     shot_group = groups(flow).current("shot", shot.id)
     board = ProjectStoryboardService(flow.session)
     before = board.get(flow.project.id, shot.id)["shot"]
-    assert before["image"] is None
+    assert before["image"]["media_id"] == shot_group["items"][0]["media_id"]
     assert flow.provider.calls[-1]["input"]["reference_media_ids"] == [selected["media_id"]]
     choose(flow, shot_group, 2)
     after = board.get(flow.project.id, shot.id)["shot"]
     assert after["image"]["media_id"] == shot_group["items"][1]["media_id"]
     assert after["image_settings"] == before["image_settings"]
     with flow.factory() as session:
-        assert session.scalar(select(func.count()).select_from(MediaRecycleBin)) == 0
+        # 自动采用的首图被手动改选后进入回收站，其余产物仍在图片组中。
+        assert session.scalar(select(func.count()).select_from(MediaRecycleBin)) == 1
     assert len(flow.provider.calls) == 2
 
 
-def test_changed_source_preserves_paid_group_without_overwriting_and_allows_explicit_primary(flow):
+def test_changed_source_still_applies_the_generated_group(flow):
     asset = create_asset(flow)
     task_id = submit(flow, asset, 2)
     changed = flow.library.patch(
@@ -343,8 +348,8 @@ def test_changed_source_preserves_paid_group_without_overwriting_and_allows_expl
     )
     assert drain(flow, task_id) == "succeeded"
     current = groups(flow).current("asset", asset.id)
-    assert current["primary_index"] is None
-    assert flow.library.get(asset.id).media_id is None
+    assert current["primary_index"] == 1
+    assert str(flow.library.get(asset.id).media_id) == current["items"][0]["media_id"]
     assert "natural light" in flow.provider.calls[0]["input"]["prompt"]
     assert "new input" not in flow.provider.calls[0]["input"]["prompt"]
     choose(flow, current, 2)
@@ -515,8 +520,9 @@ def test_group_failure_rolls_back_archive_and_recovers_without_provider_call(flo
     with flow.factory.begin() as session:
         session.get(AsyncTask, int(task_id)).next_run_at = utcnow()
     assert drain(flow, task_id) == "succeeded"
-    assert groups(flow).current("asset", asset.id)["primary_index"] is None
-    assert flow.library.get(asset.id).media_id is None
+    current = groups(flow).current("asset", asset.id)
+    assert current["primary_index"] == 1
+    assert str(flow.library.get(asset.id).media_id) == current["items"][0]["media_id"]
     assert len(flow.provider.calls) == 1
 
 
@@ -590,8 +596,8 @@ def test_partial_result_keeps_fixed_slots_as_candidates(flow, monkeypatch, retur
     assert [item["status"] for item in current["items"]] == ["ready"] * returned_count + [
         "failed"
     ] * (4 - returned_count)
-    assert current["primary_index"] is None
-    assert flow.library.get(asset.id).media_id is None
+    assert current["primary_index"] == 1
+    assert str(flow.library.get(asset.id).media_id) == current["items"][0]["media_id"]
     detail = flow.generations.detail(task_id)
     assert detail["error"]["code"] == "partial_result"
     assert f"模型服务仅返回 {returned_count} 个" in detail["error"]["message"]
@@ -673,7 +679,7 @@ def test_empty_supplement_still_uses_the_saved_asset_content(flow):
     task, _ = flow.generations.create("image", body, str(uuid4()))
     assert drain(flow, task["generation_id"]) == "succeeded"
     assert asset.name in flow.provider.calls[0]["input"]["prompt"]
-    assert groups(flow).current("asset", asset.id)["primary_index"] is None
+    assert groups(flow).current("asset", asset.id)["primary_index"] == 1
 
 
 def test_expired_worker_cannot_change_group_from_saved_output(flow):

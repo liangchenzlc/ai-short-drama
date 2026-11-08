@@ -217,9 +217,7 @@ class ExecutionSettlement(ExecutionServiceBase):
                 ).confirm_generated_shot_video_locked(current, call)
                 warning = (
                     {"code": "shot_video_auto_apply_skipped", "reason": receipt["code"]}
-                    if receipt
-                    and receipt["status"] == "skipped"
-                    and receipt["code"] != "shot_video_has_current"
+                    if receipt and receipt["status"] == "skipped"
                     else None
                 )
                 finish(current, "succeeded", warning)

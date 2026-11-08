@@ -152,7 +152,8 @@ def test_video_http_generation_history_explicit_adoption_and_saved_work(flow, la
             assert candidates.status_code == 200, candidates.text
             candidate = candidates.json()["items"][0]
             before = (await client.get(root)).json()["shot"]
-            assert before["video"] is None
+            # 生成成功即写入视频槽，不需要再手动采用。
+            assert before["video"]["media_id"] == candidate["media_id"]
             assert not before["image"]["is_stale"]
             detail = (await client.get(f"/api/v1/ai/generations/{task_id}")).json()
             assert detail["status"] == "succeeded" and detail["error"] is None
@@ -160,7 +161,7 @@ def test_video_http_generation_history_explicit_adoption_and_saved_work(flow, la
                 f"/api/v1/media-library/items/{candidate['asset_id']}/apply",
                 json={
                     "target": {"type": "shot_video", "id": shot["id"]},
-                    "expected_media_id": None,
+                    "expected_media_id": candidate["media_id"],
                     "expected_row_version": before["row_version"],
                     "expected_context_hash": before["video_context_hash"],
                 },
@@ -168,7 +169,6 @@ def test_video_http_generation_history_explicit_adoption_and_saved_work(flow, la
             assert adopted.status_code == 200, adopted.text
             reloaded = (await client.get(root)).json()["shot"]
             assert reloaded["video"]["media_id"] == candidate["media_id"]
-            assert int(reloaded["row_version"]) == int(before["row_version"]) + 1
             changed = await client.patch(
                 root,
                 json={

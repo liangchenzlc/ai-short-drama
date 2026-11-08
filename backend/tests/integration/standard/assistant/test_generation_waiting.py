@@ -693,19 +693,16 @@ def test_previously_admitted_media_settles_real_outputs_without_reviving_old_run
     assert collect_media_results(factory, settings) == 0
     with factory() as session:
         operation = session.get(AgentOperation, operation_id)
-        assert operation.status == ("conflict" if human_edit else "succeeded")
+        # 生成完成后直接成为作品图片，生成中的人工编辑不再阻断采用。
+        assert operation.status == "succeeded"
         assert operation.result["settled"] and operation.finished_at
         assert operation.result_refs[0]["generated_count"] == 1
-        assert operation.result_refs[0]["status"] == (
-            "adoption_conflict" if human_edit else "adopted"
-        )
+        assert operation.result_refs[0]["status"] == "adopted"
         group = session.scalar(select(ImageGroup).where(ImageGroup.task_id == native_id))
         asset = session.get(Asset, int(targets[0]["id"]))
         if human_edit:
-            assert asset.description == "生成中人工修改" and asset.media_id is None
-            assert group.primary_index is None
-        else:
-            assert asset.media_id and group.primary_index == 1
+            assert asset.description == "生成中人工修改"
+        assert asset.media_id and group.primary_index == 1
         assert session.get(AgentTask, accepted.task.id).media_usage["images"] == {
             "reserved": 0,
             "submitted": 1,

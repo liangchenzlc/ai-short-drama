@@ -53,7 +53,7 @@ def setup(flow, count=3):
     return service, assets, body, batch
 
 
-def test_batch_holds_tasks_limits_dispatch_keeps_candidates_and_replays(flow):
+def test_batch_holds_tasks_limits_dispatch_applies_results_and_replays(flow):
     service, assets, body, batch = setup(flow)
     detail = service.detail(batch["id"])
     assert detail["counts"] == {"waiting": 3}
@@ -69,13 +69,13 @@ def test_batch_holds_tasks_limits_dispatch_keeps_candidates_and_replays(flow):
     assert drain(flow, task_ids[2]) == "succeeded"
     assert service.detail(batch["id"])["status"] == "succeeded"
     assert len(flow.provider.calls) == 3
-    # 批次与单次生图共用候选组，未明确选择前不改变主图。
-    assert all(flow.library.get(a.id).media_id is None for a in assets)
+    # 批次与单次生图一致：生成完成即写入作品主图。
+    assert all(flow.library.get(a.id).media_id for a in assets)
     assert all(flow.images.list(a.id)["total"] == 0 for a in assets)
     preview = service.preflight(
         {k: v for k, v in body.items() if k not in {"preflight_hash", "accepted_ids"}}
     )
-    assert {i["state"] for i in preview["items"]} == {"review"}
+    assert {i["state"] for i in preview["items"]} == {"adopted"}
 
 
 def test_batch_preflight_conflict_and_idempotency(flow):

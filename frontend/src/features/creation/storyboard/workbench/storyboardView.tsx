@@ -117,13 +117,13 @@ export function StoryboardView({ shot, assets, previewMediaId, imageStatus, vide
               <div><Clapperboard size={26} /><span>暂无视频</span></div>}
           </div>
           {videoStatus && <span role="status" aria-label="视频生成状态">{videoStatus}</span>}
-          {previewIndex >= 0 && <span>正在预览候选视频 {previewIndex + 1}</span>}
+          {previewIndex >= 0 && <span>正在预览视频 {previewIndex + 1}</span>}
           {candidates.length > 0 && <div className="shotCandidates">
             {candidates.map((video, index) => <div key={video.mediaId}>
-              <button type="button" aria-label={'预览候选视频 ' + (index + 1)} onClick={() => setPreviewVideoId(video.mediaId)}>
-                候选视频 {index + 1}
+              <button type="button" aria-label={'预览视频 ' + (index + 1)} onClick={() => setPreviewVideoId(video.mediaId)}>
+                视频 {index + 1}
               </button>
-              <Button size="small" type="text" aria-label={'采用候选视频 ' + (index + 1)}
+              <Button size="small" type="text" aria-label={'采用视频 ' + (index + 1)}
                 onClick={() => { onAdoptVideo(video.mediaId); setPreviewVideoId(null); }}>采用</Button>
             </div>)}
           </div>}

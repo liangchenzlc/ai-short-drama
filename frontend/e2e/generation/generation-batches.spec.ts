@@ -223,14 +223,14 @@ for (const scene of ['asset_image', 'shot_video'] as const) test(`${scene}: comp
   await page.goto('/e2e/generation/fixtures/batch-fixture.html');
   await page.getByRole('button', { name: '选择101项' }).click();
   await page.getByRole('button', { name: scene === 'asset_image' ? '批量生成图片' : '批量生成视频' }).click();
-  if (scene === 'asset_image') await expect(page.getByRole('dialog')).toContainText('生成图片保存为候选，请在来源作品中核对并主动设为主图。');
+  if (scene === 'asset_image') await expect(page.getByRole('dialog')).toContainText('生成图片已自动设为主图。');
   await page.getByRole('combobox', { name: '模型配置' }).click();
   await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: '验收模型' }).click();
   await page.getByRole('button', { name: '检查可执行项' }).click();
   await expect(page.getByText('不可生成')).toBeVisible();
   await page.getByRole('button', { name: '确认并启动 100 项生成' }).click();
   await expect(page.getByRole('heading', { name: `${scene === 'asset_image' ? '素材图片' : '分镜视频'} · 执行中` })).toBeVisible();
-  if (scene === 'asset_image') await expect(page.getByRole('dialog')).toContainText('生成图片保存为候选，请在来源作品中核对并主动设为主图。');
+  if (scene === 'asset_image') await expect(page.getByRole('dialog')).toContainText('生成图片已自动设为主图。');
   expect(preflights.map(body => body.source_ids.length)).toEqual([100, 1]);
   expect(preflights.map(body => body.scene)).toEqual([scene, scene]);
   expect(submissions.map(body => body.accepted_ids.length)).toEqual([99, 1]);
@@ -280,7 +280,7 @@ for (const scene of ['shot_image', 'shot_video'] as const) test(`${scene}: selec
     await page.getByRole('combobox', { name: '生成类型', exact: true }).locator('xpath=../..').click();
     await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: '分镜视频' }).click();
   }
-  await expect(page.getByRole('dialog')).toContainText(scene === 'shot_video' ? '视频保存为候选，请在来源作品中核对并主动采用。' : '生成图片保存为候选，请在来源作品中核对并主动设为主图。');
+  await expect(page.getByRole('dialog')).toContainText(scene === 'shot_video' ? '视频已生成并写入当前分镜。' : '生成图片已自动设为主图。');
   await page.getByRole('combobox', { name: '模型配置' }).click();
   await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: scene === 'shot_video' ? '视频验收模型' : '图片验收模型' }).click();
   await page.getByRole('button', { name: '检查可执行项' }).click();
@@ -300,7 +300,7 @@ for (const scene of ['shot_image', 'shot_video'] as const) test(`${scene}: selec
   await expect(preflightHost.locator('.studio-feedback-popup')).toBeHidden();
   await page.getByRole('button', { name: '继续提交' }).click();
   await expect(page.getByRole('heading', { name: `${scene === 'shot_video' ? '分镜视频' : '分镜图片'} · 执行中` })).toBeVisible();
-  await expect(page.getByRole('dialog')).toContainText(scene === 'shot_video' ? '视频保存为候选，请在来源作品中核对并主动采用。' : '生成图片保存为候选，请在来源作品中核对并主动设为主图。');
+  await expect(page.getByRole('dialog')).toContainText(scene === 'shot_video' ? '视频已生成并写入当前分镜。' : '生成图片已自动设为主图。');
   await expect(page.getByRole('link', { name: scene === 'shot_video' ? '打开来源作品审核视频' : '打开来源作品核对图片', exact: true })).toBeVisible();
   expect(bodies[0].accepted_ids).toEqual(['1']);
   expect(bodies[0]).toEqual(bodies[1]);

@@ -529,44 +529,32 @@ def adopt_generated_video(flow, task_id):
     )
 
 
-def test_completed_video_remains_a_candidate_until_explicitly_adopted():
+def test_completed_video_is_applied_automatically():
     with generation_session() as session:
         flow = setup_video(session)
         before = current(flow)
         task_id = generated_video(flow, "automatic-video", 201)
         receipt = confirm_generated_video(flow, task_id)
-        assert receipt["status"] == "candidate", receipt
-        assert current(flow)["video"] is None
-        assert current(flow)["row_version"] == before["row_version"]
-        assert confirm_generated_video(flow, task_id) == receipt
-        assert session.get(MediaFile, 201).published_at is None
-        adopt_generated_video(flow, task_id)
+        assert receipt["status"] == "applied", receipt
         confirmed = current(flow)
         assert confirmed["video"]["media_id"] == "201"
         assert int(confirmed["row_version"]) == int(before["row_version"]) + 1
+        assert confirm_generated_video(flow, task_id) == receipt
         assert session.get(MediaFile, 201).published_at is not None
 
 
-def test_regenerated_video_remains_a_candidate_until_explicitly_adopted():
+def test_regenerated_video_replaces_the_current_video():
     with generation_session() as session:
         flow = setup_video(session)
-        original = generated_video(flow, "original-candidate", 201)
-        confirm_generated_video(flow, original)
-        adopt_generated_video(flow, original)
-        pending = generated_video(flow, "new-candidate", 202)
-        receipt = confirm_generated_video(flow, pending)
-        assert receipt["status"] == "skipped"
+        original = generated_video(flow, "original-video", 201)
+        assert confirm_generated_video(flow, original)["status"] == "applied"
         assert current(flow)["video"]["media_id"] == "201"
-        record = session.scalar(
-            select(AIGenerationRecord).where(AIGenerationRecord.task_id == pending)
-        )
-        candidate = session.scalar(select(MediaAsset).where(MediaAsset.record_id == record.id))
-        session.commit()
-        MediaAssetService(session, settings, None).apply(candidate.id, adoption(current(flow)))
+        newer = generated_video(flow, "new-video", 202)
+        assert confirm_generated_video(flow, newer)["status"] == "applied"
         assert current(flow)["video"]["media_id"] == "202"
 
 
-def test_assistant_video_completion_keeps_existing_video_until_manual_adoption():
+def test_assistant_video_completion_applies_automatically():
     from short_drama.schemas.assistant.operations.media import AssistantShotVideoRequest
     from short_drama.service.assistant.operations.media_settlement import _result_refs
     from short_drama.service.assistant.operations.shot_video import (
@@ -605,29 +593,27 @@ def test_assistant_video_completion_keeps_existing_video_until_manual_adoption()
             intent = SimpleNamespace(frozen_target=target, operation_id=42)
             result, status, error = settle_shot_video_locked(session, 1, intent, task, [candidate])
             assert status == "succeeded" and error is None
-            assert result["adopted"] is False
+            assert result["adopted"] is True
             intent.result, intent.status = result, status
             intent.media_kind, intent.requested_count, intent.generation_task_id = (
                 "video",
                 1,
                 pending,
             )
-            assert _result_refs([intent])[0]["status"] == "candidate"
-        assert current(flow)["video"]["media_id"] == "201"
+            assert _result_refs([intent])[0]["status"] == "adopted"
+        assert current(flow)["video"]["media_id"] == "202"
 
 
 @pytest.mark.parametrize("newest_first", [False, True])
-def test_parallel_video_completion_keeps_the_first_result_until_manual_adoption(newest_first):
+def test_parallel_video_completion_keeps_the_newest_result(newest_first):
     with generation_session() as session:
         flow = setup_video(session)
         older = generated_video(flow, "older-video", 201)
         newer = generated_video(flow, "newer-video", 202)
         first, second = (newer, older) if newest_first else (older, newer)
         confirm_generated_video(flow, first)
-        adopt_generated_video(flow, first)
-        receipt = confirm_generated_video(flow, second)
-        assert current(flow)["video"]["media_id"] == ("202" if newest_first else "201")
-        assert receipt["status"] == "skipped"
+        confirm_generated_video(flow, second)
+        assert current(flow)["video"]["media_id"] == "202"
 
 
 @pytest.mark.parametrize(

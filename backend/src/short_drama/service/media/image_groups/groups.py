@@ -4,8 +4,10 @@ import json
 
 from sqlalchemy import func, or_, select
 
-from short_drama.core.exceptions import NotFound, WorkflowError
+from short_drama.core.exceptions import BusinessError, NotFound, WorkflowError
+from short_drama.dao.assistant.operations.invocation import BusinessInvocationDAO
 from short_drama.dao.base import BaseDAO
+from short_drama.dao.generations.runtime.lifecycle import latest_record
 from short_drama.dao.media.image_groups.groups import ImageGroupDAO
 from short_drama.db.access.identity import set_scope
 from short_drama.db.scope.resource_scope import require_project, scope_of
@@ -21,8 +23,9 @@ from short_drama.domain import (
     ShotImage,
     ShotScript,
 )
-from short_drama.schemas.base import parse_identifier
+from short_drama.schemas.base import UINT64_MAX, parse_identifier
 from short_drama.schemas.media.image_groups.groups import ImagePrimarySet
+from short_drama.service.assistant.operations.authorization import require_receipt_capability_locked
 from short_drama.service.base import BaseService, utcnow
 from short_drama.service.creation.assets.images.image_context import (
     asset_image_content,
@@ -174,18 +177,37 @@ class ImageGroupService(BaseService):
         record.request_data = request
         self.session.flush()
 
-    def write_primary(self, group, item):
+    def write_primary(self, group, item, *, manual=False):
+        """生成完成即成为当前主图；`manual` 表示用户在界面上明确设置。"""
         kind = "asset" if group.asset_id else "shot"
-        row, _scope = self.target(kind, group.asset_id or group.shot_id)
+        row, _scope = self.target(kind, group.asset_id or group.shot_id, allow_archived=not manual)
+        if row.deleted_at is not None:
+            label = "素材已删除" if kind == "asset" else "分镜已归档"
+            group.notice = f"{label}，生成图片已保存，未更新主图。"
+            return False
         if item.media_id is None:
             raise WorkflowError("image_not_ready", "图片尚未保存完成", 409)
         media = self._validate_media(item.media_id, "image")
+        if not manual and (
+            not self._auto_adoption_allowed(group) or self._outdated(group, kind, row)
+        ):
+            return False
+        if not manual and (group.primary_version == UINT64_MAX or row.row_version == UINT64_MAX):
+            group.notice = "图片或作品版本已达到上限，结果已保存，未更新主图。"
+            return False
         current_hash = self.context(kind, row)
         if group.active_slot != 1:
             for previous in self.groups.for_target(kind, row.id, current=True, lock=True):
                 previous.active_slot = None
             self.session.flush()
             group.active_slot = 1
+        storyboard_before = (
+            str(self.session.get(Project, row.project_id).storyboard_version)
+            if kind == "shot"
+            and not manual
+            and group.source_context.get("target_version") is not None
+            else None
+        )
         publish(media)
         if (
             self.current_media(kind, row) != media.id
@@ -219,15 +241,77 @@ class ImageGroupService(BaseService):
                     "layout": metadata.get("layout", "single"),
                     "aspect": metadata.get("aspect"),
                     "resolution": metadata.get("resolution", "2K"),
-                    "context_hash": current_hash,
+                    "context_hash": current_hash
+                    if manual
+                    else metadata.get("context_hash") or current_hash,
                 }
                 ShotImageService(self.session)._write_confirmed(values, row, existing=existing)
         group.primary_index = item.output_index
-        group.primary_mode = "manual"
+        group.primary_mode = "manual" if manual else "auto"
         group.primary_version += 1
         group.notice = None
         self.session.flush()
+        if not manual and group.source_context.get("target_version") is not None:
+            from short_drama.service.media.image_tools.adoption import image_adoption_state
+
+            group.source_context = {
+                **group.source_context,
+                "assistant_adoption_snapshot": image_adoption_state(self.session, row, kind),
+                **(
+                    {
+                        "assistant_storyboard_transition": {
+                            "before": storyboard_before,
+                            "after": str(
+                                self.session.get(Project, row.project_id).storyboard_version
+                            ),
+                        }
+                    }
+                    if storyboard_before is not None
+                    else {}
+                ),
+            }
         return True
+
+    def _auto_adoption_allowed(self, group):
+        if group.task_id is None:
+            return True
+        record = latest_record(self.session, group.task_id)
+        receipt_id = record.config_snapshot.get("business_invocation_id")
+        if receipt_id is None:
+            return True
+        dao = BusinessInvocationDAO(self.session)
+        dao.account(group.created_by, lock=True)
+        receipt = dao.media_receipt(int(receipt_id), group.created_by)
+        if receipt is None:
+            group.notice = "原生媒体受理已不可采用，结果已保存，未更新主图。"
+            return False
+        try:
+            require_receipt_capability_locked(self.session, receipt, "workbench_write")
+        except BusinessError as error:
+            group.notice = f"{error.message}，结果已保存，未更新主图。"
+            return False
+        return True
+
+    def _outdated(self, group, kind, row):
+        """已有更新生成写入时，旧任务晚到的结果不再覆盖。"""
+        if group.task_id is None:
+            return False
+        task = self.session.get(AsyncTask, group.task_id)
+        current = self.current_media(kind, row)
+        if task is None or current is None:
+            return False
+        previous = self.session.scalar(
+            select(AIGenerationRecord)
+            .join(MediaAsset, MediaAsset.record_id == AIGenerationRecord.id)
+            .where(MediaAsset.media_id == current)
+        )
+        if previous is None:
+            return False
+        previous_task = self.session.get(AsyncTask, previous.task_id)
+        return previous_task is not None and (previous_task.created_at, previous_task.id) > (
+            task.created_at,
+            task.id,
+        )
 
     def attach(self, task, record, media_id, index):
         identifier = record.request_data.get("image_group_id")
@@ -251,6 +335,8 @@ class ImageGroupService(BaseService):
             self.session.flush()
         elif item.media_id != media_id:
             raise WorkflowError("image_output_conflict", "图片位置已有不同的结果", 409)
+        if index == 1:
+            self.write_primary(group, item)
 
     def task_state(self, task):
         if task.status in {"queued", "running"}:
@@ -281,7 +367,7 @@ class ImageGroupService(BaseService):
             if operation and task and operation.status not in {"completed", "conflict"}:
                 operation.status = "completed" if task.status == "succeeded" else "failed"
             return
-        row, _scope = self.target(
+        self.target(
             "asset" if group.asset_id else "shot",
             group.asset_id or group.shot_id,
             allow_archived=True,
@@ -303,17 +389,7 @@ class ImageGroupService(BaseService):
         ready = [item for item in items if item.media_id]
         group.status = "completed" if len(ready) == len(items) else "partial" if ready else "failed"
         if ready and group.primary_mode == "pending":
-            self._note_changed_source(group, row)
-
-    def _note_changed_source(self, group, row):
-        kind = "asset" if group.asset_id else "shot"
-        if row.deleted_at is not None:
-            label = "素材已删除" if kind == "asset" else "分镜已归档"
-            group.notice = f"{label}，生成图片已保存，未更新主图。"
-        elif self.context(kind, row) != group.source_context.get("hash") or str(
-            self.current_media(kind, row) or ""
-        ) != str(group.source_context.get("media_id") or ""):
-            group.notice = "创作内容或当前主图已变化，结果已保存，请核对后设置主图。"
+            self.write_primary(group, ready[0])
 
     def _legacy(self, kind, row, scope):
         media_id = self.current_media(kind, row)
@@ -470,8 +546,6 @@ class ImageGroupService(BaseService):
         with self._transaction():
             row, scope = self.target(kind, identifier)
             group = self.sync_current(kind, row, scope)
-            if group and group.kind == "generation" and group.primary_mode == "pending":
-                self._note_changed_source(group, row)
             return self.read_group(group) if group else None
 
     def history(self, kind, identifier, offset=0, limit=20):
@@ -523,7 +597,7 @@ class ImageGroupService(BaseService):
             or row.row_version != parsed.expected_target_version
         ):
             raise WorkflowError("image_version_conflict", "主图或图片已变化，请刷新核对", 409)
-        self.write_primary(group, item)
+        self.write_primary(group, item, manual=True)
         return group
 
     def source(self, identifier):

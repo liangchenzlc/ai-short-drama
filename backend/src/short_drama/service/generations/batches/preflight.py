@@ -190,7 +190,7 @@ class PreflightOperations(GenerationBatchServiceBase):
         if adopted:
             return "adopted", "已有采用结果；如需重新生成请选择明确重生成", None
         if candidate:
-            return "review", "已有候选，请先审核", None
+            return "review", "已有生成结果，请先核对", None
         return "ready", "", None
 
     def _preflight(self, request):

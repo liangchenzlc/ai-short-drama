@@ -1,6 +1,6 @@
 # 标准图片组与逐图工具
 
-素材图和分镜图生成后保存为候选组，不自动改变作品主图；即使作品尚无主图，也需明确选择。
+素材图和分镜图生成完成后直接写入作品主图；即使作品尚无主图，也会把最新生成结果设为主图。
 单次与批量生成遵守同一规则。标准界面提供 1／2／4 张；公共生成接口及画布入口继续共用生成服务、协议适配、任务执行和归档。
 所有 ID、版本使用十进制字符串，时间为 UTC。
 
@@ -8,7 +8,7 @@
 
 | 方法 | 路径（前缀 `/api/v1`） | 返回／用途 |
 | --- | --- | --- |
-| GET | `/image-groups/current/{asset\|shot}/{target_id}` | 最新活动组或 null；生成受理后为新候选组 |
+| GET | `/image-groups/current/{asset\|shot}/{target_id}` | 最新活动组或 null；生成受理后为新生成组 |
 | GET | `/image-groups/history/{asset\|shot}/{target_id}?offset=0&limit=20` | 当前与历史组分页，limit 1–100 |
 | GET | `/image-groups/{group_id}` | 图片组详情 |
 | PUT | `/image-groups/{group_id}/primary` | 设置主图，返回更新后的组 |

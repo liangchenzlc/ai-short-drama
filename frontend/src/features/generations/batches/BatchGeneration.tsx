@@ -457,8 +457,8 @@ function BatchCreatePanel({
           {sourceIds ? `已选择 ${sourceIds.length} 项` : '服务端将读取当前作品或素材分类的全部匹配项'}
           。单批最多 100 项{sourceIds && sourceIds.length > 100 ? '，将自动分批' : ''}。
           {scene === 'shot_video'
-            ? '视频保存为候选，请在来源作品中核对并主动采用。'
-            : '生成图片保存为候选，请在来源作品中核对并主动设为主图。'}
+            ? '视频已生成并写入当前分镜。'
+            : '生成图片已自动设为主图。'}
         </p>
         {!assets && !initialScene && (
           <label>
@@ -805,7 +805,7 @@ export function BatchProgress({
           </h2>
           <p>
             离开页面后任务继续。
-            {data.scene === 'shot_video' ? '视频保存为候选，请在来源作品中核对并主动采用。' : '生成图片保存为候选，请在来源作品中核对并主动设为主图。'}
+            {data.scene === 'shot_video' ? '视频已生成并写入当前分镜。' : '生成图片已自动设为主图。'}
           </p>
           <div className="batch-toolbar">
             {Object.entries(data.counts).map(([state, count]) => (

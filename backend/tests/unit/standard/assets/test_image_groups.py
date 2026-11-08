@@ -176,7 +176,7 @@ def operation(flow, current, kind, parameters=None, index=1, **extra):
 @pytest.mark.parametrize("kind", ["asset", "shot"])
 @pytest.mark.parametrize("existing", [False, True])
 @pytest.mark.parametrize("batch", [False, True])
-def test_single_and_batch_results_do_not_replace_the_primary(flow, kind, existing, batch):
+def test_single_and_batch_results_become_the_primary(flow, kind, existing, batch):
     from short_drama.domain import AIGenerationRecord, Asset, AsyncTask
     from short_drama.service.creation.storyboard.images.image import ShotImageService
     from short_drama.service.creation.storyboard.management.storyboard import (
@@ -256,7 +256,7 @@ def test_single_and_batch_results_do_not_replace_the_primary(flow, kind, existin
         flow.groups.attach(task, record, media.id, 1)
         flow.groups.finalize(task.id)
     current = flow.groups.current(kind, target_id)
-    assert current["primary_index"] is None
+    assert current["primary_index"] == 1
     assert flow.groups.detail(current["id"])["items"][0]["media_id"] == generated_id
     previous = None
     if existing:
@@ -268,11 +268,11 @@ def test_single_and_batch_results_do_not_replace_the_primary(flow, kind, existin
         )
         assert previous["items"][0]["url"]
     if kind == "asset":
-        assert str(flow.library.get(target_id).media_id or "") == (before or "")
+        assert str(flow.library.get(target_id).media_id) == generated_id
     else:
         assert (storyboard.get(flow.project.id, target_id)["shot"]["image"] or {}).get(
             "media_id"
-        ) == before
+        ) == generated_id
     item = current["items"][0]
     assert item["media_id"] == generated_id
     flow.groups.primary(
@@ -317,7 +317,7 @@ def test_single_and_batch_results_do_not_replace_the_primary(flow, kind, existin
         assert flow.groups.current(kind, target_id)["id"] == candidate["id"]
 
 
-def test_partial_image_group_does_not_adopt_a_later_successful_result(flow):
+def test_partial_image_group_adopts_the_successful_result(flow):
     from short_drama.domain import AIGenerationRecord, AsyncTask
 
     current = group(flow, 2)
@@ -330,12 +330,12 @@ def test_partial_image_group_does_not_adopt_a_later_successful_result(flow):
         flow.groups.finalize(task.id)
     current = flow.groups.current("asset", flow.asset.id)
     assert current["status"] == "partial"
-    assert current["primary_index"] is None
+    assert current["primary_index"] == 2
     assert current["items"][1]["status"] == "ready"
-    assert flow.library.get(flow.asset.id).media_id is None
+    assert str(flow.library.get(flow.asset.id).media_id) == current["items"][1]["media_id"]
 
 
-def test_changed_image_source_is_reported_with_the_saved_candidate(flow):
+def test_changed_image_source_still_becomes_the_primary(flow):
     from short_drama.domain import AIGenerationRecord, AsyncTask
 
     current = group(flow)
@@ -352,36 +352,18 @@ def test_changed_image_source_is_reported_with_the_saved_candidate(flow):
         flow.groups.finalize(task.id)
     current = flow.groups.current("asset", asset.id)
     assert current["items"][0]["status"] == "ready"
-    assert current["primary_index"] is None
-    assert "已变化" in current["notice"]
+    assert current["primary_index"] == 1
+    assert str(flow.library.get(asset.id).media_id) == current["items"][0]["media_id"]
+    assert current["notice"] is None
 
 
-def test_candidate_notice_updates_when_the_source_changes_after_completion(flow):
-    from short_drama.domain import AIGenerationRecord, AsyncTask
-
-    current = group(flow)
-    with flow.tools._transaction():
-        record = flow.session.scalar(
-            select(AIGenerationRecord).where(AIGenerationRecord.task_id == int(current["task_id"]))
-        )
-        task = flow.session.get(AsyncTask, record.task_id)
-        values = flow.tools._upload(pixels())
-        media = flow.tools._media(values, (None, flow.project.id), 1)
-        flow.groups.attach(task, record, media.id, 1)
-        flow.groups.finalize(task.id)
-    asset = flow.library.get(flow.asset.id)
-    flow.library.patch(asset.id, {"row_version": str(asset.row_version), "description": "新设定"})
-    assert "已变化" in flow.groups.current("asset", asset.id)["notice"]
-
-
-def test_assistant_image_completion_reports_a_candidate_without_conflict(flow):
+def test_assistant_image_completion_adopts_without_conflict(flow):
     from short_drama.domain import AIGenerationRecord, AsyncTask, MediaAsset
     from short_drama.service.assistant.operations.media_settlement import (
         _result_refs,
         _settle_media,
     )
     from short_drama.service.base import utcnow
-    from short_drama.service.generations.runtime.business_media import adopt_business_media_locked
 
     current = group(flow)
     parent = SimpleNamespace(media_usage={"images": {"succeeded": 0}})
@@ -424,14 +406,8 @@ def test_assistant_image_completion_reports_a_candidate_without_conflict(flow):
         flow.session.flush()
         _settle_media(flow.session, 1, parent, intent, flow.settings)
         assert intent.status == "succeeded" and intent.error is None
-        assert intent.result["adopted"] is False
-        assert _result_refs([intent])[0]["status"] == "candidate"
-        record.config_snapshot = {**record.config_snapshot, "business_media": intent.frozen_target}
-        adopt_business_media_locked(flow.session, task, record, flow.settings)
-        assert record.response_data["business_adoption"] == {
-            "adopted": False,
-            "status": "candidate",
-        }
+        assert intent.result["adopted"] is True
+        assert _result_refs([intent])[0]["status"] == "adopted"
 
 
 @pytest.mark.parametrize("count", [1, 2, 4])

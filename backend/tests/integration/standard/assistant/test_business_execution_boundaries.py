@@ -233,13 +233,14 @@ def test_mcp_media_uses_token_permission_when_internal_assistant_is_disabled(flo
 @pytest.mark.parametrize(
     "source,closure,adopted",
     [
-        ("assistant", "media", False),
+        # 生成完成即写入作品；仅工作台关闭与令牌撤销会阻止写入。
+        ("assistant", "media", True),
         ("assistant", "workbench", False),
-        ("mcp", "workbench", False),
+        ("mcp", "workbench", True),
         ("mcp", "revoked", False),
     ],
 )
-def test_business_media_already_sent_archives_candidates_without_changing_primary(
+def test_business_media_already_sent_writes_results_without_manual_adoption(
     flow, source, closure, adopted
 ):
     from short_drama.agent.tools.registry import TOOL_SPECS

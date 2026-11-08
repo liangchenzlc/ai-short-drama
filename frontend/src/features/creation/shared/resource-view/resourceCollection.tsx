@@ -62,12 +62,11 @@ export function ResourceCollection({ title, items, mode, selectedIds, toolbar, c
             {selectable && <Checkbox aria-label={item.selectionLabel} checked={selectedIds.includes(item.id)}
               onChange={(event) => onToggle(item.id, event.target.checked)} />}
             <button type="button" className="resourceItemBody" aria-label={'打开' + item.label}
-              aria-describedby={`${statusId}-${item.id}${item.imageCandidate ? ` ${statusId}-${item.id}-candidate` : ''}`} onClick={() => onOpen(item.id)}>
+              aria-describedby={`${statusId}-${item.id}`} onClick={() => onOpen(item.id)}>
               <span className="resourceItemImage">
                 {item.image ? <img src={item.image} alt=""
                   onLoad={() => item.imageCandidate && onCandidateState?.(item.id, item.image!, true)}
                   onError={() => item.imageCandidate && onCandidateState?.(item.id, item.image!, false)} /> : <ImageIcon size={24} />}
-                {item.imageCandidate && <span className="resourceItemCandidate" id={`${statusId}-${item.id}-candidate`}>候选</span>}
               </span>
               <span className="resourceItemText"><strong>{item.label}</strong>
                 <span className="resourceItemDescription">{item.description}</span>
