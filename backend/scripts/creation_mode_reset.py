@@ -346,10 +346,13 @@ def rebuild(connection, keep):
         columns = {
             c["name"] for c in inspect(connection).get_columns(name) if not c.get("computed")
         }
+        # 新结构新增的列在备份中没有取值，只能核对备份已存在的列。
+        compared = columns & set().union(*(r.keys() for r in expected)) if expected else columns
         expected = sorted(
-            ({k: v for k, v in r.items() if k in columns} for r in expected), key=serialized
+            ({k: v for k, v in r.items() if k in compared} for r in expected), key=serialized
         )
-        if fingerprint(actual[name]["rows"]) != fingerprint(expected):
+        rows = [{k: v for k, v in r.items() if k in compared} for r in actual[name]["rows"]]
+        if fingerprint(rows) != fingerprint(expected):
             raise RuntimeError(f"保留数据校验不一致: {name}")
     return {
         "ddl": ddl,
